@@ -453,6 +453,12 @@ function mapToGridColumn(
         return defaultIfNullish(value, undefined);
     }
     function defaultIfNullish<T>(value: T, defaultValue: T) {
-        return value ?? defaultValue;
+        if (value === null || value === undefined) {
+            return defaultValue;
+        }
+        // Treat NaN as nullish for numeric values
+        return typeof value === 'number' && isNaN(value)
+            ? defaultValue
+            : value;
     }
 }
