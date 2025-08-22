@@ -2,9 +2,14 @@ import * as React from 'react';
 import { DetailsList, IColumn } from '@fluentui/react/lib/DetailsList';
 import { initializeIcons } from '@fluentui/font-icons-mdl2';
 
-initializeIcons();
+// Cast to a typed function to satisfy lint rules.
+(initializeIcons as () => void)();
 
-export type IHelloWorldProps = Record<string, never>;
+/** Props accepted by the HelloWorld component. */
+export interface IHelloWorldProps {
+  /** Display name shown above the list. */
+  name: string;
+}
 
 interface IItem {
   key: string;
@@ -24,6 +29,11 @@ export class HelloWorld extends React.Component<IHelloWorldProps> {
   ];
 
   public render(): React.ReactNode {
-    return <DetailsList items={this._items} columns={this._columns} />;
+    return (
+      <div>
+        <h3>{this.props.name}</h3>
+        <DetailsList items={this._items} columns={this._columns} />
+      </div>
+    );
   }
 }
