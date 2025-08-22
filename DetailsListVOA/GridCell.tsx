@@ -1,4 +1,4 @@
-/* eslint-disable react/prop-types */
+/* eslint-disable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-argument */
 import { DefaultButton, FontIcon, IColumn, IconButton, Image, IRawStyle, Link, mergeStyles } from '@fluentui/react';
 import * as React from 'react';
 import { IGridColumn } from './Component.types';
@@ -35,13 +35,13 @@ export const GridCell = React.memo((props: GridCellProps) => {
     const childCellRows: Record<string, IGridColumn[]> = {};
 
     // Add root cell content
-    const childColumns = column.childColumns || [];
+    const childColumns = column.childColumns ?? [];
     const columns = [column, ...(expanded !== false ? childColumns : [])];
     if (columns && columns.length > 0) {
         // Group by the row by the Sub Text Row Number
         columns.forEach((c, i) => {
-            const row = c.subTextRow?.toString() || i;
-            childCellRows[row] = childCellRows[row] || [];
+            const row = c.subTextRow?.toString() ?? i;
+            childCellRows[row] = childCellRows[row] ?? [];
             childCellRows[row].push(c);
         });
 
@@ -128,7 +128,7 @@ function wrapContent(cellContents: JSX.Element, column: IGridColumn, isBlank: bo
     if (constrainWidth) {
         whiteSpace = column.isMultiline === true ? 'normal' : 'nowrap';
     }
-    const targetWidth = column.currentWidth || column.maxWidth;
+    const targetWidth = column.currentWidth ?? column.maxWidth;
     // If constrained width and multi-line=true - normal wrap
     // If constrained width and multi-line=false - nowrap
     // If constrained = false - nowrap
@@ -147,7 +147,7 @@ function wrapContent(cellContents: JSX.Element, column: IGridColumn, isBlank: bo
     const labelAbove = hasInlineLabel && column.isLabelAbove === true;
     cellContents = !isBlank ? (
         <span className={mergeStyles(cellStyle)} key={column.key.toString()}>
-            {hasInlineLabel && <span className={ClassNames.inlineLabel}>{column.inlineLabel || column.name}</span>}
+            {hasInlineLabel && <span className={ClassNames.inlineLabel}>{column.inlineLabel ?? column.name}</span>}
             {labelAbove && <br />}
             {cellContents}
         </span>
@@ -214,15 +214,15 @@ function getIconCell(
 ) {
     let cellContents: JSX.Element;
     let isBlank = true;
-    if (item && item.getValue) {
+    if (item?.getValue) {
         const imageData = getCellValue<string>(column.fieldName, item)[0];
         isBlank = !imageData || imageData === '';
         if (imageData) {
-            const iconColor = getCellValue<string>(column.tagColor, item)[0] as string;
-            const ariaText = getCellValue<string>(column.ariaTextColumn, item)[0] as string;
-            const actionDisabled = getCellValue<string>(column.cellActionDisabledColumn, item)[0] as string;
+            const iconColor = getCellValue<string>(column.tagColor, item)[0];
+            const ariaText = getCellValue<string>(column.ariaTextColumn, item)[0];
+            const actionDisabled = getCellValue<string>(column.cellActionDisabledColumn, item)[0];
             const buttonContent: JSX.Element | null = getImageTag(imageData, column, iconColor);
-            const padding = column.imagePadding || undefined;
+            const padding = column.imagePadding;
             if (column.cellType?.toLowerCase() === CellTypes.ClickableImage) {
                 const containerClass = `${ClassNames.imageButton} ${mergeStyles({ padding: padding })}`;
                 cellContents = (
@@ -262,14 +262,14 @@ function getImageTag(imageData: string, column: IGridColumn, iconColor: string) 
     const iconName = imageData.substring('icon:'.length);
 
     if (imageData.startsWith('icon:')) {
-        const fontSize = column.imageWidth || 18;
+        const fontSize = column.imageWidth ?? 18;
         const iconColorClass = mergeStyles({
             color: iconColor + CSS_IMPORTANT,
             fontSize: fontSize,
         });
         buttonContent = <FontIcon iconName={iconName} className={iconColorClass} aria-hidden="true" />;
     } else if (imageData.startsWith('data:') || imageData.startsWith('https:')) {
-        const imageSize = column.imageWidth || 32;
+        const imageSize = column.imageWidth ?? 32;
         buttonContent = <Image src={imageData} width={imageSize} />;
     }
     return buttonContent;
@@ -280,7 +280,7 @@ function getExpandIconCell(
     column: IColumn,
     cellNavigation: () => void,
 ) {
-    if (item && item.getValue && column.fieldName) {
+    if (item?.getValue && column.fieldName) {
         const expanded =
             (item as ComponentFramework.PropertyHelper.DataSetApi.EntityRecord).getValue(column.fieldName) === true;
         const icon = expanded ? 'ChevronUp' : 'ChevronDown';
@@ -336,7 +336,7 @@ function getCellValue<T>(
     const isArrayValue = Array.isArray(value);
     let values: T[];
     if (!isArrayValue) {
-        values = [value];
+        values = [value as T];
     } else {
         values = (value as DatasetArray<T>).map((i) => i.Value);
     }
@@ -352,14 +352,14 @@ function getCellContent(
     let isBlank = true;
     // Is the contents an array of values - or just a text field?
     // Passing in an array of items is provided to the component as an array of objects
-    if (item && column.fieldName) {
-        const values: string[] = overrideValues || getCellValue(column.fieldName, item);
+    if (item && (column as IColumn).fieldName) {
+        const values: string[] = overrideValues ?? getCellValue((column as IColumn).fieldName, item);
         isBlank = values.length === 0 || values.join('') === '';
 
         // Two types of cell rendering - single value and multi-value
         if (values.length > 1) {
             const valueDelimiter = column.multiValuesDelimiter;
-            const delimiterElement = valueDelimiter || <br />;
+            const delimiterElement = valueDelimiter ?? <br />;
             cellContents = (
                 <>
                     {values.map((value, index) => {
