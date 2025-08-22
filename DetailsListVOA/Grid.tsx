@@ -107,7 +107,10 @@ export interface GridProps {
 
 export function getRecordKey(record: ComponentFramework.PropertyHelper.DataSetApi.EntityRecord): string {
     const customKey = record.getValue(RecordsColumns.RecordKey);
-    return customKey ? customKey.toString() : record.getRecordId();
+    if (typeof customKey === 'string') {
+        return customKey;
+    }
+    return record.getRecordId();
 }
 
 const cellStyleProps = {
@@ -163,7 +166,7 @@ export const Grid = React.memo((props: GridProps) => {
                 const sortDirection = column.isSorted ? !column.isSortedDescending : false;
                 const columnData = column.data as ComponentFramework.PropertyHelper.DataSetApi.EntityRecord;
                 const sortByColumn =
-                    (columnData.getValue(ColumnsColumns.ColSortBy) as string | undefined) || column.fieldName;
+                    (columnData.getValue(ColumnsColumns.ColSortBy) as string | undefined) ?? column.fieldName;
 
                 onSort(sortByColumn, sortDirection);
             }
@@ -315,7 +318,7 @@ Grid.displayName = 'Grid';
 
 function getGridProps(props: GridProps, selectionType: SelectionMode) {
     return {
-        ariaLabelForGrid: props.ariaLabel === null ? undefined : props.ariaLabel,
+        ariaLabelForGrid: props.ariaLabel ?? undefined,
         getKey: getKey,
         initialFocusedIndex: -1,
         checkButtonAriaLabel: 'select row',
@@ -344,11 +347,8 @@ function getSortStatus(
     datasetColumn: ComponentFramework.PropertyHelper.DataSetApi.Column,
     column: ComponentFramework.PropertyHelper.DataSetApi.EntityRecord,
 ) {
-    return (
-        sorting &&
-        sorting.find(
-            (s) => s.name === datasetColumn.name || s.name === column.getFormattedValue(ColumnsColumns.ColSortBy),
-        )
+    return sorting?.find(
+        (s) => s.name === datasetColumn.name || s.name === column.getFormattedValue(ColumnsColumns.ColSortBy),
     );
 }
 
@@ -375,7 +375,9 @@ function mapToGridColumn(
 ) {
     const colWidth = undefinedIfNullish(column.getValue(ColumnsColumns.ColWidth) as number);
     const colIsBold = column.getValue(ColumnsColumns.ColIsBold) === true;
-    const horizontalAlign = (column.getFormattedValue(ColumnsColumns.ColHorizontalAlign) as string)?.toLowerCase();
+    const horizontalAlign = column
+        .getFormattedValue(ColumnsColumns.ColHorizontalAlign)
+        ?.toLowerCase();
     const showAsSubTextOf = column.getFormattedValue(ColumnsColumns.ColShowAsSubTextOf);
     const cellType = column.getFormattedValue(ColumnsColumns.ColCellType);
     const isSortable = column.getValue(ColumnsColumns.ColSortable) === true && !datasetColumn.disableSorting;
@@ -451,6 +453,6 @@ function mapToGridColumn(
         return defaultIfNullish(value, undefined);
     }
     function defaultIfNullish<T>(value: T, defaultValue: T) {
-        return (value as T) ? value : defaultValue;
+        return value ?? defaultValue;
     }
 }
