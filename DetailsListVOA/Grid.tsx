@@ -319,7 +319,6 @@ Grid.displayName = 'Grid';
 function getGridProps(props: GridProps, selectionType: SelectionMode) {
     return {
         ariaLabelForGrid: props.ariaLabel ?? undefined,
-        getKey: getKey,
         initialFocusedIndex: -1,
         checkButtonAriaLabel: 'select row',
         onItemInvoked: props.onNavigate as (item?: ComponentFramework.PropertyHelper.DataSetApi.EntityRecord) => void,
@@ -341,7 +340,6 @@ function getGridProps(props: GridProps, selectionType: SelectionMode) {
         isHeaderVisible: props.isHeaderVisible,
     } as IShimmeredDetailsListProps;
 }
-
 function getSortStatus(
     sorting: ComponentFramework.PropertyHelper.DataSetApi.SortStatus[],
     datasetColumn: ComponentFramework.PropertyHelper.DataSetApi.Column,
@@ -352,20 +350,6 @@ function getSortStatus(
     );
 }
 
-function getKey(item: unknown, index?: number): string {
-    const itemAsDataset = item as DataSet;
-    if (item && itemAsDataset.getRecordId) {
-        return 'row-' + itemAsDataset.getRecordId();
-    }
-    if (item && itemAsDataset.key) {
-        return 'row-' + itemAsDataset.key;
-    }
-    if (index) {
-        return 'row-' + index.toString();
-    }
-    return '';
-}
-
 function mapToGridColumn(
     column: ComponentFramework.PropertyHelper.DataSetApi.EntityRecord,
     datasetColumn: ComponentFramework.PropertyHelper.DataSetApi.Column,
@@ -373,7 +357,9 @@ function mapToGridColumn(
     sortOn: ComponentFramework.PropertyHelper.DataSetApi.SortStatus | undefined,
     onColumnClick: (ev: React.MouseEvent<HTMLElement>, column: IColumn) => void,
 ) {
-    const colWidth = undefinedIfNullish(column.getValue(ColumnsColumns.ColWidth) as number);
+    const rawWidth = column.getValue(ColumnsColumns.ColWidth);
+    const colWidthNumber = typeof rawWidth === 'number' ? rawWidth : Number(rawWidth);
+    const colWidth = undefinedIfNullish(colWidthNumber);
     const colIsBold = column.getValue(ColumnsColumns.ColIsBold) === true;
     const horizontalAlign = column
         .getFormattedValue(ColumnsColumns.ColHorizontalAlign)
@@ -441,17 +427,23 @@ function mapToGridColumn(
         subTextRow: column.getValue(ColumnsColumns.ColSubTextRow),
         ariaTextColumn: column.getFormattedValue(ColumnsColumns.ColAriaTextColumn),
         cellActionDisabledColumn: undefinedIfNullish(column.getValue(ColumnsColumns.ColCellActionDisabledColumn)),
-        imageWidth: undefinedIfNullish(column.getValue(ColumnsColumns.ColImageWidth)),
-        imagePadding: undefinedIfNullish(column.getValue(ColumnsColumns.ColImagePadding)),
+        imageWidth: parseNumber(column.getValue(ColumnsColumns.ColImageWidth)),
+        imagePadding: parseNumber(column.getValue(ColumnsColumns.ColImagePadding)),
         verticalAligned: undefinedIfNullish(column.getValue(ColumnsColumns.ColVerticalAlign)),
         horizontalAligned: undefinedIfNullish(column.getValue(ColumnsColumns.ColHorizontalAlign)),
         isRowHeader: column.getValue(ColumnsColumns.ColRowHeader) === true,
         onRenderHeader: onRenderHeader,
     } as IGridColumn;
 
+    function parseNumber(value: unknown): number | undefined {
+        const num = typeof value === 'number' ? value : Number(value);
+        return undefinedIfNullish(num);
+    }
+
     function undefinedIfNullish<T>(value: T) {
         return defaultIfNullish(value, undefined);
     }
+
     function defaultIfNullish<T>(value: T, defaultValue: T) {
         if (value === null || value === undefined) {
             return defaultValue;
