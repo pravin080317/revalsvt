@@ -1,6 +1,7 @@
 import { IInputs, IOutputs } from "./generated/ManifestTypes";
-import { HelloWorld, IHelloWorldProps } from "./HelloWorld";
+import { Grid, IGridProps } from "./Grid";
 import * as React from "react";
+import { ITheme } from '@fluentui/react';
 
 export class DetailsListVOA implements ComponentFramework.ReactControl<IInputs, IOutputs> {
     private notifyOutputChanged: () => void;
@@ -33,9 +34,13 @@ export class DetailsListVOA implements ComponentFramework.ReactControl<IInputs, 
      * @returns ReactElement root react element for the control
      */
     public updateView(context: ComponentFramework.Context<IInputs>): React.ReactElement {
-        const props: IHelloWorldProps = { name: 'Power Apps' };
+        const theme = (context as unknown as { fluentTheme?: ITheme }).fluentTheme;
+        const props: IGridProps = {
+            name: 'Power Apps',
+            theme,
+        };
         return React.createElement(
-            HelloWorld, props
+            Grid, props
         );
     }
 
