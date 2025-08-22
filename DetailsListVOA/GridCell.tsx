@@ -260,15 +260,17 @@ function getImageTag(imageData: string, column: IGridColumn, iconColor: string) 
     let buttonContent: JSX.Element | null = null;
     const iconName = imageData.substring('icon:'.length);
 
+    const validWidth = typeof column.imageWidth === 'number' ? column.imageWidth : undefined;
+
     if (imageData.startsWith('icon:')) {
-        const fontSize = column.imageWidth ?? 18;
+        const fontSize = validWidth ?? 18;
         const iconColorClass = mergeStyles({
             color: iconColor + CSS_IMPORTANT,
             fontSize: fontSize,
         });
         buttonContent = <FontIcon iconName={iconName} className={iconColorClass} aria-hidden="true" />;
     } else if (imageData.startsWith('data:') || imageData.startsWith('https:')) {
-        const imageSize = column.imageWidth ?? 32;
+        const imageSize = validWidth ?? 32;
         buttonContent = <Image src={imageData} width={imageSize} />;
     }
     return buttonContent;
