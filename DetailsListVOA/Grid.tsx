@@ -102,7 +102,7 @@ export const Grid = React.memo((props: GridProps) => {
           minWidth: c.visualSizeFactor ?? 100,
           isResizable: true,
           isSorted: !!sort,
-          isSortedDescending: sort ? sort.sortDirection === 1 || sort.sortDirection === '1' : undefined,
+          isSortedDescending: sort ? Number(sort.sortDirection) === 1 : undefined,
         } as IColumn;
       }),
     [datasetColumns, sorting],
@@ -124,8 +124,10 @@ export const Grid = React.memo((props: GridProps) => {
   );
 
   const onColumnHeaderClick = React.useCallback(
-    (ev: React.MouseEvent<HTMLElement>, column: IColumn) => {
-      onSort(column.key, column.isSorted ? !column.isSortedDescending : false);
+    (ev?: React.MouseEvent<HTMLElement>, column?: IColumn) => {
+      if (column) {
+        onSort(column.key, column.isSorted ? !column.isSortedDescending : false);
+      }
     },
     [onSort],
   );
