@@ -95,11 +95,15 @@ export const Grid = React.memo((props: GridProps) => {
     () =>
       datasetColumns.map((c) => {
         const sort = sorting.find((s) => s.name === c.name);
+        const visualSize =
+          typeof c.visualSizeFactor === 'number' && !isNaN(c.visualSizeFactor)
+            ? c.visualSizeFactor
+            : 100;
         return {
           key: c.name,
           name: c.displayName,
           fieldName: c.name,
-          minWidth: c.visualSizeFactor ?? 100,
+          minWidth: visualSize,
           isResizable: true,
           isSorted: !!sort,
           isSortedDescending: sort ? Number(sort.sortDirection) === 1 : undefined,
