@@ -24,8 +24,6 @@ export class DetailsListVOA implements ComponentFramework.ReactControl<IInputs, 
 
         const props: GridProps = {
             datasetColumns: [],
-            columns: {},
-            sortedColumnIds: [],
             records: {},
             sortedRecordIds: [],
             shimmer: false,
@@ -33,12 +31,9 @@ export class DetailsListVOA implements ComponentFramework.ReactControl<IInputs, 
             selectionType: SelectionMode.none,
             selection,
             onNavigate: () => undefined,
-            onCellAction: () => undefined,
             onSort: () => undefined,
             sorting: [],
             componentRef,
-            selectOnFocus: false,
-            ariaLabel: null,
             resources: context.resources,
         };
         return React.createElement(Grid, props);
