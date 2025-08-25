@@ -157,7 +157,13 @@ function wrapContent(cellContents: JSX.Element, column: IGridColumn, isBlank: bo
     return cellContents;
 }
 function undefinedIf<T>(flag: boolean, value: T): T | undefined {
-    return flag ? value : undefined;
+    if (!flag) {
+        return undefined;
+    }
+    if (typeof value === 'number' && isNaN(value)) {
+        return undefined;
+    }
+    return value;
 }
 
 function getColorTagCell(
