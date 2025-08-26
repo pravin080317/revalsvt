@@ -21,7 +21,9 @@ export class DetailsListVOA implements ComponentFramework.ReactControl<IInputs, 
     public updateView(context: ComponentFramework.Context<IInputs>): React.ReactElement {
         // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-call
         const selection: ISelection<ComponentFramework.PropertyHelper.DataSetApi.EntityRecord> =
-            new Selection<ComponentFramework.PropertyHelper.DataSetApi.EntityRecord>({});
+            new Selection<ComponentFramework.PropertyHelper.DataSetApi.EntityRecord>({
+                getKey: (item: ComponentFramework.PropertyHelper.DataSetApi.EntityRecord) => item.getRecordId(),
+            });
         const componentRef = React.createRef<IDetailsList>();
 
         // Provide default columns and records so the grid renders with sample data on initial load
