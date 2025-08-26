@@ -20,12 +20,14 @@ import {
 import * as React from 'react';
 import { NoFields } from './NoFields';
 import { RecordsColumns } from './ManifestConstants';
+import { GridCell } from './GridCell';
+import { IGridColumn } from './Component.types';
 
 type DataSet = ComponentFramework.PropertyHelper.DataSetApi.EntityRecord & IObjectWithKey;
 
 export interface GridProps {
   height?: number;
-  datasetColumns: ComponentFramework.PropertyHelper.DataSetApi.Column[];
+  columns: IGridColumn[];
   records: Record<string, ComponentFramework.PropertyHelper.DataSetApi.EntityRecord>;
   sortedRecordIds: string[];
   shimmer: boolean;
@@ -85,7 +87,7 @@ export function getRecordKey(record: ComponentFramework.PropertyHelper.DataSetAp
 
 export const Grid = React.memo((props: GridProps) => {
   const {
-    datasetColumns,
+    columns: inputColumns,
     records,
     sortedRecordIds,
     shimmer,
@@ -115,31 +117,23 @@ export const Grid = React.memo((props: GridProps) => {
 
   const theme = useTheme(themeJSON);
 
-  const [columns, setColumns] = React.useState<IColumn[]>([]);
+  const [displayColumns, setDisplayColumns] = React.useState<IGridColumn[]>([]);
 
   React.useEffect(() => {
-    setColumns(
-      datasetColumns.map((c) => {
-        const sort = sorting?.find((s) => s.name === c.name);
-        const visualSize =
-          typeof c.visualSizeFactor === 'number' && !isNaN(c.visualSizeFactor)
-            ? c.visualSizeFactor
-            : 100;
+    setDisplayColumns(
+      inputColumns.map((c) => {
+        const sort = sorting?.find((s) => s.name === c.fieldName);
         return {
-          key: c.name,
-          name: c.displayName,
-          fieldName: c.name,
-          minWidth: visualSize,
-          isResizable: true,
+          ...c,
           isSorted: !!sort,
           isSortedDescending: sort ? Number(sort.sortDirection) === 1 : undefined,
-        } as IColumn;
+        } as IGridColumn;
       }),
     );
-  }, [datasetColumns, sorting]);
+  }, [inputColumns, sorting]);
 
   const handleColumnReorder = React.useCallback((draggedIndex: number, targetIndex: number) => {
-    setColumns((prev) => {
+    setDisplayColumns((prev) => {
       const newCols = [...prev];
       const [moved] = newCols.splice(draggedIndex, 1);
       newCols.splice(targetIndex, 0, moved);
@@ -178,9 +172,18 @@ export const Grid = React.memo((props: GridProps) => {
     [onSort],
   );
 
-  if (columnDatasetNotDefined || datasetColumns.length === 0) {
+  if (columnDatasetNotDefined || inputColumns.length === 0) {
     return <NoFields resources={resources} />;
   }
+
+  const onRenderItemColumn = React.useCallback(
+    (
+      item?: ComponentFramework.PropertyHelper.DataSetApi.EntityRecord,
+      index?: number,
+      column?: IColumn,
+    ) => <GridCell item={item ?? ({} as Record<string, unknown>)} index={index} column={column} onCellAction={onNavigate} />,
+    [onNavigate],
+  );
 
   return (
     <ThemeProvider theme={theme}>
@@ -194,7 +197,7 @@ export const Grid = React.memo((props: GridProps) => {
         <ShimmeredDetailsList
           componentRef={componentRef}
           items={items}
-          columns={columns}
+          columns={displayColumns}
           setKey="grid"
           enableShimmer={itemsLoading || shimmer}
           selectionMode={selectionType}
@@ -205,6 +208,7 @@ export const Grid = React.memo((props: GridProps) => {
           columnReorderOptions={columnReorderOptions}
           compact={compact}
           isHeaderVisible={isHeaderVisible}
+          onRenderItemColumn={onRenderItemColumn}
         />
         <Stack
           horizontal

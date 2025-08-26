@@ -1,8 +1,9 @@
 /* eslint-disable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access */
 import { IInputs, IOutputs } from "./generated/ManifestTypes";
 import { Grid, GridProps } from "./Grid";
+import { IGridColumn } from "./Component.types";
 import * as React from "react";
-import { IDetailsList, ISelection, Selection, SelectionMode, IObjectWithKey } from '@fluentui/react';
+import { IDetailsList, ISelection, Selection, SelectionMode, IObjectWithKey, IColumn } from '@fluentui/react';
 
 export class DetailsListVOA implements ComponentFramework.ReactControl<IInputs, IOutputs> {
     private notifyOutputChanged: () => void;
@@ -30,6 +31,7 @@ export class DetailsListVOA implements ComponentFramework.ReactControl<IInputs, 
         const taskIdField = context.parameters.taskIdField.raw ?? "taskid";
         const taskEntity = context.parameters.taskEntity.raw ?? "";
         const navigationTarget = context.parameters.navigationTarget.raw ?? "";
+
         // Column display name overrides are provided as JSON in the columnDisplayNames property.
         // Parse the property whenever it changes so makers can customize labels.
         const columnDisplayNamesRaw = context.parameters.columnDisplayNames?.raw?.trim() ?? "{}";
@@ -42,49 +44,130 @@ export class DetailsListVOA implements ComponentFramework.ReactControl<IInputs, 
             this.lastColumnDisplayNamesRaw = columnDisplayNamesRaw;
         }
 
+        // Column metadata is supplied as a JSON array. Each entry describes a column's
+        // configuration using the schema defined in the README.
+        const columnMetadataRaw =
+            (context.parameters as unknown as {
+                columnMetadata?: ComponentFramework.PropertyTypes.StringProperty;
+            }).columnMetadata?.raw ?? "[]";
+
+        const parseBool = (value: unknown): boolean | undefined => {
+            if (typeof value === "boolean") {
+                return value;
+            }
+            if (typeof value === "string") {
+                return value.toLowerCase() === "true";
+            }
+            return undefined;
+        };
+        const parseNumber = (value: unknown): number | undefined => {
+            if (typeof value === "number") {
+                return isNaN(value) ? undefined : value;
+            }
+            if (typeof value === "string") {
+                const n = parseFloat(value);
+                return isNaN(n) ? undefined : n;
+            }
+            return undefined;
+        };
+
+        let gridColumns: IGridColumn[] = [];
+        try {
+            const columnArray = JSON.parse(columnMetadataRaw) as Record<string, unknown>[];
+            gridColumns = columnArray.map((c, i) => {
+                const name = typeof c.ColName === "string" ? c.ColName : `col${i}`;
+                const width =
+                    typeof c.ColWidth === "number"
+                        ? c.ColWidth
+                        : typeof c.ColWidth === "string"
+                            ? parseFloat(c.ColWidth)
+                            : undefined;
+                const displayNameOverride = this.columnDisplayNames[name];
+                const finalName =
+                    (typeof displayNameOverride === "string" ? displayNameOverride : undefined) ??
+                    (typeof c.ColDisplayName === "string" ? c.ColDisplayName : undefined) ??
+                    name;
+                return {
+                    key: name,
+                    fieldName: name,
+                    name: finalName,
+                    minWidth: width,
+                    maxWidth: width,
+                    cellType: typeof c.ColCellType === "string" ? c.ColCellType : undefined,
+                    tagColor: typeof c.ColTagColorColumn === "string" ? c.ColTagColorColumn : undefined,
+                    tagBorderColor: typeof c.ColTagBorderColorColumn === "string" ? c.ColTagBorderColorColumn : undefined,
+                    isBold: parseBool(c.ColIsBold),
+                    isMultiline: parseBool(c.ColMultiLine),
+                    isResizable: parseBool(c.ColResizable) ?? true,
+                    headerPaddingLeft: parseNumber(c.ColHeaderPaddingLeft),
+                    showAsSubTextOf: typeof c.ColShowAsSubTextOf === "string" ? c.ColShowAsSubTextOf : undefined,
+                    paddingTop: parseNumber(c.ColPaddingTop),
+                    paddingLeft: parseNumber(c.ColPaddingLeft),
+                    isLabelAbove: parseBool(c.ColLabelAbove),
+                    multiValuesDelimiter: typeof c.ColMultiValueDelimiter === "string" ? c.ColMultiValueDelimiter : undefined,
+                    firstMultiValueBold: parseBool(c.ColFirstMultiValueBold),
+                    inlineLabel: typeof c.ColInlineLabel === "string" ? c.ColInlineLabel : undefined,
+                    hideWhenBlank: parseBool(c.ColHideWhenBlank),
+                    subTextRow: parseNumber(c.ColSubTextRow),
+                    ariaTextColumn: typeof c.ColAriaTextColumn === "string" ? c.ColAriaTextColumn : undefined,
+                    cellActionDisabledColumn:
+                        typeof c.ColCellActionDisabledColumn === "string"
+                            ? c.ColCellActionDisabledColumn
+                            : undefined,
+                    imageWidth: typeof c.ColImageWidth === "string" ? c.ColImageWidth : undefined,
+                    imagePadding: parseNumber(c.ColImagePadding),
+                    verticalAligned: typeof c.ColVerticalAlign === "string" ? c.ColVerticalAlign : undefined,
+                    horizontalAligned: typeof c.ColHorizontalAlign === "string" ? c.ColHorizontalAlign : undefined,
+                    childColumns: [],
+                } as IGridColumn;
+            });
+        } catch {
+            gridColumns = [];
+        }
+
+        const ensureColumn = (col: IGridColumn): void => {
+            if (!gridColumns.some((c) => c.fieldName === col.fieldName)) {
+                gridColumns.push(col);
+            }
+        };
+
+        ensureColumn({
+            key: "taskstatus",
+            fieldName: "taskstatus",
+            name: this.columnDisplayNames.taskstatus ?? "Task Status",
+            minWidth: 100,
+            maxWidth: 100,
+            childColumns: [],
+        } as IGridColumn);
+        ensureColumn({
+            key: "assignedto",
+            fieldName: "assignedto",
+            name: this.columnDisplayNames.assignedto ?? "Assigned To",
+            minWidth: 100,
+            maxWidth: 100,
+            childColumns: [],
+        } as IGridColumn);
+        ensureColumn({
+            key: "tasktitle",
+            fieldName: "tasktitle",
+            name: this.columnDisplayNames.tasktitle ?? "Task Title",
+            minWidth: 100,
+            maxWidth: 100,
+            childColumns: [],
+        } as IGridColumn);
+        ensureColumn({
+            key: "action",
+            fieldName: "action",
+            name: this.columnDisplayNames.action ?? "Action",
+            minWidth: 100,
+            maxWidth: 100,
+            childColumns: [],
+        } as IGridColumn);
         const selection: ISelection<IObjectWithKey> = new Selection<IObjectWithKey>({
             getKey: (item: IObjectWithKey) =>
                 (item as unknown as ComponentFramework.PropertyHelper.DataSetApi.EntityRecord).getRecordId(),
         });
         const componentRef = React.createRef<IDetailsList>();
-
-        const datasetColumns: ComponentFramework.PropertyHelper.DataSetApi.Column[] = dataset.columns.map((c) => ({
-            ...c,
-            displayName: this.columnDisplayNames[c.name] ?? c.displayName,
-        }));
-
-        datasetColumns.push({
-            name: "taskstatus",
-            displayName: this.columnDisplayNames.taskstatus ?? "Task Status",
-            dataType: "SingleLine.Text",
-            alias: "taskstatus",
-            order: datasetColumns.length + 1,
-            visualSizeFactor: 100,
-        } as ComponentFramework.PropertyHelper.DataSetApi.Column);
-        datasetColumns.push({
-            name: "assignedto",
-            displayName: this.columnDisplayNames.assignedto ?? "Assigned To",
-            dataType: "SingleLine.Text",
-            alias: "assignedto",
-            order: datasetColumns.length + 1,
-            visualSizeFactor: 100,
-        } as ComponentFramework.PropertyHelper.DataSetApi.Column);
-        datasetColumns.push({
-            name: "tasktitle",
-            displayName: this.columnDisplayNames.tasktitle ?? "Task Title",
-            dataType: "SingleLine.Text",
-            alias: "tasktitle",
-            order: datasetColumns.length + 1,
-            visualSizeFactor: 100,
-        } as ComponentFramework.PropertyHelper.DataSetApi.Column);
-        datasetColumns.push({
-            name: "action",
-            displayName: this.columnDisplayNames.action ?? "Action",
-            dataType: "SingleLine.Text",
-            alias: "action",
-            order: datasetColumns.length + 1,
-            visualSizeFactor: 100,
-        } as ComponentFramework.PropertyHelper.DataSetApi.Column);
 
         const records: Record<string, ComponentFramework.PropertyHelper.DataSetApi.EntityRecord> = {};
         const allIds: string[] = [];
@@ -145,8 +228,9 @@ export class DetailsListVOA implements ComponentFramework.ReactControl<IInputs, 
             const search = this.searchText.toLowerCase();
             filteredIds = filteredIds.filter((id) => {
                 const rec = records[id] as unknown as Record<string, unknown>;
-                return datasetColumns.some((c) => {
-                    const val = rec[c.name];
+                return gridColumns.some((c) => {
+                    const field = (c as IColumn).fieldName ?? c.key;
+                    const val = field ? rec[field] : undefined;
                     return typeof val === "string" && val.toLowerCase().includes(search);
                 });
             });
@@ -233,7 +317,7 @@ export class DetailsListVOA implements ComponentFramework.ReactControl<IInputs, 
         };
 
         const props: GridProps = {
-            datasetColumns,
+            columns: gridColumns,
             records,
             sortedRecordIds: pageIds,
             shimmer: dataset.loading,
@@ -245,6 +329,7 @@ export class DetailsListVOA implements ComponentFramework.ReactControl<IInputs, 
             sorting: dataset.sorting,
             componentRef,
             resources: context.resources,
+            columnDatasetNotDefined: gridColumns.length === 0,
             onSearch,
             onNextPage,
             onPrevPage,

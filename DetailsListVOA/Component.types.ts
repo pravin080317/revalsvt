@@ -1,6 +1,8 @@
 import { IColumn } from '@fluentui/react';
 
 export interface IGridColumn extends IColumn {
+    key: string;
+    fieldName: string;
     isBold?: boolean;
     tagColor?: string;
     tagBorderColor?: string;
