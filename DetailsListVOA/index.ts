@@ -30,6 +30,8 @@ export class DetailsListVOA implements ComponentFramework.ReactControl<IInputs, 
         const taskIdField = context.parameters.taskIdField.raw ?? "taskid";
         const taskEntity = context.parameters.taskEntity.raw ?? "";
         const navigationTarget = context.parameters.navigationTarget.raw ?? "";
+        // Column display name overrides are provided as JSON in the columnDisplayNames property.
+        // Parse the property whenever it changes so makers can customize labels.
         const columnDisplayNamesRaw = context.parameters.columnDisplayNames?.raw?.trim() ?? "{}";
         if (this.lastColumnDisplayNamesRaw !== columnDisplayNamesRaw) {
             try {
