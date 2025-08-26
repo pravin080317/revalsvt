@@ -20,7 +20,7 @@ export interface IGridColumn extends IColumn {
     hideWhenBlank?: boolean;
     ariaTextColumn?: string;
     cellActionDisabledColumn?: string;
-    imageWidth?: string;
+    imageWidth?: number;
     imagePadding?: number;
     verticalAligned?: string;
     horizontalAligned?: string;
