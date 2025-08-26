@@ -3,6 +3,7 @@ import {
   CheckboxVisibility,
   createTheme,
   IColumn,
+  IColumnReorderOptions,
   IDetailsList,
   IObjectWithKey,
   IRefObject,
@@ -109,13 +110,15 @@ export const Grid = React.memo((props: GridProps) => {
     totalPages,
     canNext,
     canPrev,
-    searchText,
+  searchText,
   } = props;
 
   const theme = useTheme(themeJSON);
 
-  const columns = React.useMemo<IColumn[]>(
-    () =>
+  const [columns, setColumns] = React.useState<IColumn[]>([]);
+
+  React.useEffect(() => {
+    setColumns(
       datasetColumns.map((c) => {
         const sort = sorting.find((s) => s.name === c.name);
         const visualSize =
@@ -132,7 +135,23 @@ export const Grid = React.memo((props: GridProps) => {
           isSortedDescending: sort ? Number(sort.sortDirection) === 1 : undefined,
         } as IColumn;
       }),
-    [datasetColumns, sorting],
+    );
+  }, [datasetColumns, sorting]);
+
+  const handleColumnReorder = React.useCallback((draggedIndex: number, targetIndex: number) => {
+    setColumns((prev) => {
+      const newCols = [...prev];
+      const [moved] = newCols.splice(draggedIndex, 1);
+      newCols.splice(targetIndex, 0, moved);
+      return newCols;
+    });
+  }, []);
+
+  const columnReorderOptions = React.useMemo<IColumnReorderOptions>(
+    () => ({
+      handleColumnReorder,
+    }),
+    [handleColumnReorder],
   );
 
   const items = React.useMemo<DataSet[]>(() => {
@@ -183,6 +202,7 @@ export const Grid = React.memo((props: GridProps) => {
           checkboxVisibility={CheckboxVisibility.hidden}
           onColumnHeaderClick={onColumnHeaderClick}
           onItemInvoked={onItemInvoked}
+          columnReorderOptions={columnReorderOptions}
           compact={compact}
           isHeaderVisible={isHeaderVisible}
         />
