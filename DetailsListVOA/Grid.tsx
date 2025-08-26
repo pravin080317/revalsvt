@@ -13,8 +13,8 @@ import {
   ThemeProvider,
   TextField,
   PrimaryButton,
-  DefaultButton,
   Stack,
+  Text,
 } from '@fluentui/react';
 import * as React from 'react';
 import { NoFields } from './NoFields';
@@ -49,6 +49,8 @@ export interface GridProps {
   canNext: boolean;
   canPrev: boolean;
   searchText?: string;
+  displayName: string;
+  onUpdateDisplayName: (name: string) => void;
 }
 
 const defaultTheme = createTheme({
@@ -110,6 +112,8 @@ export const Grid = React.memo((props: GridProps) => {
     canNext,
     canPrev,
     searchText,
+    displayName,
+    onUpdateDisplayName,
   } = props;
 
   const theme = useTheme(themeJSON);
@@ -166,6 +170,11 @@ export const Grid = React.memo((props: GridProps) => {
   return (
     <ThemeProvider theme={theme}>
       <div style={{ height }}>
+        <TextField
+          label="Display Name"
+          value={displayName}
+          onChange={(_, v) => onUpdateDisplayName(v ?? '')}
+        />
         <TextField placeholder="Search" value={searchText} onChange={(_, v) => onSearch(v ?? '')} />
         <ShimmeredDetailsList
           componentRef={componentRef}
@@ -185,9 +194,15 @@ export const Grid = React.memo((props: GridProps) => {
           <PrimaryButton text="Previous" onClick={onPrevPage} disabled={!canPrev} />
           {Array.from({ length: totalPages }, (_, i) =>
             i === currentPage ? (
-              <PrimaryButton key={i} text={`${i + 1}`} disabled />
+              <Text key={i} style={{ fontWeight: 600 }}>{i + 1}</Text>
             ) : (
-              <DefaultButton key={i} text={`${i + 1}`} onClick={() => onSetPage(i)} />
+              <Text
+                key={i}
+                style={{ cursor: 'pointer' }}
+                onClick={() => onSetPage(i)}
+              >
+                {i + 1}
+              </Text>
             ),
           )}
           <PrimaryButton text="Next" onClick={onNextPage} disabled={!canNext} />

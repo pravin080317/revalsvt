@@ -10,6 +10,7 @@ export class DetailsListVOA implements ComponentFramework.ReactControl<IInputs, 
     private selectedTaskId?: string;
     private searchText = "";
     private currentPage = 0;
+    private displayName = "Details List";
 
     constructor() {
         // Empty
@@ -198,6 +199,11 @@ export class DetailsListVOA implements ComponentFramework.ReactControl<IInputs, 
             }
         };
 
+        const onUpdateDisplayName = (name: string): void => {
+            this.displayName = name;
+            this.notifyOutputChanged();
+        };
+
         const props: GridProps = {
             datasetColumns,
             records,
@@ -220,6 +226,8 @@ export class DetailsListVOA implements ComponentFramework.ReactControl<IInputs, 
             canNext,
             canPrev,
             searchText: this.searchText,
+            displayName: this.displayName,
+            onUpdateDisplayName,
         };
 
         return React.createElement(Grid, props);
