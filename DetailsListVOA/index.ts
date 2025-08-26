@@ -1,6 +1,7 @@
 /* eslint-disable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access */
 import { IInputs, IOutputs } from "./generated/ManifestTypes";
 import { Grid, GridProps } from "./Grid";
+import { ColumnConfig } from "./Component.types";
 import * as React from "react";
 import { IDetailsList, ISelection, Selection, SelectionMode, IObjectWithKey } from '@fluentui/react';
 
@@ -12,6 +13,8 @@ export class DetailsListVOA implements ComponentFramework.ReactControl<IInputs, 
     private currentPage = 0;
     private columnDisplayNames: Record<string, string> = {};
     private lastColumnDisplayNamesRaw = "";
+    private columnConfigs: Record<string, ColumnConfig> = {};
+    private lastColumnConfigRaw = "";
 
     constructor() {
         // Empty
@@ -40,6 +43,22 @@ export class DetailsListVOA implements ComponentFramework.ReactControl<IInputs, 
                 this.columnDisplayNames = {};
             }
             this.lastColumnDisplayNamesRaw = columnDisplayNamesRaw;
+        }
+
+        const columnConfigRaw = context.parameters.columnConfig?.raw?.trim() ?? "[]";
+        if (this.lastColumnConfigRaw !== columnConfigRaw) {
+            try {
+                const arr = JSON.parse(columnConfigRaw) as ColumnConfig[];
+                this.columnConfigs = {};
+                arr.forEach((c) => {
+                    if (c.ColName) {
+                        this.columnConfigs[c.ColName] = c;
+                    }
+                });
+            } catch {
+                this.columnConfigs = {};
+            }
+            this.lastColumnConfigRaw = columnConfigRaw;
         }
 
         const selection: ISelection<IObjectWithKey> = new Selection<IObjectWithKey>({
@@ -234,6 +253,7 @@ export class DetailsListVOA implements ComponentFramework.ReactControl<IInputs, 
 
         const props: GridProps = {
             datasetColumns,
+            columnConfigs: this.columnConfigs,
             records,
             sortedRecordIds: pageIds,
             shimmer: dataset.loading,

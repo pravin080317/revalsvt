@@ -20,12 +20,14 @@ import {
 import * as React from 'react';
 import { NoFields } from './NoFields';
 import { RecordsColumns } from './ManifestConstants';
+import { IGridColumn, ColumnConfig } from './Component.types';
 
 type DataSet = ComponentFramework.PropertyHelper.DataSetApi.EntityRecord & IObjectWithKey;
 
 export interface GridProps {
   height?: number;
   datasetColumns: ComponentFramework.PropertyHelper.DataSetApi.Column[];
+  columnConfigs: Record<string, ColumnConfig>;
   records: Record<string, ComponentFramework.PropertyHelper.DataSetApi.EntityRecord>;
   sortedRecordIds: string[];
   shimmer: boolean;
@@ -86,6 +88,7 @@ export function getRecordKey(record: ComponentFramework.PropertyHelper.DataSetAp
 export const Grid = React.memo((props: GridProps) => {
   const {
     datasetColumns,
+    columnConfigs,
     records,
     sortedRecordIds,
     shimmer,
@@ -115,28 +118,55 @@ export const Grid = React.memo((props: GridProps) => {
 
   const theme = useTheme(themeJSON);
 
-  const [columns, setColumns] = React.useState<IColumn[]>([]);
+  const [columns, setColumns] = React.useState<IGridColumn[]>([]);
 
   React.useEffect(() => {
     setColumns(
       datasetColumns.map((c) => {
+        const cfg = columnConfigs[c.name] || {};
         const sort = sorting?.find((s) => s.name === c.name);
         const visualSize =
           typeof c.visualSizeFactor === 'number' && !isNaN(c.visualSizeFactor)
             ? c.visualSizeFactor
             : 100;
-        return {
+        const width = typeof cfg.ColWidth === 'number' ? cfg.ColWidth : visualSize;
+        const col: IGridColumn = {
           key: c.name,
-          name: c.displayName,
+          name: cfg.ColDisplayName ?? c.displayName,
           fieldName: c.name,
-          minWidth: visualSize,
-          isResizable: true,
+          minWidth: width,
+          maxWidth: cfg.ColWidth,
+          isResizable: cfg.ColResizable ?? true,
           isSorted: !!sort,
           isSortedDescending: sort ? Number(sort.sortDirection) === 1 : undefined,
-        } as IColumn;
+          isBold: cfg.ColIsBold,
+          cellType: cfg.ColCellType,
+          tagColor: cfg.ColTagColorColumn,
+          tagBorderColor: cfg.ColTagBorderColorColumn,
+          isMultiline: cfg.ColMultiLine,
+          horizontalAligned: cfg.ColHorizontalAlign,
+          verticalAligned: cfg.ColVerticalAlign,
+          headerPaddingLeft: cfg.ColHeaderPaddingLeft,
+          showAsSubTextOf: cfg.ColShowAsSubTextOf,
+          paddingTop: cfg.ColPaddingTop,
+          paddingLeft: cfg.ColPaddingLeft,
+          isLabelAbove: cfg.ColLabelAbove,
+          multiValuesDelimiter: cfg.ColMultiValueDelimiter,
+          firstMultiValueBold: cfg.ColFirstMultiValueBold,
+          inlineLabel: cfg.ColInlineLabel,
+          hideWhenBlank: cfg.ColHideWhenBlank,
+          subTextRow: cfg.ColSubTextRow,
+          ariaTextColumn: cfg.ColAriaTextColumn,
+          cellActionDisabledColumn: cfg.ColCellActionDisabledColumn,
+          imageWidth: cfg.ColImageWidth ? String(cfg.ColImageWidth) : undefined,
+          imagePadding: cfg.ColImagePadding,
+          sortable: cfg.ColSortable !== false,
+          childColumns: [],
+        };
+        return col;
       }),
     );
-  }, [datasetColumns, sorting]);
+  }, [datasetColumns, sorting, columnConfigs]);
 
   const handleColumnReorder = React.useCallback((draggedIndex: number, targetIndex: number) => {
     setColumns((prev) => {
@@ -171,7 +201,7 @@ export const Grid = React.memo((props: GridProps) => {
 
   const onColumnHeaderClick = React.useCallback(
     (ev?: React.MouseEvent<HTMLElement>, column?: IColumn) => {
-      if (column) {
+      if (column && (column as IGridColumn).sortable !== false) {
         onSort(column.key, column.isSorted ? !column.isSortedDescending : false);
       }
     },

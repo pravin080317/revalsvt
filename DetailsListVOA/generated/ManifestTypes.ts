@@ -5,6 +5,7 @@ export interface IInputs {
     navigationTarget: ComponentFramework.PropertyTypes.StringProperty;
     pageSize: ComponentFramework.PropertyTypes.WholeNumberProperty;
     columnDisplayNames: ComponentFramework.PropertyTypes.StringProperty;
+    columnConfig: ComponentFramework.PropertyTypes.StringProperty;
 }
 
 export interface IOutputs {

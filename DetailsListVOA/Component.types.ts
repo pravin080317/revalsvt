@@ -22,4 +22,35 @@ export interface IGridColumn extends IColumn {
     imagePadding?: number;
     verticalAligned?: string;
     horizontalAligned?: string;
+    sortable?: boolean;
+}
+
+export interface ColumnConfig {
+    ColName: string;
+    ColDisplayName?: string;
+    ColWidth?: number;
+    ColSortable?: boolean;
+    ColCellType?: string;
+    ColIsBold?: boolean;
+    ColTagColorColumn?: string;
+    ColTagBorderColorColumn?: string;
+    ColMultiLine?: boolean;
+    ColHorizontalAlign?: string;
+    ColVerticalAlign?: string;
+    ColResizable?: boolean;
+    ColHeaderPaddingLeft?: number;
+    ColShowAsSubTextOf?: string;
+    ColPaddingTop?: number;
+    ColPaddingLeft?: number;
+    ColLabelAbove?: boolean;
+    ColMultiValueDelimiter?: string;
+    ColFirstMultiValueBold?: boolean;
+    ColInlineLabel?: string;
+    ColHideWhenBlank?: boolean;
+    ColSubTextRow?: number;
+    ColAriaTextColumn?: string;
+    ColCellActionDisabledColumn?: string;
+    ColImageWidth?: number;
+    ColImagePadding?: number;
+    ColRowHeader?: boolean;
 }

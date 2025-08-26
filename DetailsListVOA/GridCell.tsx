@@ -174,7 +174,9 @@ function getColorTagCell(
     // Render a status column
     // Get the actual color from the status column
 
-    const tagColor = getCellValue<string>(column.tagColor, item)[0];
+    const tagColor = column.tagColor?.startsWith('#')
+        ? column.tagColor
+        : getCellValue<string>(column.tagColor, item)[0];
 
     const indicatorColorClass = `${ClassNames.statusTag} ${mergeStyles({
         ':after': { background: tagColor + CSS_IMPORTANT },
@@ -196,8 +198,12 @@ function getTextTagCell(
     item: ComponentFramework.PropertyHelper.DataSetApi.EntityRecord | Record<string, unknown>,
 ) {
     const tagText = getCellValue<string>(column.fieldName, item)[0];
-    const tagColor = getCellValue<string>(column.tagColor, item)[0];
-    const tagBorderColor = getCellValue<string>(column.tagBorderColor, item)[0];
+    const tagColor = column.tagColor?.startsWith('#')
+        ? column.tagColor
+        : getCellValue<string>(column.tagColor, item)[0];
+    const tagBorderColor = column.tagBorderColor?.startsWith('#')
+        ? column.tagBorderColor
+        : getCellValue<string>(column.tagBorderColor, item)[0];
     const tagColorClass = `${ClassNames.textTag} ${mergeStyles({
         background: tagColor || '#F4F6F7' + CSS_IMPORTANT,
         borderColor: (tagBorderColor || '#CAD0D5') + CSS_IMPORTANT,
