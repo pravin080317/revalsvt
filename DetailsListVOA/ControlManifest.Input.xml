@@ -17,19 +17,29 @@
       <domain></domain>
       -->
     </external-service-usage>
-    <!-- property node identifies a specific, configurable piece of data that the control expects from CDS -->
-    <property name="sampleProperty" display-name-key="Property_Display_Key" description-key="Property_Desc_Key" of-type="SingleLine.Text" usage="bound" required="true" />
-    <!--
-      Property node's of-type attribute can be of-type-group attribute.
-      Example:
-      <type-group name="numbers">
-        <type>Whole.None</type>
-        <type>Currency</type>
-        <type>FP</type>
-        <type>Decimal</type>
-      </type-group>
-      <property name="sampleProperty" display-name-key="Property_Display_Key" description-key="Property_Desc_Key" of-type-group="numbers" usage="bound" required="true" />
-    -->
+    <data-set name="revalSalesDataset" display-name-key="RevalSalesDataset" description-key="RevalSalesDataset description"/>
+
+    <!-- Field on each sales record that contains the related task id (GUID) -->
+    <property name="taskIdField" display-name-key="TaskIdField" description-key="TaskIdField description" of-type="SingleLine.Text" usage="input" required="true" />
+
+    <!-- Logical name or entity set name of the task table used to resolve task metadata -->
+    <property name="taskEntity" display-name-key="TaskEntity" description-key="TaskEntity description" of-type="SingleLine.Text" usage="input" required="true" />
+
+    <!-- Optional canvas page or url to open when a row is invoked -->
+    <property name="navigationTarget" display-name-key="NavigationTarget" description-key="NavigationTarget description" of-type="SingleLine.Text" usage="input" required="false" />
+    <!-- Number of records shown per page -->
+    <property name="pageSize" display-name-key="PageSize" description-key="PageSize description" of-type="Whole.None" usage="input" required="false" default-value="10" />
+    <!-- Optional mapping of column logical names to display names as JSON -->
+    <property
+      name="columnDisplayNames"
+      display-name-key="Column Display Names"
+      description-key="Enter a JSON object mapping dataset column names to display names. E.g. {&quot;JobID&quot;:&quot;Job Ref&quot;,&quot;UARN&quot;:&quot;Unique Ref&quot;}"
+      of-type="SingleLine.Text"
+      usage="input"
+      required="false"
+      default-value="{}"
+    />
+    <property name="selectedTaskId" display-name-key="SelectedTaskId" description-key="SelectedTaskId description" of-type="SingleLine.Text" usage="output" required="false" />
     <resources>
       <code path="index.ts" order="1"/>
       <platform-library name="React" version="16.14.0" />
