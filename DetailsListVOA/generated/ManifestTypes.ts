@@ -9,5 +9,4 @@ export interface IInputs {
 
 export interface IOutputs {
     selectedTaskId?: string;
-    columnDisplayNames?: string;
 }

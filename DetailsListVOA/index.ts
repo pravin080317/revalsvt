@@ -206,11 +206,6 @@ export class DetailsListVOA implements ComponentFramework.ReactControl<IInputs, 
             }
         };
 
-        const onRenameColumn = (name: string, newName: string): void => {
-            this.columnDisplayNames[name] = newName;
-            this.notifyOutputChanged();
-        };
-
         const props: GridProps = {
             datasetColumns,
             records,
@@ -233,7 +228,6 @@ export class DetailsListVOA implements ComponentFramework.ReactControl<IInputs, 
             canNext,
             canPrev,
             searchText: this.searchText,
-            onRenameColumn,
         };
 
         return React.createElement(Grid, props);
@@ -242,7 +236,6 @@ export class DetailsListVOA implements ComponentFramework.ReactControl<IInputs, 
     public getOutputs(): IOutputs {
         return {
             selectedTaskId: this.selectedTaskId,
-            columnDisplayNames: JSON.stringify(this.columnDisplayNames),
         };
     }
 
