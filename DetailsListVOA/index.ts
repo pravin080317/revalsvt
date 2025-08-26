@@ -1,7 +1,7 @@
 import { IInputs, IOutputs } from "./generated/ManifestTypes";
 import { Grid, GridProps } from "./Grid";
 import * as React from "react";
-import { IDetailsList, ISelection, Selection, SelectionMode } from '@fluentui/react';
+import { IDetailsList, ISelection, Selection, SelectionMode, IObjectWithKey } from '@fluentui/react';
 
 export class DetailsListVOA implements ComponentFramework.ReactControl<IInputs, IOutputs> {
     private notifyOutputChanged: () => void;
@@ -19,10 +19,12 @@ export class DetailsListVOA implements ComponentFramework.ReactControl<IInputs, 
     }
 
     public updateView(context: ComponentFramework.Context<IInputs>): React.ReactElement {
-        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-call
-        const selection: ISelection<ComponentFramework.PropertyHelper.DataSetApi.EntityRecord> =
-            new Selection<ComponentFramework.PropertyHelper.DataSetApi.EntityRecord>({
-                getKey: (item: ComponentFramework.PropertyHelper.DataSetApi.EntityRecord) => item.getRecordId(),
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+        const selection: ISelection<IObjectWithKey> =
+            // eslint-disable-next-line @typescript-eslint/no-unsafe-call
+            new Selection<IObjectWithKey>({
+                // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
+                getKey: (item: IObjectWithKey) => (item as unknown as ComponentFramework.PropertyHelper.DataSetApi.EntityRecord).getRecordId(),
             });
         const componentRef = React.createRef<IDetailsList>();
 
