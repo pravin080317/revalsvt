@@ -212,6 +212,26 @@ export class DetailsListVOA implements ComponentFramework.ReactControl<IInputs, 
             }
         };
 
+        const onSort = (name: string, desc: boolean): void => {
+            const sortDirection = desc ? 1 : 0;
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            const sorting = dataset.sorting as unknown as any;
+            if (sorting) {
+                if (typeof sorting.setSort === "function") {
+                    sorting.setSort(name, sortDirection);
+                } else if (typeof sorting.sortByName === "function") {
+                    sorting.sortByName(name, sortDirection);
+                } else if (typeof sorting.addSort === "function") {
+                    sorting.clear?.();
+                    sorting.addSort(name, sortDirection);
+                } else {
+                    sorting.length = 0;
+                    sorting.push({ name, sortDirection });
+                }
+            }
+            dataset.refresh();
+        };
+
         const props: GridProps = {
             datasetColumns,
             records,
@@ -221,8 +241,8 @@ export class DetailsListVOA implements ComponentFramework.ReactControl<IInputs, 
             selectionType: SelectionMode.none,
             selection,
             onNavigate,
-            onSort: () => undefined,
-            sorting: [],
+            onSort,
+            sorting: dataset.sorting,
             componentRef,
             resources: context.resources,
             onSearch,
