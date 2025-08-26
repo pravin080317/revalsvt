@@ -39,6 +39,16 @@
       required="false"
       default-value="{}"
     />
+    <!-- Column configuration supplied as a JSON array -->
+    <property
+      name="columnMetadata"
+      display-name-key="Column Metadata"
+      description-key="JSON array describing grid columns. Example: [{&quot;ColName&quot;:&quot;taskstatus&quot;,&quot;ColDisplayName&quot;:&quot;Task Status&quot;,&quot;ColWidth&quot;:100}]"
+      of-type="SingleLine.TextArea"
+      usage="input"
+      required="false"
+      default-value="[{&quot;ColName&quot;:&quot;taskstatus&quot;,&quot;ColDisplayName&quot;:&quot;Task Status&quot;,&quot;ColWidth&quot;:100},{&quot;ColName&quot;:&quot;assignedto&quot;,&quot;ColDisplayName&quot;:&quot;Assigned To&quot;,&quot;ColWidth&quot;:100},{&quot;ColName&quot;:&quot;tasktitle&quot;,&quot;ColDisplayName&quot;:&quot;Task Title&quot;,&quot;ColWidth&quot;:100},{&quot;ColName&quot;:&quot;action&quot;,&quot;ColDisplayName&quot;:&quot;Action&quot;,&quot;ColWidth&quot;:100}]"
+    />
     <property name="selectedTaskId" display-name-key="SelectedTaskId" description-key="SelectedTaskId description" of-type="SingleLine.Text" usage="output" required="false" />
     <resources>
       <code path="index.ts" order="1"/>
