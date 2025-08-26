@@ -210,11 +210,6 @@ export class DetailsListVOA implements ComponentFramework.ReactControl<IInputs, 
             }
         };
 
-        const onUpdateColumnDisplayName = (name: string, value: string): void => {
-            this.columnDisplayNames[name] = value;
-            this.notifyOutputChanged();
-        };
-
         const props: GridProps = {
             datasetColumns,
             records,
@@ -237,7 +232,6 @@ export class DetailsListVOA implements ComponentFramework.ReactControl<IInputs, 
             canNext,
             canPrev,
             searchText: this.searchText,
-            onUpdateColumnDisplayName,
         };
 
         return React.createElement(Grid, props);
