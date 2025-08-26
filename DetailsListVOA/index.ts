@@ -10,7 +10,6 @@ export class DetailsListVOA implements ComponentFramework.ReactControl<IInputs, 
     private selectedTaskId?: string;
     private searchText = "";
     private currentPage = 0;
-    private columnDisplayNames: Record<string, string> = {};
 
     constructor() {
         // Empty
@@ -29,6 +28,13 @@ export class DetailsListVOA implements ComponentFramework.ReactControl<IInputs, 
         const taskIdField = context.parameters.taskIdField.raw ?? "taskid";
         const taskEntity = context.parameters.taskEntity.raw ?? "";
         const navigationTarget = context.parameters.navigationTarget.raw ?? "";
+        const columnDisplayNamesRaw = context.parameters.columnDisplayNames?.raw ?? "";
+        let columnDisplayNames: Record<string, string>;
+        try {
+            columnDisplayNames = columnDisplayNamesRaw ? JSON.parse(columnDisplayNamesRaw) as Record<string, string> : {};
+        } catch {
+            columnDisplayNames = {};
+        }
 
         const selection: ISelection<IObjectWithKey> = new Selection<IObjectWithKey>({
             getKey: (item: IObjectWithKey) =>
@@ -38,12 +44,12 @@ export class DetailsListVOA implements ComponentFramework.ReactControl<IInputs, 
 
         const datasetColumns: ComponentFramework.PropertyHelper.DataSetApi.Column[] = dataset.columns.map((c) => ({
             ...c,
-            displayName: this.columnDisplayNames[c.name] ?? c.displayName,
+            displayName: columnDisplayNames[c.name] ?? c.displayName,
         }));
 
         datasetColumns.push({
             name: "taskstatus",
-            displayName: this.columnDisplayNames.taskstatus ?? "Task Status",
+            displayName: columnDisplayNames.taskstatus ?? "Task Status",
             dataType: "SingleLine.Text",
             alias: "taskstatus",
             order: datasetColumns.length + 1,
@@ -51,7 +57,7 @@ export class DetailsListVOA implements ComponentFramework.ReactControl<IInputs, 
         } as ComponentFramework.PropertyHelper.DataSetApi.Column);
         datasetColumns.push({
             name: "assignedto",
-            displayName: this.columnDisplayNames.assignedto ?? "Assigned To",
+            displayName: columnDisplayNames.assignedto ?? "Assigned To",
             dataType: "SingleLine.Text",
             alias: "assignedto",
             order: datasetColumns.length + 1,
@@ -59,7 +65,7 @@ export class DetailsListVOA implements ComponentFramework.ReactControl<IInputs, 
         } as ComponentFramework.PropertyHelper.DataSetApi.Column);
         datasetColumns.push({
             name: "tasktitle",
-            displayName: this.columnDisplayNames.tasktitle ?? "Task Title",
+            displayName: columnDisplayNames.tasktitle ?? "Task Title",
             dataType: "SingleLine.Text",
             alias: "tasktitle",
             order: datasetColumns.length + 1,
@@ -67,7 +73,7 @@ export class DetailsListVOA implements ComponentFramework.ReactControl<IInputs, 
         } as ComponentFramework.PropertyHelper.DataSetApi.Column);
         datasetColumns.push({
             name: "action",
-            displayName: this.columnDisplayNames.action ?? "Action",
+            displayName: columnDisplayNames.action ?? "Action",
             dataType: "SingleLine.Text",
             alias: "action",
             order: datasetColumns.length + 1,
@@ -200,11 +206,6 @@ export class DetailsListVOA implements ComponentFramework.ReactControl<IInputs, 
             }
         };
 
-        const onUpdateColumnDisplayName = (name: string, value: string): void => {
-            this.columnDisplayNames[name] = value;
-            this.notifyOutputChanged();
-        };
-
         const props: GridProps = {
             datasetColumns,
             records,
@@ -227,7 +228,6 @@ export class DetailsListVOA implements ComponentFramework.ReactControl<IInputs, 
             canNext,
             canPrev,
             searchText: this.searchText,
-            onUpdateColumnDisplayName,
         };
 
         return React.createElement(Grid, props);
