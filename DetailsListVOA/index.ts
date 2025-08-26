@@ -11,6 +11,7 @@ export class DetailsListVOA implements ComponentFramework.ReactControl<IInputs, 
     private searchText = "";
     private currentPage = 0;
     private columnDisplayNames: Record<string, string> = {};
+    private lastColumnDisplayNamesRaw = "";
 
     constructor() {
         // Empty
@@ -30,10 +31,13 @@ export class DetailsListVOA implements ComponentFramework.ReactControl<IInputs, 
         const taskEntity = context.parameters.taskEntity.raw ?? "";
         const navigationTarget = context.parameters.navigationTarget.raw ?? "";
         const columnDisplayNamesRaw = context.parameters.columnDisplayNames?.raw?.trim() ?? "{}";
-        try {
-            this.columnDisplayNames = JSON.parse(columnDisplayNamesRaw) as Record<string, string>;
-        } catch {
-            this.columnDisplayNames = {};
+        if (this.lastColumnDisplayNamesRaw !== columnDisplayNamesRaw) {
+            try {
+                this.columnDisplayNames = JSON.parse(columnDisplayNamesRaw) as Record<string, string>;
+            } catch {
+                this.columnDisplayNames = {};
+            }
+            this.lastColumnDisplayNamesRaw = columnDisplayNamesRaw;
         }
 
         const selection: ISelection<IObjectWithKey> = new Selection<IObjectWithKey>({
@@ -206,6 +210,11 @@ export class DetailsListVOA implements ComponentFramework.ReactControl<IInputs, 
             }
         };
 
+        const onUpdateColumnDisplayName = (name: string, value: string): void => {
+            this.columnDisplayNames[name] = value;
+            this.notifyOutputChanged();
+        };
+
         const props: GridProps = {
             datasetColumns,
             records,
@@ -228,6 +237,7 @@ export class DetailsListVOA implements ComponentFramework.ReactControl<IInputs, 
             canNext,
             canPrev,
             searchText: this.searchText,
+            onUpdateColumnDisplayName,
         };
 
         return React.createElement(Grid, props);
