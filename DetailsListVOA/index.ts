@@ -38,7 +38,11 @@ export class DetailsListVOA implements ComponentFramework.ReactControl<IInputs, 
         const columnDisplayNamesRaw = context.parameters.columnDisplayNames?.raw?.trim() ?? "{}";
         if (this.lastColumnDisplayNamesRaw !== columnDisplayNamesRaw) {
             try {
-                this.columnDisplayNames = JSON.parse(columnDisplayNamesRaw) as Record<string, string>;
+                const parsed = JSON.parse(columnDisplayNamesRaw) as Record<string, string>;
+                this.columnDisplayNames = {};
+                Object.keys(parsed).forEach((k) => {
+                    this.columnDisplayNames[k.toLowerCase()] = parsed[k];
+                });
             } catch {
                 this.columnDisplayNames = {};
             }
@@ -52,7 +56,7 @@ export class DetailsListVOA implements ComponentFramework.ReactControl<IInputs, 
                 this.columnConfigs = {};
                 arr.forEach((c) => {
                     if (c.ColName) {
-                        this.columnConfigs[c.ColName] = c;
+                        this.columnConfigs[c.ColName.toLowerCase()] = c;
                     }
                 });
             } catch {
@@ -69,7 +73,7 @@ export class DetailsListVOA implements ComponentFramework.ReactControl<IInputs, 
 
         const datasetColumns: ComponentFramework.PropertyHelper.DataSetApi.Column[] = dataset.columns.map((c) => ({
             ...c,
-            displayName: this.columnDisplayNames[c.name] ?? c.displayName,
+            displayName: this.columnDisplayNames[c.name.toLowerCase()] ?? c.displayName,
         }));
 
         datasetColumns.push({
@@ -105,7 +109,7 @@ export class DetailsListVOA implements ComponentFramework.ReactControl<IInputs, 
             visualSizeFactor: 100,
         } as ComponentFramework.PropertyHelper.DataSetApi.Column);
 
-        const columnNamesSet = new Set(datasetColumns.map((c) => c.name));
+        const columnNamesSet = new Set(datasetColumns.map((c) => c.name.toLowerCase()));
         const columnDatasetNotDefined = Object.keys(this.columnConfigs).some(
             (name) => !columnNamesSet.has(name),
         );
