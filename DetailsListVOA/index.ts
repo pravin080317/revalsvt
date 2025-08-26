@@ -76,12 +76,7 @@ export class DetailsListVOA implements ComponentFramework.ReactControl<IInputs, 
             const columnArray = JSON.parse(columnMetadataRaw) as Record<string, unknown>[];
             gridColumns = columnArray.map((c, i) => {
                 const name = typeof c.ColName === "string" ? c.ColName : `col${i}`;
-                const width =
-                    typeof c.ColWidth === "number"
-                        ? c.ColWidth
-                        : typeof c.ColWidth === "string"
-                            ? parseFloat(c.ColWidth)
-                            : undefined;
+                const width = parseNumber(c.ColWidth);
                 const displayNameOverride = this.columnDisplayNames[name];
                 const finalName =
                     (typeof displayNameOverride === "string" ? displayNameOverride : undefined) ??
@@ -114,7 +109,7 @@ export class DetailsListVOA implements ComponentFramework.ReactControl<IInputs, 
                         typeof c.ColCellActionDisabledColumn === "string"
                             ? c.ColCellActionDisabledColumn
                             : undefined,
-                    imageWidth: typeof c.ColImageWidth === "string" ? c.ColImageWidth : undefined,
+                    imageWidth: parseNumber(c.ColImageWidth),
                     imagePadding: parseNumber(c.ColImagePadding),
                     verticalAligned: typeof c.ColVerticalAlign === "string" ? c.ColVerticalAlign : undefined,
                     horizontalAligned: typeof c.ColHorizontalAlign === "string" ? c.ColHorizontalAlign : undefined,
