@@ -105,6 +105,11 @@ export class DetailsListVOA implements ComponentFramework.ReactControl<IInputs, 
             visualSizeFactor: 100,
         } as ComponentFramework.PropertyHelper.DataSetApi.Column);
 
+        const columnNamesSet = new Set(datasetColumns.map((c) => c.name));
+        const columnDatasetNotDefined = Object.keys(this.columnConfigs).some(
+            (name) => !columnNamesSet.has(name),
+        );
+
         const records: Record<string, ComponentFramework.PropertyHelper.DataSetApi.EntityRecord> = {};
         const allIds: string[] = [];
 
@@ -265,6 +270,7 @@ export class DetailsListVOA implements ComponentFramework.ReactControl<IInputs, 
             sorting: dataset.sorting,
             componentRef,
             resources: context.resources,
+            columnDatasetNotDefined,
             onSearch,
             onNextPage,
             onPrevPage,
