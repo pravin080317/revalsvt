@@ -28,10 +28,10 @@ export class DetailsListVOA implements ComponentFramework.ReactControl<IInputs, 
         const taskIdField = context.parameters.taskIdField.raw ?? "taskid";
         const taskEntity = context.parameters.taskEntity.raw ?? "";
         const navigationTarget = context.parameters.navigationTarget.raw ?? "";
-        const columnDisplayNamesRaw = context.parameters.columnDisplayNames?.raw ?? "";
+        const columnDisplayNamesRaw = context.parameters.columnDisplayNames?.raw?.trim() ?? "{}";
         let columnDisplayNames: Record<string, string>;
         try {
-            columnDisplayNames = columnDisplayNamesRaw ? JSON.parse(columnDisplayNamesRaw) as Record<string, string> : {};
+            columnDisplayNames = JSON.parse(columnDisplayNamesRaw) as Record<string, string>;
         } catch {
             columnDisplayNames = {};
         }
