@@ -267,7 +267,10 @@ function getImageTag(imageData: string, column: IGridColumn, iconColor: string) 
     let buttonContent: JSX.Element | null = null;
     const iconName = imageData.substring('icon:'.length);
 
-    const validWidth = typeof column.imageWidth === 'number' ? column.imageWidth : undefined;
+    const validWidth =
+        typeof column.imageWidth === 'number' && !isNaN(column.imageWidth)
+            ? column.imageWidth
+            : undefined;
 
     if (imageData.startsWith('icon:')) {
         const fontSize = validWidth ?? 18;

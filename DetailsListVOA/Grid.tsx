@@ -120,7 +120,7 @@ export const Grid = React.memo((props: GridProps) => {
   React.useEffect(() => {
     setColumns(
       datasetColumns.map((c) => {
-        const sort = sorting.find((s) => s.name === c.name);
+        const sort = sorting?.find((s) => s.name === c.name);
         const visualSize =
           typeof c.visualSizeFactor === 'number' && !isNaN(c.visualSizeFactor)
             ? c.visualSizeFactor
@@ -220,7 +220,7 @@ export const Grid = React.memo((props: GridProps) => {
           />
           {Array.from({ length: totalPages }, (_, i) => (
             <Text
-              key={i}
+              key={`page-${i}`}
               style={{
                 cursor: 'pointer',
                 fontWeight: i === currentPage ? 600 : undefined,
