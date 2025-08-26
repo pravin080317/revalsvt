@@ -20,7 +20,8 @@ export class DetailsListVOA implements ComponentFramework.ReactControl<IInputs, 
 
     public updateView(context: ComponentFramework.Context<IInputs>): React.ReactElement {
         // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-call
-        const selection: ISelection = new Selection<ComponentFramework.PropertyHelper.DataSetApi.EntityRecord>();
+        const selection: ISelection<ComponentFramework.PropertyHelper.DataSetApi.EntityRecord> =
+            new Selection<ComponentFramework.PropertyHelper.DataSetApi.EntityRecord>({});
         const componentRef = React.createRef<IDetailsList>();
 
         // Provide default columns and records so the grid renders with sample data on initial load
@@ -55,7 +56,7 @@ export class DetailsListVOA implements ComponentFramework.ReactControl<IInputs, 
                 getRecordId: () => id,
                 getValue: (columnName: string) => data[columnName as keyof RecordData],
                 getFormattedValue: (columnName: string) => data[columnName as keyof RecordData],
-                getNamedReference: () => ({ id, name: data.col1, entityType: 'dummy' }),
+                getNamedReference: () => ({ id: { guid: id }, etn: 'dummy', name: data.col1 }),
             };
             records[id] = record;
             sortedRecordIds.push(id);
