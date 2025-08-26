@@ -10,7 +10,7 @@ export class DetailsListVOA implements ComponentFramework.ReactControl<IInputs, 
     private selectedTaskId?: string;
     private searchText = "";
     private currentPage = 0;
-    private displayName = "Details List";
+    private columnDisplayNames: Record<string, string> = {};
 
     constructor() {
         // Empty
@@ -38,11 +38,12 @@ export class DetailsListVOA implements ComponentFramework.ReactControl<IInputs, 
 
         const datasetColumns: ComponentFramework.PropertyHelper.DataSetApi.Column[] = dataset.columns.map((c) => ({
             ...c,
+            displayName: this.columnDisplayNames[c.name] ?? c.displayName,
         }));
 
         datasetColumns.push({
             name: "taskstatus",
-            displayName: "Task Status",
+            displayName: this.columnDisplayNames.taskstatus ?? "Task Status",
             dataType: "SingleLine.Text",
             alias: "taskstatus",
             order: datasetColumns.length + 1,
@@ -50,7 +51,7 @@ export class DetailsListVOA implements ComponentFramework.ReactControl<IInputs, 
         } as ComponentFramework.PropertyHelper.DataSetApi.Column);
         datasetColumns.push({
             name: "assignedto",
-            displayName: "Assigned To",
+            displayName: this.columnDisplayNames.assignedto ?? "Assigned To",
             dataType: "SingleLine.Text",
             alias: "assignedto",
             order: datasetColumns.length + 1,
@@ -58,7 +59,7 @@ export class DetailsListVOA implements ComponentFramework.ReactControl<IInputs, 
         } as ComponentFramework.PropertyHelper.DataSetApi.Column);
         datasetColumns.push({
             name: "tasktitle",
-            displayName: "Task Title",
+            displayName: this.columnDisplayNames.tasktitle ?? "Task Title",
             dataType: "SingleLine.Text",
             alias: "tasktitle",
             order: datasetColumns.length + 1,
@@ -66,7 +67,7 @@ export class DetailsListVOA implements ComponentFramework.ReactControl<IInputs, 
         } as ComponentFramework.PropertyHelper.DataSetApi.Column);
         datasetColumns.push({
             name: "action",
-            displayName: "Action",
+            displayName: this.columnDisplayNames.action ?? "Action",
             dataType: "SingleLine.Text",
             alias: "action",
             order: datasetColumns.length + 1,
@@ -199,8 +200,8 @@ export class DetailsListVOA implements ComponentFramework.ReactControl<IInputs, 
             }
         };
 
-        const onUpdateDisplayName = (name: string): void => {
-            this.displayName = name;
+        const onUpdateColumnDisplayName = (name: string, value: string): void => {
+            this.columnDisplayNames[name] = value;
             this.notifyOutputChanged();
         };
 
@@ -226,8 +227,7 @@ export class DetailsListVOA implements ComponentFramework.ReactControl<IInputs, 
             canNext,
             canPrev,
             searchText: this.searchText,
-            displayName: this.displayName,
-            onUpdateDisplayName,
+            onUpdateColumnDisplayName,
         };
 
         return React.createElement(Grid, props);
