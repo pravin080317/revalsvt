@@ -1,4 +1,4 @@
-/* eslint-disable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-unsafe-return */
+/* eslint-disable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access */
 import { IInputs, IOutputs } from "./generated/ManifestTypes";
 import { Grid, GridProps } from "./Grid";
 import * as React from "react";
@@ -10,6 +10,7 @@ export class DetailsListVOA implements ComponentFramework.ReactControl<IInputs, 
     private selectedTaskId?: string;
     private searchText = "";
     private currentPage = 0;
+    private columnDisplayNames: Record<string, string> = {};
 
     constructor() {
         // Empty
@@ -29,11 +30,10 @@ export class DetailsListVOA implements ComponentFramework.ReactControl<IInputs, 
         const taskEntity = context.parameters.taskEntity.raw ?? "";
         const navigationTarget = context.parameters.navigationTarget.raw ?? "";
         const columnDisplayNamesRaw = context.parameters.columnDisplayNames?.raw?.trim() ?? "{}";
-        let columnDisplayNames: Record<string, string>;
         try {
-            columnDisplayNames = JSON.parse(columnDisplayNamesRaw) as Record<string, string>;
+            this.columnDisplayNames = JSON.parse(columnDisplayNamesRaw) as Record<string, string>;
         } catch {
-            columnDisplayNames = {};
+            this.columnDisplayNames = {};
         }
 
         const selection: ISelection<IObjectWithKey> = new Selection<IObjectWithKey>({
@@ -44,12 +44,12 @@ export class DetailsListVOA implements ComponentFramework.ReactControl<IInputs, 
 
         const datasetColumns: ComponentFramework.PropertyHelper.DataSetApi.Column[] = dataset.columns.map((c) => ({
             ...c,
-            displayName: columnDisplayNames[c.name] ?? c.displayName,
+            displayName: this.columnDisplayNames[c.name] ?? c.displayName,
         }));
 
         datasetColumns.push({
             name: "taskstatus",
-            displayName: columnDisplayNames.taskstatus ?? "Task Status",
+            displayName: this.columnDisplayNames.taskstatus ?? "Task Status",
             dataType: "SingleLine.Text",
             alias: "taskstatus",
             order: datasetColumns.length + 1,
@@ -57,7 +57,7 @@ export class DetailsListVOA implements ComponentFramework.ReactControl<IInputs, 
         } as ComponentFramework.PropertyHelper.DataSetApi.Column);
         datasetColumns.push({
             name: "assignedto",
-            displayName: columnDisplayNames.assignedto ?? "Assigned To",
+            displayName: this.columnDisplayNames.assignedto ?? "Assigned To",
             dataType: "SingleLine.Text",
             alias: "assignedto",
             order: datasetColumns.length + 1,
@@ -65,7 +65,7 @@ export class DetailsListVOA implements ComponentFramework.ReactControl<IInputs, 
         } as ComponentFramework.PropertyHelper.DataSetApi.Column);
         datasetColumns.push({
             name: "tasktitle",
-            displayName: columnDisplayNames.tasktitle ?? "Task Title",
+            displayName: this.columnDisplayNames.tasktitle ?? "Task Title",
             dataType: "SingleLine.Text",
             alias: "tasktitle",
             order: datasetColumns.length + 1,
@@ -73,7 +73,7 @@ export class DetailsListVOA implements ComponentFramework.ReactControl<IInputs, 
         } as ComponentFramework.PropertyHelper.DataSetApi.Column);
         datasetColumns.push({
             name: "action",
-            displayName: columnDisplayNames.action ?? "Action",
+            displayName: this.columnDisplayNames.action ?? "Action",
             dataType: "SingleLine.Text",
             alias: "action",
             order: datasetColumns.length + 1,
@@ -206,6 +206,11 @@ export class DetailsListVOA implements ComponentFramework.ReactControl<IInputs, 
             }
         };
 
+        const onRenameColumn = (name: string, newName: string): void => {
+            this.columnDisplayNames[name] = newName;
+            this.notifyOutputChanged();
+        };
+
         const props: GridProps = {
             datasetColumns,
             records,
@@ -228,13 +233,17 @@ export class DetailsListVOA implements ComponentFramework.ReactControl<IInputs, 
             canNext,
             canPrev,
             searchText: this.searchText,
+            onRenameColumn,
         };
 
         return React.createElement(Grid, props);
     }
 
     public getOutputs(): IOutputs {
-        return { selectedTaskId: this.selectedTaskId };
+        return {
+            selectedTaskId: this.selectedTaskId,
+            columnDisplayNames: JSON.stringify(this.columnDisplayNames),
+        };
     }
 
     public destroy(): void {
