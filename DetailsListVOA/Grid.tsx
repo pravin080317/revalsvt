@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-return, @typescript-eslint/no-redundant-type-constituents, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-argument */
 import {
   CheckboxVisibility,
   createTheme,
@@ -10,6 +11,9 @@ import {
   SelectionMode,
   ShimmeredDetailsList,
   ThemeProvider,
+  TextField,
+  PrimaryButton,
+  Stack,
 } from '@fluentui/react';
 import * as React from 'react';
 import { NoFields } from './NoFields';
@@ -35,6 +39,12 @@ export interface GridProps {
   isHeaderVisible?: boolean;
   resources: ComponentFramework.Resources;
   columnDatasetNotDefined?: boolean;
+  onSearch: (text: string) => void;
+  onNextPage: () => void;
+  onPrevPage: () => void;
+  canNext: boolean;
+  canPrev: boolean;
+  searchText?: string;
 }
 
 const defaultTheme = createTheme({
@@ -87,6 +97,12 @@ export const Grid = React.memo((props: GridProps) => {
     resources,
     columnDatasetNotDefined,
     height,
+    onSearch,
+    onNextPage,
+    onPrevPage,
+    canNext,
+    canPrev,
+    searchText,
   } = props;
 
   const theme = useTheme(themeJSON);
@@ -143,6 +159,7 @@ export const Grid = React.memo((props: GridProps) => {
   return (
     <ThemeProvider theme={theme}>
       <div style={{ height }}>
+        <TextField placeholder="Search" value={searchText} onChange={(_, v) => onSearch(v ?? '')} />
         <ShimmeredDetailsList
           componentRef={componentRef}
           items={items}
@@ -157,6 +174,10 @@ export const Grid = React.memo((props: GridProps) => {
           compact={compact}
           isHeaderVisible={isHeaderVisible}
         />
+        <Stack horizontal tokens={{ childrenGap: 8 }} style={{ marginTop: 8 }}>
+          <PrimaryButton text="Previous" onClick={onPrevPage} disabled={!canPrev} />
+          <PrimaryButton text="Next" onClick={onNextPage} disabled={!canNext} />
+        </Stack>
       </div>
     </ThemeProvider>
   );
