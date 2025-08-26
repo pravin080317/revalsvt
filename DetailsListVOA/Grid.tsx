@@ -13,6 +13,7 @@ import {
   ThemeProvider,
   TextField,
   PrimaryButton,
+  DefaultButton,
   Stack,
 } from '@fluentui/react';
 import * as React from 'react';
@@ -42,6 +43,9 @@ export interface GridProps {
   onSearch: (text: string) => void;
   onNextPage: () => void;
   onPrevPage: () => void;
+  onSetPage: (page: number) => void;
+  currentPage: number;
+  totalPages: number;
   canNext: boolean;
   canPrev: boolean;
   searchText?: string;
@@ -100,6 +104,9 @@ export const Grid = React.memo((props: GridProps) => {
     onSearch,
     onNextPage,
     onPrevPage,
+    onSetPage,
+    currentPage,
+    totalPages,
     canNext,
     canPrev,
     searchText,
@@ -176,6 +183,13 @@ export const Grid = React.memo((props: GridProps) => {
         />
         <Stack horizontal tokens={{ childrenGap: 8 }} style={{ marginTop: 8 }}>
           <PrimaryButton text="Previous" onClick={onPrevPage} disabled={!canPrev} />
+          {Array.from({ length: totalPages }, (_, i) =>
+            i === currentPage ? (
+              <PrimaryButton key={i} text={`${i + 1}`} disabled />
+            ) : (
+              <DefaultButton key={i} text={`${i + 1}`} onClick={() => onSetPage(i)} />
+            ),
+          )}
           <PrimaryButton text="Next" onClick={onNextPage} disabled={!canNext} />
         </Stack>
       </div>

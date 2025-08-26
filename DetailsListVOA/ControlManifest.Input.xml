@@ -28,7 +28,7 @@
     <!-- Optional canvas page or url to open when a row is invoked -->
     <property name="navigationTarget" display-name-key="NavigationTarget" description-key="NavigationTarget description" of-type="SingleLine.Text" usage="input" required="false" />
     <!-- Number of records shown per page -->
-    <property name="pageSize" display-name-key="PageSize" description-key="PageSize description" of-type="Whole.None" usage="input" required="false" />
+    <property name="pageSize" display-name-key="PageSize" description-key="PageSize description" of-type="Whole.None" usage="input" required="false" default-value="10" />
     <property name="selectedTaskId" display-name-key="SelectedTaskId" description-key="SelectedTaskId description" of-type="SingleLine.Text" usage="output" required="false" />
     <resources>
       <code path="index.ts" order="1"/>

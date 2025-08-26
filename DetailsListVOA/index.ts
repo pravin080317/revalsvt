@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-unsafe-return */
 import { IInputs, IOutputs } from "./generated/ManifestTypes";
 import { Grid, GridProps } from "./Grid";
 import * as React from "react";
@@ -28,7 +29,6 @@ export class DetailsListVOA implements ComponentFramework.ReactControl<IInputs, 
         const taskEntity = context.parameters.taskEntity.raw ?? "";
         const navigationTarget = context.parameters.navigationTarget.raw ?? "";
 
-        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-call
         const selection: ISelection<IObjectWithKey> = new Selection<IObjectWithKey>({
             getKey: (item: IObjectWithKey) =>
                 (item as unknown as ComponentFramework.PropertyHelper.DataSetApi.EntityRecord).getRecordId(),
@@ -138,7 +138,7 @@ export class DetailsListVOA implements ComponentFramework.ReactControl<IInputs, 
             });
         }
 
-        const pageSize = context.parameters.pageSize.raw ?? 20;
+        const pageSize = context.parameters.pageSize.raw ?? 10;
         if (dataset.paging.pageSize !== pageSize) {
             dataset.paging.setPageSize(pageSize);
         }
@@ -146,6 +146,7 @@ export class DetailsListVOA implements ComponentFramework.ReactControl<IInputs, 
         const pageIds = filteredIds.slice(start, start + pageSize);
         const canPrev = this.currentPage > 0;
         const canNext = start + pageSize < filteredIds.length || dataset.paging.hasNextPage;
+        const totalPages = Math.ceil(filteredIds.length / pageSize) + (dataset.paging.hasNextPage ? 1 : 0);
 
         const onNavigate = (
             item?: ComponentFramework.PropertyHelper.DataSetApi.EntityRecord,
@@ -186,15 +187,24 @@ export class DetailsListVOA implements ComponentFramework.ReactControl<IInputs, 
             }
         };
 
+        const onSetPage = (page: number): void => {
+            if (page >= 0 && page !== this.currentPage) {
+                const targetStart = page * pageSize;
+                if (targetStart >= filteredIds.length && dataset.paging.hasNextPage) {
+                    dataset.paging.loadNextPage();
+                }
+                this.currentPage = page;
+                this.notifyOutputChanged();
+            }
+        };
+
         const props: GridProps = {
             datasetColumns,
             records,
             sortedRecordIds: pageIds,
             shimmer: dataset.loading,
             itemsLoading: dataset.loading,
-            // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access
             selectionType: SelectionMode.none,
-            // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
             selection,
             onNavigate,
             onSort: () => undefined,
@@ -204,6 +214,9 @@ export class DetailsListVOA implements ComponentFramework.ReactControl<IInputs, 
             onSearch,
             onNextPage,
             onPrevPage,
+            onSetPage,
+            currentPage: this.currentPage,
+            totalPages,
             canNext,
             canPrev,
             searchText: this.searchText,
