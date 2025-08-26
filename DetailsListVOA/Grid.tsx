@@ -25,7 +25,7 @@ export interface GridProps {
   shimmer: boolean;
   itemsLoading: boolean;
   selectionType: SelectionMode;
-  selection: ISelection;
+  selection: ISelection<ComponentFramework.PropertyHelper.DataSetApi.EntityRecord>;
   onNavigate: (item?: ComponentFramework.PropertyHelper.DataSetApi.EntityRecord) => void;
   onSort: (name: string, desc: boolean) => void;
   sorting: ComponentFramework.PropertyHelper.DataSetApi.SortStatus[];
