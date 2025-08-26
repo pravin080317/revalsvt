@@ -125,7 +125,7 @@ export const Grid = React.memo((props: GridProps) => {
   React.useEffect(() => {
     setColumns(
       datasetColumns.map((c) => {
-        const cfg = columnConfigs[c.name] || {};
+        const cfg = columnConfigs[c.name.toLowerCase()] || {};
         const sort = sorting?.find((s) => s.name === c.name);
         const visualSize =
           typeof c.visualSizeFactor === 'number' && !isNaN(c.visualSizeFactor)
