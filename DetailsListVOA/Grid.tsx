@@ -12,9 +12,9 @@ import {
   ShimmeredDetailsList,
   ThemeProvider,
   TextField,
-  PrimaryButton,
   Stack,
   Text,
+  DefaultButton,
 } from '@fluentui/react';
 import * as React from 'react';
 import { NoFields } from './NoFields';
@@ -49,8 +49,7 @@ export interface GridProps {
   canNext: boolean;
   canPrev: boolean;
   searchText?: string;
-  displayName: string;
-  onUpdateDisplayName: (name: string) => void;
+  onUpdateColumnDisplayName: (name: string, displayName: string) => void;
 }
 
 const defaultTheme = createTheme({
@@ -112,8 +111,7 @@ export const Grid = React.memo((props: GridProps) => {
     canNext,
     canPrev,
     searchText,
-    displayName,
-    onUpdateDisplayName,
+    onUpdateColumnDisplayName,
   } = props;
 
   const theme = useTheme(themeJSON);
@@ -170,12 +168,22 @@ export const Grid = React.memo((props: GridProps) => {
   return (
     <ThemeProvider theme={theme}>
       <div style={{ height }}>
+        <Stack tokens={{ childrenGap: 8 }}>
+          {datasetColumns.map((col) => (
+            <TextField
+              key={col.name}
+              label={`${col.name} Display Name`}
+              value={col.displayName}
+              onChange={(_, v) => onUpdateColumnDisplayName(col.name, v ?? '')}
+            />
+          ))}
+        </Stack>
         <TextField
-          label="Display Name"
-          value={displayName}
-          onChange={(_, v) => onUpdateDisplayName(v ?? '')}
+          placeholder="Search"
+          value={searchText}
+          onChange={(_, v) => onSearch(v ?? '')}
+          style={{ marginBottom: 16 }}
         />
-        <TextField placeholder="Search" value={searchText} onChange={(_, v) => onSearch(v ?? '')} />
         <ShimmeredDetailsList
           componentRef={componentRef}
           items={items}
@@ -190,22 +198,37 @@ export const Grid = React.memo((props: GridProps) => {
           compact={compact}
           isHeaderVisible={isHeaderVisible}
         />
-        <Stack horizontal tokens={{ childrenGap: 8 }} style={{ marginTop: 8 }}>
-          <PrimaryButton text="Previous" onClick={onPrevPage} disabled={!canPrev} />
-          {Array.from({ length: totalPages }, (_, i) =>
-            i === currentPage ? (
-              <Text key={i} style={{ fontWeight: 600 }}>{i + 1}</Text>
-            ) : (
-              <Text
-                key={i}
-                style={{ cursor: 'pointer' }}
-                onClick={() => onSetPage(i)}
-              >
-                {i + 1}
-              </Text>
-            ),
-          )}
-          <PrimaryButton text="Next" onClick={onNextPage} disabled={!canNext} />
+        <Stack
+          horizontal
+          tokens={{ childrenGap: 8 }}
+          style={{ marginTop: 8 }}
+          verticalAlign="center"
+        >
+          <DefaultButton
+            text="Previous"
+            onClick={onPrevPage}
+            disabled={!canPrev}
+            styles={{ root: { height: 32, padding: '0 8px' } }}
+          />
+          {Array.from({ length: totalPages }, (_, i) => (
+            <Text
+              key={i}
+              style={{
+                cursor: 'pointer',
+                fontWeight: i === currentPage ? 600 : undefined,
+                fontSize: 14,
+              }}
+              onClick={() => (i === currentPage ? undefined : onSetPage(i))}
+            >
+              {i + 1}
+            </Text>
+          ))}
+          <DefaultButton
+            text="Next"
+            onClick={onNextPage}
+            disabled={!canNext}
+            styles={{ root: { height: 32, padding: '0 8px' } }}
+          />
         </Stack>
       </div>
     </ThemeProvider>
