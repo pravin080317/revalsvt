@@ -49,6 +49,7 @@ export interface GridProps {
   canNext: boolean;
   canPrev: boolean;
   searchText?: string;
+  onRenameColumn?: (columnKey: string, newName: string) => void;
 }
 
 const defaultTheme = createTheme({
@@ -110,6 +111,7 @@ export const Grid = React.memo((props: GridProps) => {
     canNext,
     canPrev,
     searchText,
+    onRenameColumn,
   } = props;
 
   const theme = useTheme(themeJSON);
@@ -166,6 +168,18 @@ export const Grid = React.memo((props: GridProps) => {
   return (
     <ThemeProvider theme={theme}>
       <div style={{ height }}>
+        {onRenameColumn && (
+          <Stack horizontal tokens={{ childrenGap: 8 }} style={{ marginBottom: 16 }}>
+            {columns.map((col) => (
+              <TextField
+                key={col.key}
+                label={col.key}
+                value={col.name}
+                onChange={(_, v) => onRenameColumn(col.key, v ?? '')}
+              />
+            ))}
+          </Stack>
+        )}
         <TextField
           placeholder="Search"
           value={searchText}
