@@ -16,6 +16,8 @@ import {
   Stack,
   Text,
   DefaultButton,
+  MessageBar,
+  MessageBarType,
 } from '@fluentui/react';
 import * as React from 'react';
 import { NoFields } from './NoFields';
@@ -208,13 +210,18 @@ export const Grid = React.memo((props: GridProps) => {
     [onSort],
   );
 
-  if (columnDatasetNotDefined || datasetColumns.length === 0) {
+  if (datasetColumns.length === 0) {
     return <NoFields resources={resources} />;
   }
 
   return (
     <ThemeProvider theme={theme}>
       <div style={{ height }}>
+        {columnDatasetNotDefined && (
+          <MessageBar messageBarType={MessageBarType.error} style={{ marginBottom: 16 }}>
+            One or more column configurations reference fields that do not exist in the dataset.
+          </MessageBar>
+        )}
         <TextField
           placeholder="Search"
           value={searchText}
