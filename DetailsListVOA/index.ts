@@ -138,11 +138,14 @@ export class DetailsListVOA implements ComponentFramework.ReactControl<IInputs, 
             });
         }
 
-        const pageSize = 20;
+        const pageSize = context.parameters.pageSize.raw ?? 20;
+        if (dataset.paging.pageSize !== pageSize) {
+            dataset.paging.setPageSize(pageSize);
+        }
         const start = this.currentPage * pageSize;
         const pageIds = filteredIds.slice(start, start + pageSize);
         const canPrev = this.currentPage > 0;
-        const canNext = start + pageSize < filteredIds.length;
+        const canNext = start + pageSize < filteredIds.length || dataset.paging.hasNextPage;
 
         const onNavigate = (
             item?: ComponentFramework.PropertyHelper.DataSetApi.EntityRecord,
@@ -167,6 +170,10 @@ export class DetailsListVOA implements ComponentFramework.ReactControl<IInputs, 
 
         const onNextPage = (): void => {
             if (canNext) {
+                const nextStart = (this.currentPage + 1) * pageSize;
+                if (nextStart >= filteredIds.length && dataset.paging.hasNextPage) {
+                    dataset.paging.loadNextPage();
+                }
                 this.currentPage += 1;
                 this.notifyOutputChanged();
             }
