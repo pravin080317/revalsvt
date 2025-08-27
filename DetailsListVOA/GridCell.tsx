@@ -205,7 +205,7 @@ function getTextTagCell(
         ? column.tagBorderColor
         : getCellValue<string>(column.tagBorderColor, item)[0];
     const tagColorClass = `${ClassNames.textTag} ${mergeStyles({
-        background: tagColor || '#F4F6F7' + CSS_IMPORTANT,
+        background: (tagColor || '#F4F6F7') + CSS_IMPORTANT,
         borderColor: (tagBorderColor || '#CAD0D5') + CSS_IMPORTANT,
     })}`;
     const isBlank = !tagText || tagText === '';
