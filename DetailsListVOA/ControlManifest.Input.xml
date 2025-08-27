@@ -54,10 +54,7 @@
       <code path="index.ts" order="1"/>
       <platform-library name="React" version="16.14.0" />
       <platform-library name="Fluent" version="9.46.2" />
-      <!-- UNCOMMENT TO ADD MORE RESOURCES
       <css path="css/DetailsListVOA.css" order="1" />
-      <resx path="strings/DetailsListVOA.1033.resx" version="1.0.0" />
-      -->
     </resources>
     <!-- UNCOMMENT TO ENABLE THE SPECIFIED API
     <feature-usage>

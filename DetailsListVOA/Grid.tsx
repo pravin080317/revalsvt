@@ -25,6 +25,8 @@ import * as React from 'react';
 import { NoFields } from './NoFields';
 import { RecordsColumns } from './ManifestConstants';
 import { IGridColumn, ColumnConfig } from './Component.types';
+import { GridCell } from './GridCell';
+import { ClassNames } from './Grid.styles';
 
 type DataSet = ComponentFramework.PropertyHelper.DataSetApi.EntityRecord & IObjectWithKey;
 
@@ -137,6 +139,7 @@ export const Grid = React.memo((props: GridProps) => {
             ? c.visualSizeFactor
             : 100;
         const width = typeof cfg.ColWidth === 'number' ? cfg.ColWidth : visualSize;
+        const cellType = cfg.ColCellType?.toLowerCase();
         const col: IGridColumn = {
           key: c.name,
           name: cfg.ColDisplayName ?? c.displayName,
@@ -173,10 +176,15 @@ export const Grid = React.memo((props: GridProps) => {
           sortBy: cfg.ColSortBy,
           childColumns: [],
         };
+        if (cellType === 'tag' || cellType === 'indicatortag') {
+          col.onRender = (item, _, column) => (
+            <GridCell item={item} column={column} onCellAction={(i) => onNavigate(i)} />
+          );
+        }
         return col;
       }),
     );
-  }, [datasetColumns, sorting, columnConfigs]);
+  }, [datasetColumns, sorting, columnConfigs, onNavigate]);
 
   const handleColumnReorder = React.useCallback((draggedIndex: number, targetIndex: number) => {
     setColumns((prev) => {
@@ -244,6 +252,7 @@ export const Grid = React.memo((props: GridProps) => {
           style={{ marginBottom: 16 }}
         />
         <ShimmeredDetailsList
+          className={ClassNames.PowerCATFluentDetailsList}
           componentRef={componentRef}
           items={items}
           columns={columns}
