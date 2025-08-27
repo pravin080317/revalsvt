@@ -1,6 +1,7 @@
 /* eslint-disable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-return, @typescript-eslint/no-redundant-type-constituents, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-argument */
 import {
   CheckboxVisibility,
+  ColumnActionsMode,
   createTheme,
   IColumn,
   IColumnReorderOptions,
@@ -11,6 +12,7 @@ import {
   IPartialTheme,
   SelectionMode,
   ShimmeredDetailsList,
+  Overlay,
   ThemeProvider,
   TextField,
   Stack,
@@ -53,6 +55,7 @@ export interface GridProps {
   totalPages: number;
   canNext: boolean;
   canPrev: boolean;
+  overlayOnSort?: boolean;
   searchText?: string;
 }
 
@@ -115,12 +118,14 @@ export const Grid = React.memo((props: GridProps) => {
     totalPages,
     canNext,
     canPrev,
+    overlayOnSort,
   searchText,
   } = props;
 
   const theme = useTheme(themeJSON);
 
   const [columns, setColumns] = React.useState<IGridColumn[]>([]);
+  const [isComponentLoading, setIsLoading] = React.useState(false);
 
   React.useEffect(() => {
     setColumns(
@@ -143,8 +148,8 @@ export const Grid = React.memo((props: GridProps) => {
           isSortedDescending: sort ? Number(sort.sortDirection) === 1 : undefined,
           isBold: cfg.ColIsBold,
           cellType: cfg.ColCellType,
-          tagColor: cfg.ColTagColorColumn,
-          tagBorderColor: cfg.ColTagBorderColorColumn,
+          tagColor: cfg.ColTagColor ?? cfg.ColTagColorColumn,
+          tagBorderColor: cfg.ColTagBorderColor ?? cfg.ColTagBorderColorColumn,
           isMultiline: cfg.ColMultiLine,
           horizontalAligned: cfg.ColHorizontalAlign,
           verticalAligned: cfg.ColVerticalAlign,
@@ -163,6 +168,9 @@ export const Grid = React.memo((props: GridProps) => {
           imageWidth: cfg.ColImageWidth ? String(cfg.ColImageWidth) : undefined,
           imagePadding: cfg.ColImagePadding,
           sortable: cfg.ColSortable !== false,
+          columnActionsMode:
+            cfg.ColSortable !== false ? ColumnActionsMode.clickable : ColumnActionsMode.disabled,
+          sortBy: cfg.ColSortBy,
           childColumns: [],
         };
         return col;
@@ -187,11 +195,13 @@ export const Grid = React.memo((props: GridProps) => {
   );
 
   const items = React.useMemo<DataSet[]>(() => {
-    return sortedRecordIds.map((id) => {
+    const mapped = sortedRecordIds.map((id) => {
       const record = records[id];
       (record as DataSet).key = getRecordKey(record);
       return record as DataSet;
     });
+    setIsLoading(false);
+    return mapped;
   }, [records, sortedRecordIds]);
 
   const onItemInvoked = React.useCallback(
@@ -203,11 +213,16 @@ export const Grid = React.memo((props: GridProps) => {
 
   const onColumnHeaderClick = React.useCallback(
     (ev?: React.MouseEvent<HTMLElement>, column?: IColumn) => {
-      if (column && (column as IGridColumn).sortable !== false) {
-        onSort(column.key, column.isSorted ? !column.isSortedDescending : false);
+      const gridCol = column as IGridColumn;
+      if (column && gridCol.sortable !== false) {
+        if (overlayOnSort) {
+          setIsLoading(true);
+        }
+        const sortField = gridCol.sortBy ?? column.key;
+        onSort(sortField, column.isSorted ? !column.isSortedDescending : false);
       }
     },
-    [onSort],
+    [onSort, overlayOnSort],
   );
 
   if (datasetColumns.length === 0) {
@@ -243,6 +258,7 @@ export const Grid = React.memo((props: GridProps) => {
           compact={compact}
           isHeaderVisible={isHeaderVisible}
         />
+        {(itemsLoading || isComponentLoading) && <Overlay />}
         <Stack
           horizontal
           tokens={{ childrenGap: 8 }}

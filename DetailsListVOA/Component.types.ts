@@ -23,6 +23,7 @@ export interface IGridColumn extends IColumn {
     verticalAligned?: string;
     horizontalAligned?: string;
     sortable?: boolean;
+    sortBy?: string;
 }
 
 export interface ColumnConfig {
@@ -33,7 +34,9 @@ export interface ColumnConfig {
     ColCellType?: string;
     ColIsBold?: boolean;
     ColTagColorColumn?: string;
+    ColTagColor?: string;
     ColTagBorderColorColumn?: string;
+    ColTagBorderColor?: string;
     ColMultiLine?: boolean;
     ColHorizontalAlign?: string;
     ColVerticalAlign?: string;
@@ -53,4 +56,5 @@ export interface ColumnConfig {
     ColImageWidth?: number;
     ColImagePadding?: number;
     ColRowHeader?: boolean;
+    ColSortBy?: string;
 }

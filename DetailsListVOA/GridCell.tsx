@@ -230,7 +230,9 @@ function getIconCell(
         const imageData = getCellValue<string>(column.fieldName, item)[0];
         isBlank = !imageData || imageData === '';
         if (imageData) {
-            const iconColor = getCellValue<string>(column.tagColor, item)[0];
+            const iconColor = column.tagColor?.startsWith('#')
+                ? column.tagColor
+                : getCellValue<string>(column.tagColor, item)[0];
             const ariaText = getCellValue<string>(column.ariaTextColumn, item)[0];
             const actionDisabled = getCellValue<string>(column.cellActionDisabledColumn, item)[0];
             const buttonContent: JSX.Element | null = getImageTag(imageData, column, iconColor);
