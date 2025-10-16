@@ -5,13 +5,15 @@ import { ColumnConfig } from "./Component.types";
 import { SAMPLE_COLUMNS, SAMPLE_RECORDS } from "./SampleData";
 import * as React from "react";
 import { IDetailsList, ISelection, Selection, SelectionMode, IObjectWithKey } from '@fluentui/react';
+import { GridFilterState, createDefaultGridFilters, sanitizeFilters } from "./Filters";
 
 export class DetailsListVOA implements ComponentFramework.ReactControl<IInputs, IOutputs> {
     private notifyOutputChanged: () => void;
     private taskCache: Record<string, { statuscode?: string; ownerid?: { name?: string }; subject?: string }> = {};
     private selectedTaskId?: string;
-    private searchText = "";
+    private searchFilters: GridFilterState = createDefaultGridFilters();
     private currentPage = 0;
+    private lastQuickNavigateKey?: string;
     private columnDisplayNames: Record<string, string> = {};
     private lastColumnDisplayNamesRaw = "";
     private columnConfigs: Record<string, ColumnConfig> = {};
@@ -201,16 +203,20 @@ export class DetailsListVOA implements ComponentFramework.ReactControl<IInputs, 
             (name) => !columnNamesSet.has(name),
         );
 
-        let filteredIds = allIds;
-        if (this.searchText) {
-            const search = this.searchText.toLowerCase();
-            filteredIds = filteredIds.filter((id) => {
-                const rec = records[id] as unknown as Record<string, unknown>;
-                return datasetColumns.some((c) => {
-                    const val = rec[c.name];
-                    return typeof val === "string" && val.toLowerCase().includes(search);
-                });
-            });
+        const filters = sanitizeFilters(this.searchFilters);
+        this.searchFilters = filters;
+        let filteredIds = allIds.filter((id) => {
+            const record = records[id] as unknown as Record<string, unknown>;
+            return this.matchesFilters(record, filters, datasetColumns);
+        });
+
+        let quickNavigateRecord: ComponentFramework.PropertyHelper.DataSetApi.EntityRecord | undefined;
+        let quickNavigateKey: string | undefined;
+        if (filters.searchBy === "taskId" && filters.taskId) {
+            if (filteredIds.length === 1) {
+                quickNavigateRecord = records[filteredIds[0]];
+                quickNavigateKey = `${filters.taskId}:${filteredIds[0]}`;
+            }
         }
 
         const pageSize = context.parameters.pageSize.raw ?? 10;
@@ -238,9 +244,10 @@ export class DetailsListVOA implements ComponentFramework.ReactControl<IInputs, 
             }
         };
 
-        const onSearch = (text: string): void => {
-            this.searchText = text;
+        const onSearch = (filterState: GridFilterState): void => {
+            this.searchFilters = sanitizeFilters(filterState);
             this.currentPage = 0;
+            this.lastQuickNavigateKey = undefined;
             this.notifyOutputChanged();
         };
 
@@ -316,10 +323,150 @@ export class DetailsListVOA implements ComponentFramework.ReactControl<IInputs, 
             totalPages,
             canNext,
             canPrev,
-            searchText: this.searchText,
+            searchFilters: this.searchFilters,
         };
 
-        return React.createElement(Grid, props);
+        const element = React.createElement(Grid, props);
+
+        if (quickNavigateRecord && quickNavigateKey && this.lastQuickNavigateKey !== quickNavigateKey) {
+            this.lastQuickNavigateKey = quickNavigateKey;
+            onNavigate(quickNavigateRecord);
+        } else if (!quickNavigateRecord) {
+            this.lastQuickNavigateKey = undefined;
+        }
+
+        return element;
+    }
+
+    private matchesFilters(
+        record: Record<string, unknown>,
+        filters: GridFilterState,
+        datasetColumns: ComponentFramework.PropertyHelper.DataSetApi.Column[],
+    ): boolean {
+        switch (filters.searchBy) {
+            case "uprn": {
+                if (!filters.uprn) {
+                    return true;
+                }
+                const uprn = this.getRecordValue(record, "uprn", datasetColumns);
+                return uprn.includes(filters.uprn);
+            }
+            case "taskId": {
+                if (!filters.taskId) {
+                    return true;
+                }
+                const taskId = this.getRecordValue(record, "taskid", datasetColumns);
+                return taskId.toLowerCase().includes(filters.taskId.toLowerCase());
+            }
+            case "manualCheck": {
+                const desired = filters.manualCheck ?? "all";
+                if (desired === "all") {
+                    return true;
+                }
+                const manualCheck = this.getRecordValueFromCandidates(
+                    record,
+                    datasetColumns,
+                    ["manualcheck", "manualcheckflag", "manualqa"],
+                ).toLowerCase();
+                if (desired === "yes") {
+                    return manualCheck === "yes" || manualCheck === "true";
+                }
+                if (desired === "no") {
+                    return manualCheck === "no" || manualCheck === "false";
+                }
+                return true;
+            }
+            case "postcode": {
+                if (!filters.postcode) {
+                    return true;
+                }
+                const postcode = this.getRecordValueFromCandidates(record, datasetColumns, ["postcode", "post_code"]).toUpperCase();
+                return postcode.includes(filters.postcode);
+            }
+            case "address": {
+                const postcodeValue = this.getRecordValueFromCandidates(
+                    record,
+                    datasetColumns,
+                    ["postcode", "post_code"],
+                ).toUpperCase();
+                const postcodeFilter = filters.postcode
+                    ? postcodeValue.includes(filters.postcode)
+                    : true;
+                const buildingValue = this.getRecordValueFromCandidates(
+                    record,
+                    datasetColumns,
+                    ["buildingnamenumber", "buildingname", "buildingnumber"],
+                ).toLowerCase();
+                const buildingFilter = filters.buildingNameNumber
+                    ? buildingValue.includes(filters.buildingNameNumber.toLowerCase())
+                    : true;
+                const streetValue = this.getRecordValueFromCandidates(
+                    record,
+                    datasetColumns,
+                    ["street", "streetname", "addressline1"],
+                ).toLowerCase();
+                const streetFilter = filters.street
+                    ? streetValue.includes(filters.street.toLowerCase())
+                    : true;
+                const townValue = this.getRecordValueFromCandidates(
+                    record,
+                    datasetColumns,
+                    ["towncity", "town", "city"],
+                ).toLowerCase();
+                const townFilter = filters.townCity
+                    ? townValue.includes(filters.townCity.toLowerCase())
+                    : true;
+                return postcodeFilter && buildingFilter && streetFilter && townFilter;
+            }
+            default:
+                return true;
+        }
+    }
+
+    private getRecordValue(
+        record: Record<string, unknown>,
+        fieldName: string,
+        datasetColumns: ComponentFramework.PropertyHelper.DataSetApi.Column[],
+    ): string {
+        const direct = record[fieldName];
+        if (direct !== undefined) {
+            return this.toText(direct);
+        }
+        const lower = fieldName.toLowerCase();
+        const column = datasetColumns.find(
+            (col) => col.name?.toLowerCase() === lower || col.alias?.toLowerCase() === lower,
+        );
+        if (column) {
+            const value = record[column.name];
+            if (value !== undefined) {
+                return this.toText(value);
+            }
+        }
+        return "";
+    }
+
+    private getRecordValueFromCandidates(
+        record: Record<string, unknown>,
+        datasetColumns: ComponentFramework.PropertyHelper.DataSetApi.Column[],
+        candidates: string[],
+    ): string {
+        for (const candidate of candidates) {
+            const value = this.getRecordValue(record, candidate, datasetColumns);
+            if (value) {
+                return value;
+            }
+        }
+        return "";
+    }
+
+    private toText(value: unknown): string {
+        if (typeof value === "string") {
+            return value;
+        }
+        if (typeof value === "number" || typeof value === "boolean") {
+            return value.toString();
+        }
+        return "";
     }
 
     public getOutputs(): IOutputs {
