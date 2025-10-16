@@ -13,6 +13,7 @@ import {
   IRefObject,
   ISelection,
   IPartialTheme,
+  IDropdownOption,
   PrimaryButton,
   SelectionMode,
   ShimmeredDetailsList,
@@ -24,6 +25,10 @@ import {
   DefaultButton,
   MessageBar,
   MessageBarType,
+  Dropdown,
+  Spinner,
+  SpinnerSize,
+  Link,
 } from '@fluentui/react';
 import * as React from 'react';
 import { NoFields } from './NoFields';
@@ -31,6 +36,13 @@ import { RecordsColumns } from './ManifestConstants';
 import { IGridColumn, ColumnConfig } from './Component.types';
 import { GridCell } from './GridCell';
 import { ClassNames } from './Grid.styles';
+import {
+  GridFilterState,
+  createDefaultGridFilters,
+  sanitizeFilters,
+  SearchByOption,
+  ManualCheckFilter,
+} from './Filters';
 
 type DataSet = ComponentFramework.PropertyHelper.DataSetApi.EntityRecord & IObjectWithKey;
 
@@ -53,7 +65,7 @@ export interface GridProps {
   isHeaderVisible?: boolean;
   resources: ComponentFramework.Resources;
   columnDatasetNotDefined?: boolean;
-  onSearch: (text: string) => void;
+  onSearch: (filters: GridFilterState) => void;
   onNextPage: () => void;
   onPrevPage: () => void;
   onSetPage: (page: number) => void;
@@ -62,7 +74,7 @@ export interface GridProps {
   canNext: boolean;
   canPrev: boolean;
   overlayOnSort?: boolean;
-  searchText?: string;
+  searchFilters: GridFilterState;
 }
 
 const defaultTheme = createTheme({
@@ -125,7 +137,7 @@ export const Grid = React.memo((props: GridProps) => {
     canNext,
     canPrev,
     overlayOnSort,
-  searchText,
+    searchFilters,
   } = props;
 
   const theme = useTheme(themeJSON);
@@ -138,6 +150,155 @@ export const Grid = React.memo((props: GridProps) => {
     column: IGridColumn;
   }>();
   const [menuFilterValue, setMenuFilterValue] = React.useState('');
+  const [filters, setFilters] = React.useState<GridFilterState>(searchFilters);
+
+  React.useEffect(() => {
+    setFilters(searchFilters);
+  }, [searchFilters]);
+
+  const searchByOptions = React.useMemo<IDropdownOption[]>(
+    () => [
+      { key: 'uprn', text: 'UPRN' },
+      { key: 'taskId', text: 'Task ID' },
+      { key: 'address', text: 'Address' },
+      { key: 'manualCheck', text: 'Manual Check' },
+      { key: 'postcode', text: 'Postcode' },
+    ],
+    [],
+  );
+
+  const manualCheckOptions = React.useMemo<IDropdownOption[]>(
+    () => [
+      { key: 'all', text: 'All' },
+      { key: 'yes', text: 'Yes' },
+      { key: 'no', text: 'No' },
+    ],
+    [],
+  );
+
+  const onFieldEnter = React.useCallback(
+    (ev: React.KeyboardEvent<HTMLElement>) => {
+      if (ev.key === 'Enter') {
+        ev.preventDefault();
+        const sanitized = sanitizeFilters(filters);
+        const uprnInvalid = sanitized.searchBy === 'uprn' && !!sanitized.uprn && (sanitized.uprn.length < 8 || sanitized.uprn.length > 10);
+        if (!uprnInvalid) {
+          setFilters(sanitized);
+          onSearch(sanitized);
+        }
+      }
+    },
+    [filters, onSearch],
+  );
+
+  const updateFilters = React.useCallback(
+    (key: keyof GridFilterState, value: GridFilterState[keyof GridFilterState]) => {
+      setFilters((prev) => ({ ...prev, [key]: value }));
+    },
+    [],
+  );
+
+  const onSearchByChange = React.useCallback(
+    (_: React.FormEvent<HTMLDivElement>, option?: IDropdownOption) => {
+      if (!option) {
+        return;
+      }
+      const selected = option.key as SearchByOption;
+      setFilters((prev) => ({
+        ...prev,
+        searchBy: selected,
+        manualCheck: prev.manualCheck ?? 'all',
+      }));
+    },
+    [],
+  );
+
+  const onManualCheckChange = React.useCallback(
+    (_: React.FormEvent<HTMLDivElement>, option?: IDropdownOption) => {
+      if (!option) {
+        return;
+      }
+      updateFilters('manualCheck', option.key as ManualCheckFilter);
+    },
+    [updateFilters],
+  );
+
+  const onUprnChange = React.useCallback(
+    (_: React.FormEvent<HTMLInputElement | HTMLTextAreaElement>, value?: string) => {
+      const digits = (value ?? '').replace(/\D/g, '');
+      updateFilters('uprn', digits);
+    },
+    [updateFilters],
+  );
+
+  const onTaskIdChange = React.useCallback(
+    (_: React.FormEvent<HTMLInputElement | HTMLTextAreaElement>, value?: string) => {
+      updateFilters('taskId', value ?? '');
+    },
+    [updateFilters],
+  );
+
+  const onBuildingNameChange = React.useCallback(
+    (_: React.FormEvent<HTMLInputElement | HTMLTextAreaElement>, value?: string) => {
+      updateFilters('buildingNameNumber', value ?? '');
+    },
+    [updateFilters],
+  );
+
+  const onStreetChange = React.useCallback(
+    (_: React.FormEvent<HTMLInputElement | HTMLTextAreaElement>, value?: string) => {
+      updateFilters('street', value ?? '');
+    },
+    [updateFilters],
+  );
+
+  const onTownChange = React.useCallback(
+    (_: React.FormEvent<HTMLInputElement | HTMLTextAreaElement>, value?: string) => {
+      updateFilters('townCity', value ?? '');
+    },
+    [updateFilters],
+  );
+
+  const onPostcodeChange = React.useCallback(
+    (_: React.FormEvent<HTMLInputElement | HTMLTextAreaElement>, value?: string) => {
+      updateFilters('postcode', (value ?? '').toUpperCase());
+    },
+    [updateFilters],
+  );
+
+  const uprnError = React.useMemo(() => {
+    if (filters.searchBy !== 'uprn' || !filters.uprn || filters.uprn.length === 0) {
+      return undefined;
+    }
+    if (filters.uprn.length >= 8 && filters.uprn.length <= 10) {
+      return undefined;
+    }
+    return 'UPRN must be 8 to 10 digits';
+  }, [filters.searchBy, filters.uprn]);
+
+  const isSearchDisabled = React.useMemo(() => !!uprnError, [uprnError]);
+
+  const handleSearch = React.useCallback(() => {
+    const sanitized = sanitizeFilters(filters);
+    if (sanitized.searchBy === 'uprn' && sanitized.uprn && (sanitized.uprn.length < 8 || sanitized.uprn.length > 10)) {
+      return;
+    }
+    setFilters(sanitized);
+    onSearch(sanitized);
+  }, [filters, onSearch]);
+
+  const handleClear = React.useCallback(() => {
+    const defaults = createDefaultGridFilters();
+    setFilters(defaults);
+    onSearch(defaults);
+  }, [onSearch]);
+
+  const showPostcodeHint = React.useMemo(() => {
+    if (!filters.postcode || filters.postcode.length === 0) {
+      return false;
+    }
+    return filters.searchBy === 'postcode' || filters.searchBy === 'address';
+  }, [filters.postcode, filters.searchBy]);
 
   React.useEffect(() => {
     setColumns(
@@ -411,12 +572,140 @@ export const Grid = React.memo((props: GridProps) => {
             One or more column configurations reference fields that do not exist in the dataset.
           </MessageBar>
         )}
-        <TextField
-          placeholder="Search"
-          value={searchText}
-          onChange={(_, v) => onSearch(v ?? '')}
+        <Stack
+          horizontal
+          wrap
+          verticalAlign="end"
+          tokens={{ childrenGap: 16 }}
           style={{ marginBottom: 16 }}
-        />
+        >
+          <Stack.Item grow styles={{ root: { minWidth: 0 } }}>
+            <Stack
+              horizontal
+              wrap
+              verticalAlign="end"
+              tokens={{ childrenGap: 16 }}
+              styles={{ root: { rowGap: 12 } }}
+            >
+              <Stack.Item styles={{ root: { minWidth: 200 } }}>
+                <Dropdown
+                  label="Search by"
+                  options={searchByOptions}
+                  selectedKey={filters.searchBy}
+                  onChange={onSearchByChange}
+                  styles={{ dropdown: { width: '100%' } }}
+                />
+              </Stack.Item>
+              {filters.searchBy === 'uprn' && (
+                <Stack.Item styles={{ root: { minWidth: 200 } }}>
+                  <TextField
+                    label="UPRN"
+                    value={filters.uprn ?? ''}
+                    onChange={onUprnChange}
+                    onKeyDown={onFieldEnter}
+                    errorMessage={uprnError}
+                    inputProps={{ inputMode: 'numeric', pattern: '[0-9]*' }}
+                  />
+                </Stack.Item>
+              )}
+              {filters.searchBy === 'taskId' && (
+                <Stack.Item styles={{ root: { minWidth: 200 } }}>
+                  <TextField
+                    label="Task ID"
+                    value={filters.taskId ?? ''}
+                    onChange={onTaskIdChange}
+                    onKeyDown={onFieldEnter}
+                  />
+                </Stack.Item>
+              )}
+              {filters.searchBy === 'manualCheck' && (
+                <Stack.Item styles={{ root: { minWidth: 180 } }}>
+                  <Dropdown
+                    label="Manual check"
+                    options={manualCheckOptions}
+                    selectedKey={filters.manualCheck ?? 'all'}
+                    onChange={onManualCheckChange}
+                    styles={{ dropdown: { width: '100%' } }}
+                  />
+                </Stack.Item>
+              )}
+              {filters.searchBy === 'address' && (
+                <>
+                  <Stack.Item styles={{ root: { minWidth: 200 } }}>
+                    <TextField
+                      label="Building name/number"
+                      value={filters.buildingNameNumber ?? ''}
+                      onChange={onBuildingNameChange}
+                      onKeyDown={onFieldEnter}
+                    />
+                  </Stack.Item>
+                  <Stack.Item styles={{ root: { minWidth: 200 } }}>
+                    <TextField
+                      label="Street"
+                      value={filters.street ?? ''}
+                      onChange={onStreetChange}
+                      onKeyDown={onFieldEnter}
+                    />
+                  </Stack.Item>
+                  <Stack.Item styles={{ root: { minWidth: 200 } }}>
+                    <TextField
+                      label="Town or city"
+                      value={filters.townCity ?? ''}
+                      onChange={onTownChange}
+                      onKeyDown={onFieldEnter}
+                    />
+                  </Stack.Item>
+                  <Stack.Item styles={{ root: { minWidth: 160 } }}>
+                    <TextField
+                      label="Postcode"
+                      value={filters.postcode ?? ''}
+                      onChange={onPostcodeChange}
+                      onKeyDown={onFieldEnter}
+                    />
+                    {showPostcodeHint && (
+                      <Text variant="small" styles={{ root: { marginTop: 4 } }}>
+                        Partial postcodes return all matching entries.
+                      </Text>
+                    )}
+                  </Stack.Item>
+                </>
+              )}
+              {filters.searchBy === 'postcode' && (
+                <Stack.Item styles={{ root: { minWidth: 160 } }}>
+                  <TextField
+                    label="Postcode"
+                    value={filters.postcode ?? ''}
+                    onChange={onPostcodeChange}
+                    onKeyDown={onFieldEnter}
+                  />
+                  {showPostcodeHint && (
+                    <Text variant="small" styles={{ root: { marginTop: 4 } }}>
+                      Partial postcodes return all matching entries.
+                    </Text>
+                  )}
+                </Stack.Item>
+              )}
+            </Stack>
+          </Stack.Item>
+          <Stack.Item styles={{ root: { display: 'flex', alignItems: 'flex-end' } }}>
+            <Stack horizontal verticalAlign="center" tokens={{ childrenGap: 12 }}>
+              {(shimmer || itemsLoading || isComponentLoading) && (
+                <Spinner size={SpinnerSize.small} ariaLabel="Loading filter results" />
+              )}
+              <PrimaryButton text="Search" onClick={handleSearch} disabled={isSearchDisabled} />
+              <Link
+                onClick={(ev) => {
+                  ev.preventDefault();
+                  handleClear();
+                }}
+                aria-label="Clear all filters"
+                styles={{ root: { fontSize: 14 } }}
+              >
+                Clear all
+              </Link>
+            </Stack>
+          </Stack.Item>
+        </Stack>
         <ShimmeredDetailsList
           className={ClassNames.PowerCATFluentDetailsList}
           componentRef={componentRef}
