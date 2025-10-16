@@ -248,8 +248,8 @@ export const Grid = React.memo((props: GridProps) => {
       const record = item as unknown as Record<string, unknown>;
       return filterEntries.every(([fieldName, filterValue]) => {
         const raw = record[fieldName];
-        const text = getFilterableText(raw);
-        return text.toLowerCase().includes(filterValue.toLowerCase());
+        const text = getFilterableText(raw).trim().toLowerCase();
+        return text === filterValue.trim().toLowerCase();
       });
     });
   }, [columnFilters, getFilterableText, items]);
@@ -276,15 +276,30 @@ export const Grid = React.memo((props: GridProps) => {
     [onSort, overlayOnSort],
   );
 
+  const openMenuForColumn = React.useCallback(
+    (gridCol: IGridColumn, target?: HTMLElement) => {
+      if (!target) {
+        return;
+      }
+      const fieldName = gridCol.fieldName ?? gridCol.key;
+      setMenuFilterValue(columnFilters[fieldName] ?? '');
+      setMenuState({ target, column: gridCol });
+    },
+    [columnFilters],
+  );
+
   const onColumnHeaderClick = React.useCallback(
     (ev?: React.MouseEvent<HTMLElement>, column?: IColumn) => {
-      const gridCol = column as IGridColumn;
-      if (column && gridCol.sortable !== false) {
-        const nextDescending = column.isSorted ? !column.isSortedDescending : false;
-        handleSort(gridCol, !!nextDescending);
+      if (!column) {
+        return;
       }
+      ev?.preventDefault();
+      ev?.stopPropagation();
+      const gridCol = column as IGridColumn;
+      const target = ev?.currentTarget as HTMLElement | undefined;
+      openMenuForColumn(gridCol, target);
     },
-    [handleSort],
+    [openMenuForColumn],
   );
 
   const onColumnHeaderContextMenu = React.useCallback(
@@ -295,13 +310,9 @@ export const Grid = React.memo((props: GridProps) => {
       ev?.preventDefault();
       const gridCol = column as IGridColumn;
       const target = (ev?.currentTarget ?? ev?.target) as HTMLElement | undefined;
-      if (target) {
-        const fieldName = gridCol.fieldName ?? gridCol.key;
-        setMenuFilterValue(columnFilters[fieldName] ?? '');
-        setMenuState({ target, column: gridCol });
-      }
+      openMenuForColumn(gridCol, target);
     },
-    [columnFilters],
+    [openMenuForColumn],
   );
 
   const applyFilter = React.useCallback(() => {
@@ -370,6 +381,9 @@ export const Grid = React.memo((props: GridProps) => {
         key: 'filterInput',
         onRender: () => (
           <div style={{ padding: '0 12px 12px', width: 220 }}>
+            <Text variant="small" style={{ marginBottom: 4, display: 'block' }}>
+              Equal to
+            </Text>
             <TextField
               placeholder={`Filter ${menuState.column.name}`}
               value={menuFilterValue}
