@@ -14,6 +14,7 @@ import {
   ISelection,
   IPartialTheme,
   IDropdownOption,
+  ITextField,
   PrimaryButton,
   SelectionMode,
   ShimmeredDetailsList,
@@ -197,6 +198,19 @@ export const Grid = React.memo((props: GridProps) => {
     },
     [],
   );
+
+  const uprnInputRef = React.useRef<ITextField | null>(null);
+  const setUprnInputRef = React.useCallback((ref: ITextField | null) => {
+    uprnInputRef.current = ref;
+    if (!ref) {
+      return;
+    }
+    const inputElement = ref.getElement()?.querySelector('input');
+    if (inputElement) {
+      inputElement.setAttribute('inputmode', 'numeric');
+      inputElement.setAttribute('pattern', '[0-9]*');
+    }
+  }, []);
 
   const onSearchByChange = React.useCallback(
     (_: React.FormEvent<HTMLDivElement>, option?: IDropdownOption) => {
@@ -604,7 +618,7 @@ export const Grid = React.memo((props: GridProps) => {
                     onChange={onUprnChange}
                     onKeyDown={onFieldEnter}
                     errorMessage={uprnError}
-                    inputProps={{ inputMode: 'numeric', pattern: '[0-9]*' }}
+                    componentRef={setUprnInputRef}
                   />
                 </Stack.Item>
               )}
