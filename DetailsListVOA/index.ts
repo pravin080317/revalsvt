@@ -205,7 +205,7 @@ export class DetailsListVOA implements ComponentFramework.ReactControl<IInputs, 
 
         const filters = sanitizeFilters(this.searchFilters);
         this.searchFilters = filters;
-        let filteredIds = allIds.filter((id) => {
+        const filteredIds = allIds.filter((id) => {
             const record = records[id] as unknown as Record<string, unknown>;
             return this.matchesFilters(record, filters, datasetColumns);
         });
