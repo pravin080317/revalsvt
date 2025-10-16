@@ -6,6 +6,7 @@ export interface IInputs {
     pageSize: ComponentFramework.PropertyTypes.WholeNumberProperty;
     columnDisplayNames: ComponentFramework.PropertyTypes.StringProperty;
     columnConfig: ComponentFramework.PropertyTypes.StringProperty;
+    apimEndpoint: ComponentFramework.PropertyTypes.StringProperty;
 }
 
 export interface IOutputs {

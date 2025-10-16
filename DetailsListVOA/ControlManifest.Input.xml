@@ -11,11 +11,8 @@
       <external-service-usage enabled="false">
       </external-service-usage>
     -->
-    <external-service-usage enabled="false">
-      <!--UNCOMMENT TO ADD EXTERNAL DOMAINS
-      <domain></domain>
-      <domain></domain>
-      -->
+    <external-service-usage enabled="true">
+      <domain>api.contoso.gov.uk</domain>
     </external-service-usage>
     <data-set name="revalSalesDataset" display-name-key="RevalSalesDataset" description-key="RevalSalesDataset description"/>
 
@@ -48,6 +45,15 @@
       usage="input"
       required="false"
       default-value="[]"
+    />
+    <property
+      name="apimEndpoint"
+      display-name-key="APIM Endpoint"
+      description-key="Fully qualified URL of the APIM search endpoint"
+      of-type="SingleLine.Text"
+      usage="input"
+      required="false"
+      default-value="https://api.contoso.gov.uk/revaluation/tasks"
     />
     <property name="selectedTaskId" display-name-key="SelectedTaskId" description-key="SelectedTaskId description" of-type="SingleLine.Text" usage="output" required="false" />
     <resources>
