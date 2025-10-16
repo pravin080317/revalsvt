@@ -3,6 +3,7 @@ import { IInputs, IOutputs } from "./generated/ManifestTypes";
 import { Grid, GridProps } from "./Grid";
 import { ColumnConfig } from "./Component.types";
 import { SAMPLE_COLUMNS, SAMPLE_RECORDS } from "./SampleData";
+import { SAMPLE_TASK_RESULTS, TaskSearchItem, TaskSearchResponse } from "./TaskSearchSample";
 import * as React from "react";
 import { IDetailsList, ISelection, Selection, SelectionMode, IObjectWithKey } from '@fluentui/react';
 import { GridFilterState, createDefaultGridFilters, sanitizeFilters } from "./Filters";
@@ -18,6 +19,10 @@ export class DetailsListVOA implements ComponentFramework.ReactControl<IInputs, 
     private lastColumnDisplayNamesRaw = "";
     private columnConfigs: Record<string, ColumnConfig> = {};
     private lastColumnConfigRaw = "";
+    private apimItems: TaskSearchItem[] = [];
+    private apimLoading = false;
+    private apimError?: string;
+    private hasLoadedApim = false;
 
     constructor() {
         // Empty
@@ -103,7 +108,14 @@ export class DetailsListVOA implements ComponentFramework.ReactControl<IInputs, 
             } as ComponentFramework.PropertyHelper.DataSetApi.Column);
         };
 
-        ensureColumn("taskstatus", "Task Status");
+        ensureColumn("uprn", "UPRN", 120);
+        ensureColumn("taskid", "Task ID", 120);
+        ensureColumn("taskstatus", "Task Status", 120);
+        ensureColumn("caseassignedto", "Case Assigned To", 160);
+        ensureColumn("address", "Address", 240);
+        ensureColumn("postcode", "Postcode", 110);
+        ensureColumn("transactiondate", "Transaction Date", 160);
+        ensureColumn("source", "Source", 120);
         ensureColumn("assignedto", "Assigned To");
         ensureColumn("tasktitle", "Task Title");
         ensureColumn("action", "Action");
@@ -172,7 +184,7 @@ export class DetailsListVOA implements ComponentFramework.ReactControl<IInputs, 
             allIds.push(id);
         });
 
-        if (allIds.length === 0 && !dataset.loading) {
+        if (allIds.length === 0 && !dataset.loading && !this.hasLoadedApim) {
             SAMPLE_COLUMNS.forEach((column) => ensureColumn(column.name, column.displayName, column.width));
             SAMPLE_RECORDS.forEach((sample, index) => {
                 const recordBase: Record<string, unknown> = {};
@@ -190,6 +202,22 @@ export class DetailsListVOA implements ComponentFramework.ReactControl<IInputs, 
             });
         }
 
+        let activeRecords = records;
+        let activeIds = allIds;
+
+        if (this.hasLoadedApim) {
+            const remoteRecords: Record<string, ComponentFramework.PropertyHelper.DataSetApi.EntityRecord> = {};
+            const remoteIds: string[] = [];
+            this.apimItems.forEach((item, index) => {
+                const record = this.createRecordFromApim(item, index);
+                const recordId = record.getRecordId();
+                remoteRecords[recordId] = record as ComponentFramework.PropertyHelper.DataSetApi.EntityRecord;
+                remoteIds.push(recordId);
+            });
+            activeRecords = remoteRecords;
+            activeIds = remoteIds;
+        }
+
         const columnNamesSet = new Set<string>();
         datasetColumns.forEach((c) => {
             if (c.name) {
@@ -205,8 +233,8 @@ export class DetailsListVOA implements ComponentFramework.ReactControl<IInputs, 
 
         const filters = sanitizeFilters(this.searchFilters);
         this.searchFilters = filters;
-        const filteredIds = allIds.filter((id) => {
-            const record = records[id] as unknown as Record<string, unknown>;
+        const filteredIds = activeIds.filter((id) => {
+            const record = activeRecords[id] as unknown as Record<string, unknown>;
             return this.matchesFilters(record, filters, datasetColumns);
         });
 
@@ -214,7 +242,7 @@ export class DetailsListVOA implements ComponentFramework.ReactControl<IInputs, 
         let quickNavigateKey: string | undefined;
         if (filters.searchBy === "taskId" && filters.taskId) {
             if (filteredIds.length === 1) {
-                quickNavigateRecord = records[filteredIds[0]];
+                quickNavigateRecord = activeRecords[filteredIds[0]];
                 quickNavigateKey = `${filters.taskId}:${filteredIds[0]}`;
             }
         }
@@ -226,8 +254,9 @@ export class DetailsListVOA implements ComponentFramework.ReactControl<IInputs, 
         const start = this.currentPage * pageSize;
         const pageIds = filteredIds.slice(start, start + pageSize);
         const canPrev = this.currentPage > 0;
-        const canNext = start + pageSize < filteredIds.length || dataset.paging.hasNextPage;
-        const totalPages = Math.ceil(filteredIds.length / pageSize) + (dataset.paging.hasNextPage ? 1 : 0);
+        const datasetHasNext = this.hasLoadedApim ? false : dataset.paging.hasNextPage;
+        const canNext = start + pageSize < filteredIds.length || datasetHasNext;
+        const totalPages = Math.ceil(filteredIds.length / pageSize) + (datasetHasNext ? 1 : 0);
 
         const onNavigate = (
             item?: ComponentFramework.PropertyHelper.DataSetApi.EntityRecord,
@@ -249,12 +278,13 @@ export class DetailsListVOA implements ComponentFramework.ReactControl<IInputs, 
             this.currentPage = 0;
             this.lastQuickNavigateKey = undefined;
             this.notifyOutputChanged();
+            void this.loadTasks(context, this.searchFilters);
         };
 
         const onNextPage = (): void => {
             if (canNext) {
                 const nextStart = (this.currentPage + 1) * pageSize;
-                if (nextStart >= filteredIds.length && dataset.paging.hasNextPage) {
+                if (nextStart >= filteredIds.length && datasetHasNext) {
                     dataset.paging.loadNextPage();
                 }
                 this.currentPage += 1;
@@ -272,7 +302,7 @@ export class DetailsListVOA implements ComponentFramework.ReactControl<IInputs, 
         const onSetPage = (page: number): void => {
             if (page >= 0 && page !== this.currentPage) {
                 const targetStart = page * pageSize;
-                if (targetStart >= filteredIds.length && dataset.paging.hasNextPage) {
+                if (targetStart >= filteredIds.length && datasetHasNext) {
                     dataset.paging.loadNextPage();
                 }
                 this.currentPage = page;
@@ -303,10 +333,10 @@ export class DetailsListVOA implements ComponentFramework.ReactControl<IInputs, 
         const props: GridProps = {
             datasetColumns,
             columnConfigs: this.columnConfigs,
-            records,
+            records: activeRecords,
             sortedRecordIds: pageIds,
-            shimmer: dataset.loading,
-            itemsLoading: dataset.loading,
+            shimmer: dataset.loading || this.apimLoading,
+            itemsLoading: dataset.loading || this.apimLoading,
             selectionType: SelectionMode.none,
             selection,
             onNavigate,
@@ -324,6 +354,7 @@ export class DetailsListVOA implements ComponentFramework.ReactControl<IInputs, 
             canNext,
             canPrev,
             searchFilters: this.searchFilters,
+            errorMessage: this.apimError,
         };
 
         const element = React.createElement(Grid, props);
@@ -336,6 +367,145 @@ export class DetailsListVOA implements ComponentFramework.ReactControl<IInputs, 
         }
 
         return element;
+    }
+
+    private createRecordFromApim(
+        item: TaskSearchItem,
+        index: number,
+    ): ComponentFramework.PropertyHelper.DataSetApi.EntityRecord & Record<string, unknown> {
+        const recordBase: Record<string, unknown> = {};
+        const record = recordBase as ComponentFramework.PropertyHelper.DataSetApi.EntityRecord & Record<string, unknown>;
+        const recordId = item.taskId || `${item.uprn}-${index}` || `apim-${index}`;
+        record.getRecordId = () => recordId;
+        record.getNamedReference = undefined as unknown as ComponentFramework.PropertyHelper.DataSetApi.EntityRecord['getNamedReference'];
+        record.getValue = ((columnName: string) => record[columnName] ?? "") as ComponentFramework.PropertyHelper.DataSetApi.EntityRecord['getValue'];
+        record.getFormattedValue = ((columnName: string) => {
+            const value = record[columnName];
+            if (typeof value === "string") {
+                return value;
+            }
+            if (typeof value === "number" || typeof value === "boolean") {
+                return value.toString();
+            }
+            return "";
+        }) as ComponentFramework.PropertyHelper.DataSetApi.EntityRecord['getFormattedValue'];
+
+        const formattedDate = this.tryFormatDate(item.transactionDate);
+
+        record.uprn = item.uprn;
+        record.taskid = item.taskId;
+        record.taskId = item.taskId;
+        record.taskstatus = item.taskStatus;
+        record.taskStatus = item.taskStatus;
+        record.caseassignedto = item.caseAssignedTo;
+        record.caseAssignedTo = item.caseAssignedTo;
+        record.address = item.address;
+        record.postcode = item.postcode;
+        record.transactiondate = formattedDate;
+        record.transactionDate = formattedDate;
+        record.source = item.source;
+        record.saleId = "";
+        record.action = "🔍 View / Edit";
+
+        return record;
+    }
+
+    private tryFormatDate(value?: string): string {
+        if (!value) {
+            return "";
+        }
+        const parsed = new Date(value);
+        if (Number.isNaN(parsed.getTime())) {
+            return value;
+        }
+        return parsed.toLocaleString("en-GB", {
+            day: "2-digit",
+            month: "short",
+            year: "numeric",
+            hour: "2-digit",
+            minute: "2-digit",
+        });
+    }
+
+    private async loadTasks(
+        context: ComponentFramework.Context<IInputs>,
+        filters: GridFilterState,
+    ): Promise<void> {
+        const configuredEndpoint = context.parameters.apimEndpoint?.raw?.trim();
+        const baseUrl = configuredEndpoint && configuredEndpoint.length > 0
+            ? configuredEndpoint
+            : "https://api.contoso.gov.uk/revaluation/tasks";
+        if (!baseUrl) {
+            return;
+        }
+
+        let requestUrl: URL;
+        try {
+            requestUrl = new URL(baseUrl);
+        } catch {
+            this.apimError = "Invalid APIM endpoint URL.";
+            this.hasLoadedApim = true;
+            this.apimItems = SAMPLE_TASK_RESULTS;
+            this.notifyOutputChanged();
+            return;
+        }
+
+        requestUrl.searchParams.set("searchBy", filters.searchBy);
+        const pageSize = context.parameters.pageSize.raw ?? 10;
+        requestUrl.searchParams.set("page", this.currentPage.toString());
+        requestUrl.searchParams.set("pageSize", pageSize.toString());
+
+        if (filters.searchBy === "uprn" && filters.uprn) {
+            requestUrl.searchParams.set("uprn", filters.uprn);
+        }
+        if (filters.searchBy === "taskId" && filters.taskId) {
+            requestUrl.searchParams.set("taskId", filters.taskId);
+        }
+        if (filters.searchBy === "postcode" && filters.postcode) {
+            requestUrl.searchParams.set("postcode", filters.postcode);
+        }
+        if (filters.searchBy === "address") {
+            if (filters.buildingNameNumber) {
+                requestUrl.searchParams.set("buildingName", filters.buildingNameNumber);
+            }
+            if (filters.street) {
+                requestUrl.searchParams.set("street", filters.street);
+            }
+            if (filters.townCity) {
+                requestUrl.searchParams.set("town", filters.townCity);
+            }
+            if (filters.postcode) {
+                requestUrl.searchParams.set("postcode", filters.postcode);
+            }
+        }
+        if (filters.searchBy === "manualCheck" && filters.manualCheck && filters.manualCheck !== "all") {
+            requestUrl.searchParams.set("manualCheck", filters.manualCheck);
+        }
+
+        this.apimLoading = true;
+        this.apimError = undefined;
+        this.notifyOutputChanged();
+
+        try {
+            const response = await context.httpClient.fetch(requestUrl.toString(), {
+                method: "GET",
+            });
+            if (!response.ok) {
+                throw new Error(`APIM request failed with status ${response.status}`);
+            }
+            const payload = (await response.json()) as TaskSearchResponse;
+            this.apimItems = payload.items ?? [];
+            this.apimError = undefined;
+        } catch (error) {
+            const message = error instanceof Error ? error.message : "Unexpected error calling APIM.";
+            this.apimError = message;
+            // Provide deterministic fallback data so the grid remains populated in offline scenarios.
+            this.apimItems = SAMPLE_TASK_RESULTS;
+        } finally {
+            this.apimLoading = false;
+            this.hasLoadedApim = true;
+            this.notifyOutputChanged();
+        }
     }
 
     private matchesFilters(

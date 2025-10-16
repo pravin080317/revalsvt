@@ -75,6 +75,7 @@ export interface GridProps {
   canPrev: boolean;
   overlayOnSort?: boolean;
   searchFilters: GridFilterState;
+  errorMessage?: string;
 }
 
 const defaultTheme = createTheme({
@@ -138,6 +139,7 @@ export const Grid = React.memo((props: GridProps) => {
     canPrev,
     overlayOnSort,
     searchFilters,
+    errorMessage,
   } = props;
 
   const theme = useTheme(themeJSON);
@@ -572,6 +574,11 @@ export const Grid = React.memo((props: GridProps) => {
         {columnDatasetNotDefined && (
           <MessageBar messageBarType={MessageBarType.error} style={{ marginBottom: 16 }}>
             One or more column configurations reference fields that do not exist in the dataset.
+          </MessageBar>
+        )}
+        {errorMessage && (
+          <MessageBar messageBarType={MessageBarType.error} style={{ marginBottom: 16 }}>
+            {errorMessage}
           </MessageBar>
         )}
         <Stack
