@@ -1,15 +1,19 @@
-/* eslint-disable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-return, @typescript-eslint/no-redundant-type-constituents, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-argument */
 import {
   CheckboxVisibility,
   ColumnActionsMode,
+  ContextualMenu,
+  ContextualMenuItemType,
   createTheme,
+  DirectionalHint,
   IColumn,
   IColumnReorderOptions,
+  IContextualMenuItem,
   IDetailsList,
   IObjectWithKey,
   IRefObject,
   ISelection,
   IPartialTheme,
+  PrimaryButton,
   SelectionMode,
   ShimmeredDetailsList,
   Overlay,
@@ -128,11 +132,20 @@ export const Grid = React.memo((props: GridProps) => {
 
   const [columns, setColumns] = React.useState<IGridColumn[]>([]);
   const [isComponentLoading, setIsLoading] = React.useState(false);
+  const [columnFilters, setColumnFilters] = React.useState<Record<string, string>>({});
+  const [menuState, setMenuState] = React.useState<{
+    target: HTMLElement;
+    column: IGridColumn;
+  }>();
+  const [menuFilterValue, setMenuFilterValue] = React.useState('');
 
   React.useEffect(() => {
     setColumns(
       datasetColumns.map((c) => {
-        const cfg = columnConfigs[c.name.toLowerCase()] || {};
+        const cfg =
+          columnConfigs[c.name.toLowerCase()] ||
+          (c.alias ? columnConfigs[c.alias.toLowerCase()] : undefined) ||
+          {};
         const sort = sorting?.find((s) => s.name === c.name);
         const visualSize =
           typeof c.visualSizeFactor === 'number' && !isNaN(c.visualSizeFactor)
@@ -172,12 +185,16 @@ export const Grid = React.memo((props: GridProps) => {
           imagePadding: cfg.ColImagePadding,
           sortable: cfg.ColSortable !== false,
           columnActionsMode:
-            cfg.ColSortable !== false ? ColumnActionsMode.clickable : ColumnActionsMode.disabled,
+            cfg.ColSortable !== false ? ColumnActionsMode.hasDropdown : ColumnActionsMode.disabled,
           sortBy: cfg.ColSortBy,
           childColumns: [],
         };
         if (cellType === 'tag' || cellType === 'indicatortag') {
-          col.onRender = (item, _, column) => (
+          col.onRender = (
+            item: ComponentFramework.PropertyHelper.DataSetApi.EntityRecord,
+            _?: number,
+            column?: IColumn,
+          ) => (
             <GridCell item={item} column={column} onCellAction={(i) => onNavigate(i)} />
           );
         }
@@ -212,6 +229,31 @@ export const Grid = React.memo((props: GridProps) => {
     return mapped;
   }, [records, sortedRecordIds]);
 
+  const getFilterableText = React.useCallback((raw: unknown): string => {
+    if (typeof raw === 'string') {
+      return raw;
+    }
+    if (typeof raw === 'number' || typeof raw === 'boolean') {
+      return raw.toString();
+    }
+    return '';
+  }, []);
+
+  const filteredItems = React.useMemo(() => {
+    const filterEntries = Object.entries(columnFilters).filter(([, value]) => value.trim() !== '');
+    if (filterEntries.length === 0) {
+      return items;
+    }
+    return items.filter((item) => {
+      const record = item as unknown as Record<string, unknown>;
+      return filterEntries.every(([fieldName, filterValue]) => {
+        const raw = record[fieldName];
+        const text = getFilterableText(raw);
+        return text.toLowerCase().includes(filterValue.toLowerCase());
+      });
+    });
+  }, [columnFilters, getFilterableText, items]);
+
   const onItemInvoked = React.useCallback(
     (item?: ComponentFramework.PropertyHelper.DataSetApi.EntityRecord) => {
       onNavigate(item);
@@ -219,19 +261,129 @@ export const Grid = React.memo((props: GridProps) => {
     [onNavigate],
   );
 
+  const handleSort = React.useCallback(
+    (column: IGridColumn, descending: boolean) => {
+      if (column.sortable === false) {
+        return;
+      }
+      if (overlayOnSort) {
+        setIsLoading(true);
+      }
+      const sortField = column.sortBy ?? column.key;
+      onSort(sortField, descending);
+      setMenuState(undefined);
+    },
+    [onSort, overlayOnSort],
+  );
+
   const onColumnHeaderClick = React.useCallback(
     (ev?: React.MouseEvent<HTMLElement>, column?: IColumn) => {
       const gridCol = column as IGridColumn;
       if (column && gridCol.sortable !== false) {
-        if (overlayOnSort) {
-          setIsLoading(true);
-        }
-        const sortField = gridCol.sortBy ?? column.key;
-        onSort(sortField, column.isSorted ? !column.isSortedDescending : false);
+        const nextDescending = column.isSorted ? !column.isSortedDescending : false;
+        handleSort(gridCol, !!nextDescending);
       }
     },
-    [onSort, overlayOnSort],
+    [handleSort],
   );
+
+  const onColumnHeaderContextMenu = React.useCallback(
+    (column?: IColumn, ev?: React.MouseEvent<HTMLElement>) => {
+      if (!column) {
+        return;
+      }
+      ev?.preventDefault();
+      const gridCol = column as IGridColumn;
+      const target = (ev?.currentTarget ?? ev?.target) as HTMLElement | undefined;
+      if (target) {
+        const fieldName = gridCol.fieldName ?? gridCol.key;
+        setMenuFilterValue(columnFilters[fieldName] ?? '');
+        setMenuState({ target, column: gridCol });
+      }
+    },
+    [columnFilters],
+  );
+
+  const applyFilter = React.useCallback(() => {
+    if (!menuState) {
+      return;
+    }
+    const fieldName = menuState.column.fieldName ?? menuState.column.key;
+    setColumnFilters((prev) => {
+      const updated = { ...prev };
+      const trimmed = menuFilterValue.trim();
+      if (trimmed === '') {
+        delete updated[fieldName];
+      } else {
+        updated[fieldName] = trimmed;
+      }
+      return updated;
+    });
+    setMenuState(undefined);
+  }, [menuFilterValue, menuState]);
+
+  const clearFilter = React.useCallback(() => {
+    if (!menuState) {
+      return;
+    }
+    const fieldName = menuState.column.fieldName ?? menuState.column.key;
+    setColumnFilters((prev) => {
+      if (!(fieldName in prev)) {
+        return prev;
+      }
+      const updated = { ...prev };
+      delete updated[fieldName];
+      return updated;
+    });
+    setMenuFilterValue('');
+    setMenuState(undefined);
+  }, [menuState]);
+
+  const menuItems = React.useMemo<IContextualMenuItem[]>(() => {
+    if (!menuState) {
+      return [];
+    }
+    return [
+      {
+        key: 'sortAsc',
+        text: 'Sort Ascending',
+        iconProps: { iconName: 'SortUp' },
+        onClick: () => handleSort(menuState.column, false),
+      },
+      {
+        key: 'sortDesc',
+        text: 'Sort Descending',
+        iconProps: { iconName: 'SortDown' },
+        onClick: () => handleSort(menuState.column, true),
+      },
+      {
+        key: 'divider',
+        itemType: ContextualMenuItemType.Divider,
+      },
+      {
+        key: 'filterHeader',
+        text: 'Filter',
+        disabled: true,
+        style: { fontWeight: 600 },
+      },
+      {
+        key: 'filterInput',
+        onRender: () => (
+          <div style={{ padding: '0 12px 12px', width: 220 }}>
+            <TextField
+              placeholder={`Filter ${menuState.column.name}`}
+              value={menuFilterValue}
+              onChange={(_, value) => setMenuFilterValue(value ?? '')}
+            />
+            <Stack horizontal tokens={{ childrenGap: 8 }} style={{ marginTop: 8 }}>
+              <PrimaryButton text="Apply" onClick={applyFilter} />
+              <DefaultButton text="Clear" onClick={clearFilter} />
+            </Stack>
+          </div>
+        ),
+      },
+    ];
+  }, [applyFilter, clearFilter, handleSort, menuFilterValue, menuState]);
 
   if (datasetColumns.length === 0) {
     return <NoFields resources={resources} />;
@@ -254,7 +406,7 @@ export const Grid = React.memo((props: GridProps) => {
         <ShimmeredDetailsList
           className={ClassNames.PowerCATFluentDetailsList}
           componentRef={componentRef}
-          items={items}
+          items={filteredItems}
           columns={columns}
           setKey="grid"
           enableShimmer={itemsLoading || shimmer}
@@ -262,11 +414,21 @@ export const Grid = React.memo((props: GridProps) => {
           selection={selection}
           checkboxVisibility={CheckboxVisibility.hidden}
           onColumnHeaderClick={onColumnHeaderClick}
+          onColumnHeaderContextMenu={onColumnHeaderContextMenu}
           onItemInvoked={onItemInvoked}
           columnReorderOptions={columnReorderOptions}
           compact={compact}
           isHeaderVisible={isHeaderVisible}
         />
+        {menuState && (
+          <ContextualMenu
+            target={menuState.target}
+            items={menuItems}
+            onDismiss={() => setMenuState(undefined)}
+            directionalHint={DirectionalHint.bottomLeftEdge}
+            calloutProps={{ setInitialFocus: true }}
+          />
+        )}
         {(itemsLoading || isComponentLoading) && <Overlay />}
         <Stack
           horizontal

@@ -2,6 +2,7 @@
 import { IInputs, IOutputs } from "./generated/ManifestTypes";
 import { Grid, GridProps } from "./Grid";
 import { ColumnConfig } from "./Component.types";
+import { SAMPLE_COLUMNS, SAMPLE_RECORDS } from "./SampleData";
 import * as React from "react";
 import { IDetailsList, ISelection, Selection, SelectionMode, IObjectWithKey } from '@fluentui/react';
 
@@ -55,8 +56,9 @@ export class DetailsListVOA implements ComponentFramework.ReactControl<IInputs, 
                 const arr = JSON.parse(columnConfigRaw) as ColumnConfig[];
                 this.columnConfigs = {};
                 arr.forEach((c) => {
-                    if (c.ColName) {
-                        this.columnConfigs[c.ColName.toLowerCase()] = c;
+                    const normalizedName = c.ColName?.trim().toLowerCase();
+                    if (normalizedName) {
+                        this.columnConfigs[normalizedName] = c;
                     }
                 });
             } catch {
@@ -71,51 +73,51 @@ export class DetailsListVOA implements ComponentFramework.ReactControl<IInputs, 
         });
         const componentRef = React.createRef<IDetailsList>();
 
-        const datasetColumns: ComponentFramework.PropertyHelper.DataSetApi.Column[] = dataset.columns.map((c) => ({
-            ...c,
-            displayName: this.columnDisplayNames[c.name.toLowerCase()] ?? c.displayName,
-        }));
+        const datasetColumns: ComponentFramework.PropertyHelper.DataSetApi.Column[] = dataset.columns.map((c) => {
+            const lowerName = c.name?.toLowerCase();
+            const lowerAlias = c.alias?.toLowerCase();
+            const displayNameOverride =
+                (lowerName ? this.columnDisplayNames[lowerName] : undefined) ??
+                (lowerAlias ? this.columnDisplayNames[lowerAlias] : undefined);
+            return {
+                ...c,
+                alias: c.alias ?? c.name,
+                displayName: displayNameOverride ?? c.displayName,
+            };
+        });
 
-        datasetColumns.push({
-            name: "taskstatus",
-            displayName: this.columnDisplayNames.taskstatus ?? "Task Status",
-            dataType: "SingleLine.Text",
-            alias: "taskstatus",
-            order: datasetColumns.length + 1,
-            visualSizeFactor: 100,
-        } as ComponentFramework.PropertyHelper.DataSetApi.Column);
-        datasetColumns.push({
-            name: "assignedto",
-            displayName: this.columnDisplayNames.assignedto ?? "Assigned To",
-            dataType: "SingleLine.Text",
-            alias: "assignedto",
-            order: datasetColumns.length + 1,
-            visualSizeFactor: 100,
-        } as ComponentFramework.PropertyHelper.DataSetApi.Column);
-        datasetColumns.push({
-            name: "tasktitle",
-            displayName: this.columnDisplayNames.tasktitle ?? "Task Title",
-            dataType: "SingleLine.Text",
-            alias: "tasktitle",
-            order: datasetColumns.length + 1,
-            visualSizeFactor: 100,
-        } as ComponentFramework.PropertyHelper.DataSetApi.Column);
-        datasetColumns.push({
-            name: "action",
-            displayName: this.columnDisplayNames.action ?? "Action",
-            dataType: "SingleLine.Text",
-            alias: "action",
-            order: datasetColumns.length + 1,
-            visualSizeFactor: 100,
-        } as ComponentFramework.PropertyHelper.DataSetApi.Column);
+        const ensureColumn = (name: string, defaultDisplayName: string, width = 100): void => {
+            const lowerName = name.toLowerCase();
+            if (datasetColumns.some((col) => col.name.toLowerCase() === lowerName)) {
+                return;
+            }
+            datasetColumns.push({
+                name,
+                displayName: this.columnDisplayNames[lowerName] ?? defaultDisplayName,
+                dataType: "SingleLine.Text",
+                alias: name,
+                order: datasetColumns.length + 1,
+                visualSizeFactor: width,
+            } as ComponentFramework.PropertyHelper.DataSetApi.Column);
+        };
 
-        const columnNamesSet = new Set(datasetColumns.map((c) => c.name.toLowerCase()));
-        const columnDatasetNotDefined = Object.keys(this.columnConfigs).some(
-            (name) => !columnNamesSet.has(name),
-        );
+        ensureColumn("taskstatus", "Task Status");
+        ensureColumn("assignedto", "Assigned To");
+        ensureColumn("tasktitle", "Task Title");
+        ensureColumn("action", "Action");
 
         const records: Record<string, ComponentFramework.PropertyHelper.DataSetApi.EntityRecord> = {};
         const allIds: string[] = [];
+
+        const formatValue = (value: unknown): string => {
+            if (typeof value === "string") {
+                return value;
+            }
+            if (typeof value === "number" || typeof value === "boolean") {
+                return value.toString();
+            }
+            return "";
+        };
 
         dataset.sortedRecordIds.forEach((id) => {
             const dsRecord = dataset.records[id];
@@ -126,7 +128,7 @@ export class DetailsListVOA implements ComponentFramework.ReactControl<IInputs, 
             newRecord.getValue = (columnName: string): any => (newRecord as Record<string, unknown>)[columnName];
             newRecord.getFormattedValue = (columnName: string): string => {
                 const value = (newRecord as Record<string, unknown>)[columnName];
-                return typeof value === "string" ? value : "";
+                return formatValue(value);
             };
 
             dataset.columns.forEach((c) => {
@@ -167,6 +169,37 @@ export class DetailsListVOA implements ComponentFramework.ReactControl<IInputs, 
             records[id] = newRecord as unknown as ComponentFramework.PropertyHelper.DataSetApi.EntityRecord;
             allIds.push(id);
         });
+
+        if (allIds.length === 0 && !dataset.loading) {
+            SAMPLE_COLUMNS.forEach((column) => ensureColumn(column.name, column.displayName, column.width));
+            SAMPLE_RECORDS.forEach((sample, index) => {
+                const recordBase: Record<string, unknown> = {};
+                const sampleRecord = recordBase as ComponentFramework.PropertyHelper.DataSetApi.EntityRecord & Record<string, unknown>;
+                sampleRecord.getRecordId = () => `sample-${index}`;
+                sampleRecord.getNamedReference = undefined as unknown as ComponentFramework.PropertyHelper.DataSetApi.EntityRecord['getNamedReference'];
+                sampleRecord.getValue = ((columnName: string) => sampleRecord[columnName] ?? '') as ComponentFramework.PropertyHelper.DataSetApi.EntityRecord['getValue'];
+                sampleRecord.getFormattedValue = ((columnName: string) => formatValue(sampleRecord[columnName])) as ComponentFramework.PropertyHelper.DataSetApi.EntityRecord['getFormattedValue'];
+                Object.keys(sample).forEach((key) => {
+                    sampleRecord[key] = sample[key];
+                });
+                const sampleId = `sample-${index}`;
+                records[sampleId] = sampleRecord;
+                allIds.push(sampleId);
+            });
+        }
+
+        const columnNamesSet = new Set<string>();
+        datasetColumns.forEach((c) => {
+            if (c.name) {
+                columnNamesSet.add(c.name.toLowerCase());
+            }
+            if (c.alias) {
+                columnNamesSet.add(c.alias.toLowerCase());
+            }
+        });
+        const columnDatasetNotDefined = Object.keys(this.columnConfigs).some(
+            (name) => !columnNamesSet.has(name),
+        );
 
         let filteredIds = allIds;
         if (this.searchText) {
