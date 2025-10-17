@@ -76,6 +76,7 @@ export interface GridProps {
   overlayOnSort?: boolean;
   searchFilters: GridFilterState;
   errorMessage?: string;
+  showResults?: boolean;
 }
 
 const defaultTheme = createTheme({
@@ -140,6 +141,7 @@ export const Grid = React.memo((props: GridProps) => {
     overlayOnSort,
     searchFilters,
     errorMessage,
+    showResults,
   } = props;
 
   const theme = useTheme(themeJSON);
@@ -717,6 +719,7 @@ export const Grid = React.memo((props: GridProps) => {
             </Stack>
           </Stack.Item>
         </Stack>
+        {showResults && (
         <ShimmeredDetailsList
           className={ClassNames.PowerCATFluentDetailsList}
           componentRef={componentRef}
@@ -733,8 +736,8 @@ export const Grid = React.memo((props: GridProps) => {
           columnReorderOptions={columnReorderOptions}
           compact={compact}
           isHeaderVisible={isHeaderVisible}
-        />
-        {menuState && (
+        />)}
+        {showResults && menuState && (
           <ContextualMenu
             target={menuState.target}
             items={menuItems}
@@ -743,7 +746,8 @@ export const Grid = React.memo((props: GridProps) => {
             calloutProps={{ setInitialFocus: true }}
           />
         )}
-        {(itemsLoading || isComponentLoading) && <Overlay />}
+        {showResults && (itemsLoading || isComponentLoading) && <Overlay />}
+        {showResults && (
         <Stack
           horizontal
           tokens={{ childrenGap: 8 }}
@@ -776,6 +780,7 @@ export const Grid = React.memo((props: GridProps) => {
             styles={{ root: { height: 32, padding: '0 8px' } }}
           />
         </Stack>
+        )}
       </div>
     </ThemeProvider>
   );

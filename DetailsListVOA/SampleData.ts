@@ -13,10 +13,8 @@ export const SAMPLE_COLUMNS: SampleColumnDefinition[] = [
     { name: 'transactionid', displayName: 'Transaction ID', width: 140 },
     { name: 'saleprice', displayName: 'Sale Price', width: 110 },
     { name: 'marketvalue', displayName: 'Market Value', width: 120 },
-    { name: 'tasktitle', displayName: 'Task Title', width: 220 },
     { name: 'taskstatus', displayName: 'Task Status', width: 110 },
-    { name: 'assignedto', displayName: 'Assigned To', width: 140 },
-    { name: 'action', displayName: 'Action', width: 120 },
+    // removed: tasktitle, assignedto, action
 ];
 
 export const SAMPLE_RECORDS: SampleRecord[] = [
@@ -30,7 +28,6 @@ export const SAMPLE_RECORDS: SampleRecord[] = [
         tasktitle: 'Confirm buyer solicitor details',
         taskstatus: 'Assigned',
         assignedto: 'Alex Johnson',
-        action: '🔍 View / Edit',
         saleId: 'SAMPLE-001',
         taskId: 'TASK-001',
     },
@@ -44,7 +41,6 @@ export const SAMPLE_RECORDS: SampleRecord[] = [
         tasktitle: 'Validate comparable sales',
         taskstatus: 'In Review',
         assignedto: 'Maria Chen',
-        action: '🔍 View / Edit',
         saleId: 'SAMPLE-002',
         taskId: 'TASK-002',
     },
@@ -58,7 +54,6 @@ export const SAMPLE_RECORDS: SampleRecord[] = [
         tasktitle: 'Check land registry entry',
         taskstatus: 'Assigned',
         assignedto: 'Priya Desai',
-        action: '🔍 View / Edit',
         saleId: 'SAMPLE-003',
         taskId: 'TASK-003',
     },
@@ -72,7 +67,6 @@ export const SAMPLE_RECORDS: SampleRecord[] = [
         tasktitle: 'Verify postcode assignment',
         taskstatus: 'Completed',
         assignedto: 'James Carter',
-        action: '🔍 View / Edit',
         saleId: 'SAMPLE-004',
         taskId: 'TASK-004',
     },
@@ -86,7 +80,6 @@ export const SAMPLE_RECORDS: SampleRecord[] = [
         tasktitle: 'Assess market adjustment',
         taskstatus: 'Assigned',
         assignedto: 'Sophie Martin',
-        action: '🔍 View / Edit',
         saleId: 'SAMPLE-005',
         taskId: 'TASK-005',
     },
