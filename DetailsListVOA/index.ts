@@ -51,7 +51,7 @@ export class DetailsListVOA implements ComponentFramework.ReactControl<IInputs, 
             return React.createElement(
                 PCFContext.Provider,
                 { value: context },
-                React.createElement(SampleSearch, {})
+                React.createElement(SampleSearch, { pageSize: context.parameters.pageSize?.raw ?? 10 })
             );
         }
         const dataset = context.parameters.revalSalesDataset;

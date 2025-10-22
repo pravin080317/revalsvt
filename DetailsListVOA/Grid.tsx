@@ -468,6 +468,21 @@ export const Grid = React.memo((props: GridProps) => {
     return isLookupFieldFor(tableKey, field);
   }, [tableKey]);
 
+  const isTextOnlyField = React.useCallback((field: string | undefined): boolean => {
+    if (!field) return false;
+    const f = field.replace(/[^a-z0-9]/gi, '').toLowerCase();
+    return (
+      f === 'saleid' ||
+      f === 'taskid' ||
+      f === 'uprn' ||
+      f === 'address' ||
+      f === 'transactiondate' ||
+      f === 'saleprice' ||
+      f === 'marketvalue' ||
+      f === 'ratio'
+    );
+  }, []);
+
   // Derive icons each render to reflect current sort/filter state
   const columnsWithIcons = React.useMemo<IGridColumn[]>(() => {
     return columns.map((c) => {
@@ -744,7 +759,7 @@ export const Grid = React.memo((props: GridProps) => {
                   onChange={(_, v) => {
                     const next = v ?? '';
                     setMenuFilterText(next);
-                    if (onLoadFilterOptions) {
+                    if (onLoadFilterOptions && !isTextOnlyField(fieldName)) {
                       if (menuOptionsTimer.current) {
                         window.clearTimeout(menuOptionsTimer.current);
                       }
@@ -763,6 +778,7 @@ export const Grid = React.memo((props: GridProps) => {
                     <Text variant="small" style={{ marginLeft: 8 }}>Searching…</Text>
                   </Stack>
                 )}
+                {!isTextOnlyField(fieldName) && (
                 <Dropdown
                   placeholder={`Select ${menuState.column.name}`}
                   options={filteredValueOptions}
@@ -782,7 +798,7 @@ export const Grid = React.memo((props: GridProps) => {
                     });
                   }}
                   styles={{ dropdown: { width: '100%' } }}
-                />
+                />)}
               </>
             )}
             <Stack horizontal tokens={{ childrenGap: 8 }} style={{ marginTop: 8 }}>

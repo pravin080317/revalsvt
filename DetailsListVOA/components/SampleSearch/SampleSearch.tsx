@@ -92,13 +92,13 @@ function buildRecords(): { records: Record<string, EntityRecord>; ids: string[] 
   return { records, ids };
 }
 
-export function SampleSearch(): JSX.Element {
+export function SampleSearch(props: { pageSize?: number } = {}): JSX.Element {
   const [searchBy, setSearchBy] = React.useState<string>('address');
   const [loaded, setLoaded] = React.useState(false);
   const [datasetColumns] = React.useState(buildDatasetColumns());
   const [data, setData] = React.useState(() => ({ records: {} as Record<string, EntityRecord>, ids: [] as string[] }));
   const [page, setPage] = React.useState(0);
-  const pageSize = 10;
+  const pageSize = props.pageSize ?? 10;
   const totalPages = Math.max(1, Math.ceil((data.ids.length || 1) / pageSize));
   const componentRef = React.useRef<IDetailsList>(null);
   const selection = React.useMemo(
