@@ -55,6 +55,33 @@
       required="false"
       default-value="https://api.contoso.gov.uk/revaluation/tasks"
     />
+    <property
+      name="useSampleSearch"
+      display-name-key="Use Sample Search"
+      description-key="When enabled, renders the sample Search component that loads SAMPLE_RECORDS into the grid."
+      of-type="TwoOptions"
+      usage="input"
+      required="false"
+      default-value="false"
+    />
+    <property
+      name="customApiName"
+      display-name-key="Custom API Name"
+      description-key="Name of the Dataverse Custom API to execute (unbound). If set, the control will call this instead of the external endpoint."
+      of-type="SingleLine.Text"
+      usage="input"
+      required="false"
+      default-value=""
+    />
+    <property
+      name="tableKey"
+      display-name-key="Table Key"
+      description-key="Logical key for table config (e.g., sales, reviews)"
+      of-type="SingleLine.Text"
+      usage="input"
+      required="false"
+      default-value="sales"
+    />
     <property name="selectedTaskId" display-name-key="SelectedTaskId" description-key="SelectedTaskId description" of-type="SingleLine.Text" usage="output" required="false" />
     <resources>
       <code path="index.ts" order="1"/>

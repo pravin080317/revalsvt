@@ -1,4 +1,11 @@
-export type SearchByOption = 'uprn' | 'taskId' | 'address' | 'manualCheck' | 'postcode';
+export type SearchByOption =
+  | 'uprn'
+  | 'taskId'
+  | 'address'
+  | 'manualCheck'
+  | 'postcode'
+  | 'taskStatus'
+  | 'source';
 
 export type ManualCheckFilter = 'yes' | 'no' | 'all';
 
@@ -11,6 +18,8 @@ export interface GridFilterState {
   townCity?: string;
   postcode?: string;
   manualCheck?: ManualCheckFilter;
+  taskStatus?: string;
+  source?: string;
 }
 
 export const createDefaultGridFilters = (): GridFilterState => ({
@@ -52,6 +61,16 @@ export const sanitizeFilters = (filters: GridFilterState): GridFilterState => {
   if (filters.postcode) {
     const trimmed = filters.postcode.trim().toUpperCase();
     sanitized.postcode = trimmed.length > 0 ? trimmed : undefined;
+  }
+
+  if (filters.taskStatus) {
+    const trimmed = filters.taskStatus.trim();
+    sanitized.taskStatus = trimmed.length > 0 ? trimmed : undefined;
+  }
+
+  if (filters.source) {
+    const trimmed = filters.source.trim();
+    sanitized.source = trimmed.length > 0 ? trimmed : undefined;
   }
 
   return sanitized;

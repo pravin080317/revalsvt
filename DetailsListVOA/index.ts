@@ -1,12 +1,16 @@
-/* eslint-disable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access */
+import './initFluentIcons';
 import { IInputs, IOutputs } from "./generated/ManifestTypes";
 import { Grid, GridProps } from "./Grid";
+import { PCFContext } from "./components/context/PCFContext";
+import { SampleSearch } from "./components/SampleSearch";
 import { ColumnConfig } from "./Component.types";
 import { SAMPLE_COLUMNS, SAMPLE_RECORDS } from "./SampleData";
 import { SAMPLE_TASK_RESULTS, TaskSearchItem, TaskSearchResponse } from "./TaskSearchSample";
 import * as React from "react";
 import { IDetailsList, ISelection, Selection, SelectionMode, IObjectWithKey } from '@fluentui/react';
 import { GridFilterState, createDefaultGridFilters, sanitizeFilters } from "./Filters";
+import { buildApiParamsFor } from "./TableConfigs";
+import { fetchFilterOptions } from "./services/DataService";
 
 export class DetailsListVOA implements ComponentFramework.ReactControl<IInputs, IOutputs> {
     private notifyOutputChanged: () => void;
@@ -24,6 +28,9 @@ export class DetailsListVOA implements ComponentFramework.ReactControl<IInputs, 
     private apimError?: string;
     private hasLoadedApim = false;
     private showResults = false;
+    private headerFilters: Record<string, string | string[]> = {};
+    private tableKey = 'sales';
+
 
     constructor() {
         // Empty
@@ -38,7 +45,23 @@ export class DetailsListVOA implements ComponentFramework.ReactControl<IInputs, 
     }
 
     public updateView(context: ComponentFramework.Context<IInputs>): React.ReactElement {
+        // Allow quick switch to a sample search-driven grid for demo/testing
+        const useSample = (context.parameters as unknown as Record<string, { raw?: boolean }>).useSampleSearch?.raw;
+        if (useSample) {
+            return React.createElement(
+                PCFContext.Provider,
+                { value: context },
+                React.createElement(SampleSearch, {})
+            );
+        }
         const dataset = context.parameters.revalSalesDataset;
+        // Allow screens to select a table profile for lookups and API mapping
+        try {
+            const raw = (context.parameters as unknown as Record<string, { raw?: string }>).tableKey?.raw;
+            this.tableKey = raw?.trim()?.toLowerCase() ?? 'sales';
+        } catch {
+            this.tableKey = 'sales';
+        }
         const taskIdField = context.parameters.taskIdField.raw ?? "taskid";
         const taskEntity = context.parameters.taskEntity.raw ?? "";
         const navigationTarget = context.parameters.navigationTarget.raw ?? "";
@@ -81,7 +104,15 @@ export class DetailsListVOA implements ComponentFramework.ReactControl<IInputs, 
         });
         const componentRef = React.createRef<IDetailsList>();
 
-        const datasetColumns: ComponentFramework.PropertyHelper.DataSetApi.Column[] = dataset.columns.map((c) => {
+        // Start from dataset columns but drop fields that should never be shown in the grid
+        const columnsToExclude = new Set(["name", "telephone1", "address1_city"]);
+        const datasetColumns: ComponentFramework.PropertyHelper.DataSetApi.Column[] = dataset.columns
+            .filter((c) => {
+                const n = c.name?.toLowerCase();
+                const a = c.alias?.toLowerCase();
+                return !(n && columnsToExclude.has(n)) && !(a && columnsToExclude.has(a));
+            })
+            .map((c) => {
             const lowerName = c.name?.toLowerCase();
             const lowerAlias = c.alias?.toLowerCase();
             const displayNameOverride =
@@ -160,8 +191,7 @@ export class DetailsListVOA implements ComponentFramework.ReactControl<IInputs, 
             const newRecord = {} as ComponentFramework.PropertyHelper.DataSetApi.EntityRecord & Record<string, unknown>;
             newRecord.getRecordId = dsRecord.getRecordId.bind(dsRecord);
             newRecord.getNamedReference = dsRecord.getNamedReference?.bind(dsRecord);
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            newRecord.getValue = (columnName: string): any => (newRecord as Record<string, unknown>)[columnName];
+            newRecord.getValue = ((columnName: string) => (newRecord as Record<string, unknown>)[columnName] ?? '') as ComponentFramework.PropertyHelper.DataSetApi.EntityRecord['getValue'];
             newRecord.getFormattedValue = (columnName: string): string => {
                 const value = (newRecord as Record<string, unknown>)[columnName];
                 return formatValue(value);
@@ -257,7 +287,7 @@ export class DetailsListVOA implements ComponentFramework.ReactControl<IInputs, 
         this.searchFilters = filters;
         const filteredIds = activeIds.filter((id) => {
             const record = activeRecords[id] as unknown as Record<string, unknown>;
-            return this.matchesFilters(record, filters, datasetColumns);
+            return this.matchesFilters(record, filters, datasetColumns) && this.matchesHeaderFilters(record, this.headerFilters, datasetColumns);
         });
 
         let quickNavigateRecord: ComponentFramework.PropertyHelper.DataSetApi.EntityRecord | undefined;
@@ -335,8 +365,13 @@ export class DetailsListVOA implements ComponentFramework.ReactControl<IInputs, 
 
         const onSort = (name: string, desc: boolean): void => {
             const sortDirection = desc ? 1 : 0;
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            const sorting = dataset.sorting as unknown as any;
+            type SortExt = { name: string; sortDirection: number }[] & {
+                setSort?: (name: string, sortDirection: number) => void;
+                sortByName?: (name: string, sortDirection: number) => void;
+                addSort?: (name: string, sortDirection: number) => void;
+                clear?: () => void;
+            };
+            const sorting = dataset.sorting as unknown as SortExt;
             if (sorting) {
                 if (typeof sorting.setSort === "function") {
                     sorting.setSort(name, sortDirection);
@@ -354,6 +389,7 @@ export class DetailsListVOA implements ComponentFramework.ReactControl<IInputs, 
         };
 
         const props: GridProps = {
+            tableKey: this.tableKey,
             datasetColumns,
             columnConfigs: this.columnConfigs,
             records: activeRecords,
@@ -378,9 +414,37 @@ export class DetailsListVOA implements ComponentFramework.ReactControl<IInputs, 
             canPrev,
             searchFilters: this.searchFilters,
             showResults: this.showResults,
+            onColumnFiltersChange: (f) => {
+                this.headerFilters = f;
+                this.currentPage = 0;
+                this.notifyOutputChanged();
+            },
+            onLoadFilterOptions: async (field, query) => {
+                const configuredEndpoint = context.parameters.apimEndpoint?.raw?.trim();
+                const customApiName = (context.parameters as unknown as Record<string, { raw?: string }>).customApiName?.raw?.trim();
+                if (!query || query.trim().length === 0) {
+                    return [];
+                }
+                try {
+                    const values = await fetchFilterOptions(context, {
+                        tableKey: this.tableKey,
+                        field,
+                        query,
+                        apimEndpoint: configuredEndpoint,
+                        customApiName,
+                    });
+                    return values;
+                } catch {
+                    return [];
+                }
+            },
         };
 
-        const element = React.createElement(Grid, props);
+        const element = React.createElement(
+            PCFContext.Provider,
+            { value: context },
+            React.createElement(Grid, props)
+        );
 
         if (quickNavigateRecord && quickNavigateKey && this.lastQuickNavigateKey !== quickNavigateKey) {
             this.lastQuickNavigateKey = quickNavigateKey;
@@ -471,56 +535,84 @@ export class DetailsListVOA implements ComponentFramework.ReactControl<IInputs, 
             return;
         }
 
-        requestUrl.searchParams.set("searchBy", filters.searchBy);
         const pageSize = context.parameters.pageSize.raw ?? 10;
-        requestUrl.searchParams.set("page", this.currentPage.toString());
-        requestUrl.searchParams.set("pageSize", pageSize.toString());
-
-        if (filters.searchBy === "uprn" && filters.uprn) {
-            requestUrl.searchParams.set("uprn", filters.uprn);
-        }
-        if (filters.searchBy === "taskId" && filters.taskId) {
-            requestUrl.searchParams.set("taskId", filters.taskId);
-        }
-        if (filters.searchBy === "postcode" && filters.postcode) {
-            requestUrl.searchParams.set("postcode", filters.postcode);
-        }
-        if (filters.searchBy === "address") {
-            if (filters.buildingNameNumber) {
-                requestUrl.searchParams.set("buildingName", filters.buildingNameNumber);
-            }
-            if (filters.street) {
-                requestUrl.searchParams.set("street", filters.street);
-            }
-            if (filters.townCity) {
-                requestUrl.searchParams.set("town", filters.townCity);
-            }
-            if (filters.postcode) {
-                requestUrl.searchParams.set("postcode", filters.postcode);
-            }
-        }
-        if (filters.searchBy === "manualCheck" && filters.manualCheck && filters.manualCheck !== "all") {
-            requestUrl.searchParams.set("manualCheck", filters.manualCheck);
-        }
+        const apiParams = buildApiParamsFor(this.tableKey, filters, this.currentPage, pageSize);
+        const headerFilterEntries = Object.entries(this.headerFilters).filter(([_, v]) =>
+            Array.isArray(v) ? v.length > 0 : (v ?? '').trim() !== '',
+        );
 
         this.apimLoading = true;
         this.apimError = undefined;
         this.notifyOutputChanged();
 
+        // Prefer Dataverse Custom API if provided, else fallback to external endpoint
+        const customApiName = (context.parameters as unknown as Record<string, { raw?: string }>).customApiName?.raw?.trim();
         try {
-            const response = await fetch(requestUrl.toString(), {
-                method: "GET",
-            });
-            if (!response.ok) {
-                throw new Error(`APIM request failed with status ${response.status}`);
+            if (customApiName) {
+                // Build a dynamic request for an unbound Custom API with string parameters
+                const request: Record<string, unknown> & {
+                    getMetadata: () => {
+                        boundParameter: null;
+                        parameterTypes: Record<string, { typeName: string; structuralProperty: number }>;
+                        operationType: number;
+                        operationName: string;
+                    };
+                } = {
+                    getMetadata: () => ({
+                        boundParameter: null,
+                        parameterTypes: Object.keys(apiParams).reduce((acc, key) => {
+                            acc[key] = { typeName: 'Edm.String', structuralProperty: 1 };
+                            return acc;
+                        }, {} as Record<string, { typeName: string; structuralProperty: number }>),
+                        operationType: 0, // Action
+                        operationName: customApiName,
+                    }),
+                };
+                Object.entries(apiParams).forEach(([k, v]) => {
+                    (request as Record<string, unknown>)[k] = v;
+                });
+                if (headerFilterEntries.length > 0) {
+                    try {
+                        (request as Record<string, unknown>).columnFilters = JSON.stringify(this.headerFilters);
+                    } catch {
+                        // ignore
+                    }
+                }
+
+                interface WebApiWithExecute { execute: (request: unknown) => Promise<Response>; }
+                const result = await (context.webAPI as unknown as WebApiWithExecute).execute(request);
+                const payload = (await result.json()) as TaskSearchResponse;
+                this.apimItems = payload.items ?? [];
+                this.apimError = undefined;
+            } else {
+                Object.entries(apiParams).forEach(([k, v]) => requestUrl.searchParams.set(k, v));
+                // Serialize header filters using bracket notation: filter[field][]=v1
+                if (headerFilterEntries.length > 0) {
+                    headerFilterEntries.forEach(([field, val]) => {
+                        if (Array.isArray(val)) {
+                            val.forEach((v) => {
+                                if ((v ?? '').trim() !== '') {
+                                    requestUrl.searchParams.append(`filter[${field}][]`, String(v));
+                                }
+                            });
+                        } else {
+                            const trimmed = (val ?? '').toString().trim();
+                            if (trimmed !== '') {
+                                requestUrl.searchParams.append(`filter[${field}]`, trimmed);
+                            }
+                        }
+                    });
+                }
+                const response = await fetch(requestUrl.toString(), { method: 'GET' });
+                if (!response.ok) {
+                    throw new Error(`APIM request failed with status ${response.status}`);
+                }
+                const payload = (await response.json()) as TaskSearchResponse;
+                this.apimItems = payload.items ?? [];
+                this.apimError = undefined;
             }
-            const payload = (await response.json()) as TaskSearchResponse;
-            this.apimItems = payload.items ?? [];
-            this.apimError = undefined;
         } catch (error) {
-            // Swallow error and load sample data silently
             this.apimError = undefined;
-            // Provide deterministic fallback data so the grid remains populated in offline scenarios.
             this.apimItems = SAMPLE_TASK_RESULTS;
         } finally {
             this.apimLoading = false;
@@ -609,9 +701,50 @@ export class DetailsListVOA implements ComponentFramework.ReactControl<IInputs, 
                     : true;
                 return postcodeFilter && buildingFilter && streetFilter && townFilter;
             }
+            case "taskStatus": {
+                if (!filters.taskStatus) {
+                    return true;
+                }
+                const status = this.getRecordValueFromCandidates(
+                    record,
+                    datasetColumns,
+                    ["taskstatus", "taskStatus", "status", "statuscode"],
+                ).toLowerCase();
+                return status.includes((filters.taskStatus ?? '').toLowerCase());
+            }
+            case "source": {
+                if (!filters.source) {
+                    return true;
+                }
+                const src = this.getRecordValueFromCandidates(
+                    record,
+                    datasetColumns,
+                    ["source", "salesource", "sale_source"],
+                ).toLowerCase();
+                return src.includes((filters.source ?? '').toLowerCase());
+            }
             default:
                 return true;
         }
+    }
+
+    private matchesHeaderFilters(
+        record: Record<string, unknown>,
+        headerFilters: Record<string, string | string[]>,
+        datasetColumns: ComponentFramework.PropertyHelper.DataSetApi.Column[],
+    ): boolean {
+        const entries = Object.entries(headerFilters).filter(([_, v]) => (Array.isArray(v) ? v.length > 0 : v.trim() !== ''));
+        if (entries.length === 0) return true;
+        return entries.every(([field, v]) => {
+            const value = this.getRecordValue(record, field, datasetColumns).toLowerCase().trim();
+            if (Array.isArray(v)) {
+                const needles = v.map((s) => s.toLowerCase().trim()).filter((s) => s !== '');
+                if (needles.length === 0) return true;
+                return needles.some((n) => value === n);
+            }
+            const needle = v.toLowerCase().trim();
+            return value.includes(needle);
+        });
     }
 
     private getRecordValue(

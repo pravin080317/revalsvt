@@ -1,4 +1,4 @@
-import {
+import { 
   CheckboxVisibility,
   ColumnActionsMode,
   ContextualMenu,
@@ -26,6 +26,8 @@ import {
   MessageBar,
   MessageBarType,
   Dropdown,
+  ComboBox,
+  IComboBoxOption,
   Spinner,
   SpinnerSize,
   Link,
@@ -36,17 +38,15 @@ import { RecordsColumns } from './ManifestConstants';
 import { IGridColumn, ColumnConfig } from './Component.types';
 import { GridCell } from './GridCell';
 import { ClassNames } from './Grid.styles';
-import {
-  GridFilterState,
-  createDefaultGridFilters,
-  sanitizeFilters,
-  SearchByOption,
-  ManualCheckFilter,
-} from './Filters';
+import { GridFilterState, createDefaultGridFilters, sanitizeFilters, SearchByOption, ManualCheckFilter } from './Filters';
+import { isLookupFieldFor } from './TableConfigs';
 
 type DataSet = ComponentFramework.PropertyHelper.DataSetApi.EntityRecord & IObjectWithKey;
 
 export interface GridProps {
+  // When false, hides the built-in top search panel
+  showSearchPanel?: boolean;
+  tableKey?: string;
   height?: number;
   datasetColumns: ComponentFramework.PropertyHelper.DataSetApi.Column[];
   columnConfigs: Record<string, ColumnConfig>;
@@ -77,6 +77,8 @@ export interface GridProps {
   searchFilters: GridFilterState;
   errorMessage?: string;
   showResults?: boolean;
+  onLoadFilterOptions?: (field: string, query: string) => Promise<string[]>;
+  onColumnFiltersChange?: (filters: Record<string, string | string[]>) => void;
 }
 
 const defaultTheme = createTheme({
@@ -112,6 +114,8 @@ export function getRecordKey(record: ComponentFramework.PropertyHelper.DataSetAp
 
 export const Grid = React.memo((props: GridProps) => {
   const {
+    showSearchPanel = true,
+    tableKey = 'sales',
     datasetColumns,
     columnConfigs,
     records,
@@ -142,19 +146,52 @@ export const Grid = React.memo((props: GridProps) => {
     searchFilters,
     errorMessage,
     showResults,
+    onLoadFilterOptions,
+    onColumnFiltersChange,
   } = props;
 
   const theme = useTheme(themeJSON);
 
   const [columns, setColumns] = React.useState<IGridColumn[]>([]);
   const [isComponentLoading, setIsLoading] = React.useState(false);
-  const [columnFilters, setColumnFilters] = React.useState<Record<string, string>>({});
+  const [columnFilters, setColumnFilters] = React.useState<Record<string, string | string[]>>({});
   const [menuState, setMenuState] = React.useState<{
     target: HTMLElement;
     column: IGridColumn;
   }>();
-  const [menuFilterValue, setMenuFilterValue] = React.useState('');
+  const [menuFilterValue, setMenuFilterValue] = React.useState<string | string[]>('');
+  const [menuFilterText, setMenuFilterText] = React.useState('');
+  const [menuExtraOptions, setMenuExtraOptions] = React.useState<string[]>([]);
+  const [menuOptionsLoading, setMenuOptionsLoading] = React.useState(false);
+  const menuOptionsTimer = React.useRef<number | undefined>(undefined);
+  const liveFilterTimer = React.useRef<number | undefined>(undefined);
   const [filters, setFilters] = React.useState<GridFilterState>(searchFilters);
+
+  // Debounced search when typing in non-UPRN text fields
+  const searchTimer = React.useRef<number | undefined>(undefined);
+  const scheduleSearch = React.useCallback(() => {
+    if (searchTimer.current) {
+      window.clearTimeout(searchTimer.current);
+    }
+    searchTimer.current = window.setTimeout(() => {
+      const sanitized = sanitizeFilters(filters);
+      if (
+        sanitized.searchBy === 'uprn' &&
+        sanitized.uprn &&
+        (sanitized.uprn.length < 8 || sanitized.uprn.length > 10)
+      ) {
+        return;
+      }
+      setFilters(sanitized);
+      onSearch(sanitized);
+    }, 350);
+  }, [filters, onSearch]);
+
+  React.useEffect(() => () => {
+    if (searchTimer.current) {
+      window.clearTimeout(searchTimer.current);
+    }
+  }, []);
 
   React.useEffect(() => {
     setFilters(searchFilters);
@@ -162,11 +199,10 @@ export const Grid = React.memo((props: GridProps) => {
 
   const searchByOptions = React.useMemo<IDropdownOption[]>(
     () => [
-      { key: 'uprn', text: 'UPRN' },
-      { key: 'taskId', text: 'Task ID' },
       { key: 'address', text: 'Address' },
+      { key: 'uprn', text: 'UPRN' },
+      { key: 'taskId', text: 'Task' },
       { key: 'manualCheck', text: 'Manual Check' },
-      { key: 'postcode', text: 'Postcode' },
     ],
     [],
   );
@@ -240,34 +276,55 @@ export const Grid = React.memo((props: GridProps) => {
   const onTaskIdChange = React.useCallback(
     (_: React.FormEvent<HTMLInputElement | HTMLTextAreaElement>, value?: string) => {
       updateFilters('taskId', value ?? '');
+      scheduleSearch();
     },
-    [updateFilters],
+    [updateFilters, scheduleSearch],
   );
 
   const onBuildingNameChange = React.useCallback(
     (_: React.FormEvent<HTMLInputElement | HTMLTextAreaElement>, value?: string) => {
       updateFilters('buildingNameNumber', value ?? '');
+      scheduleSearch();
     },
-    [updateFilters],
+    [updateFilters, scheduleSearch],
   );
 
   const onStreetChange = React.useCallback(
     (_: React.FormEvent<HTMLInputElement | HTMLTextAreaElement>, value?: string) => {
       updateFilters('street', value ?? '');
+      scheduleSearch();
     },
-    [updateFilters],
+    [updateFilters, scheduleSearch],
   );
 
   const onTownChange = React.useCallback(
     (_: React.FormEvent<HTMLInputElement | HTMLTextAreaElement>, value?: string) => {
       updateFilters('townCity', value ?? '');
+      scheduleSearch();
     },
-    [updateFilters],
+    [updateFilters, scheduleSearch],
   );
 
   const onPostcodeChange = React.useCallback(
     (_: React.FormEvent<HTMLInputElement | HTMLTextAreaElement>, value?: string) => {
       updateFilters('postcode', (value ?? '').toUpperCase());
+      scheduleSearch();
+    },
+    [updateFilters, scheduleSearch],
+  );
+
+  
+
+  const onTaskStatusFilterChange = React.useCallback(
+    (_: React.FormEvent<HTMLDivElement>, option?: IDropdownOption) => {
+      updateFilters('taskStatus', (option?.key as string) ?? '');
+    },
+    [updateFilters],
+  );
+
+  const onSourceFilterChange = React.useCallback(
+    (_: React.FormEvent<HTMLDivElement>, option?: IDropdownOption) => {
+      updateFilters('source', (option?.key as string) ?? '');
     },
     [updateFilters],
   );
@@ -406,8 +463,27 @@ export const Grid = React.memo((props: GridProps) => {
     return '';
   }, []);
 
+  // Identify columns that should use a value dropdown (lookup/choice-like fields)
+  const isLookupField = React.useCallback((field: string | undefined): boolean => {
+    return isLookupFieldFor(tableKey, field);
+  }, [tableKey]);
+
+  // Derive icons each render to reflect current sort/filter state
+  const columnsWithIcons = React.useMemo<IGridColumn[]>(() => {
+    return columns.map((c) => {
+      const field = c.fieldName ?? c.key;
+      const activeFilter = !!columnFilters[(field ?? '').toString()];
+      const sort = sorting?.find((s) => s.name === field);
+      const sortIcon = sort ? (Number(sort.sortDirection) === 1 ? 'SortDown' : 'SortUp') : undefined;
+      const iconName = sortIcon ?? (activeFilter ? 'Filter' : undefined);
+      return { ...c, iconName } as IGridColumn;
+    });
+  }, [columns, columnFilters, sorting]);
+
   const filteredItems = React.useMemo(() => {
-    const filterEntries = Object.entries(columnFilters).filter(([, value]) => value.trim() !== '');
+    const filterEntries = Object.entries(columnFilters).filter(([, value]) =>
+      Array.isArray(value) ? value.length > 0 : value.trim() !== '',
+    );
     if (filterEntries.length === 0) {
       return items;
     }
@@ -416,10 +492,61 @@ export const Grid = React.memo((props: GridProps) => {
       return filterEntries.every(([fieldName, filterValue]) => {
         const raw = record[fieldName];
         const text = getFilterableText(raw).trim().toLowerCase();
-        return text === filterValue.trim().toLowerCase();
+        if (Array.isArray(filterValue)) {
+          const needles = filterValue.map((v) => String(v).trim().toLowerCase()).filter((v) => v !== '');
+          if (needles.length === 0) return true;
+          return needles.some((n) => text === n);
+        }
+        const needle = filterValue.trim().toLowerCase();
+        return text.includes(needle);
       });
     });
   }, [columnFilters, getFilterableText, items]);
+
+  const getDistinctOptions = React.useCallback(
+    (candidates: string[]): IDropdownOption[] => {
+      const set = new Set<string>();
+      Object.values(records).forEach((it) => {
+        const rec = it as unknown as Record<string, unknown>;
+        for (const c of candidates) {
+          const v = getFilterableText(rec[c]);
+          if (v) {
+            set.add(v.trim());
+            break;
+          }
+        }
+      });
+      return Array.from(set)
+        .filter((v) => v !== '')
+        .sort((a, b) => a.localeCompare(b))
+        .map((v) => ({ key: v, text: v }));
+    },
+    [getFilterableText, records],
+  );
+
+  const scheduleLiveTextFilter = React.useCallback((fieldName: string, value: string) => {
+    if (liveFilterTimer.current) {
+      window.clearTimeout(liveFilterTimer.current);
+    }
+    liveFilterTimer.current = window.setTimeout(() => {
+      setColumnFilters((prev) => {
+        const updated = { ...prev };
+        const trimmed = value.trim();
+        if (trimmed === '') {
+          delete updated[fieldName];
+        } else {
+          updated[fieldName] = trimmed;
+        }
+        return updated;
+      });
+    }, 300);
+  }, []);
+
+  React.useEffect(() => () => {
+    if (liveFilterTimer.current) {
+      window.clearTimeout(liveFilterTimer.current);
+    }
+  }, []);
 
   const onItemInvoked = React.useCallback(
     (item?: ComponentFramework.PropertyHelper.DataSetApi.EntityRecord) => {
@@ -449,7 +576,16 @@ export const Grid = React.memo((props: GridProps) => {
         return;
       }
       const fieldName = gridCol.fieldName ?? gridCol.key;
-      setMenuFilterValue(columnFilters[fieldName] ?? '');
+      const existing = columnFilters[fieldName];
+      if (Array.isArray(existing)) {
+        setMenuFilterValue(existing);
+        setMenuFilterText('');
+      } else {
+        setMenuFilterValue(existing ?? '');
+        setMenuFilterText(typeof existing === 'string' ? existing : '');
+      }
+      setMenuExtraOptions([]);
+      setMenuOptionsLoading(false);
       setMenuState({ target, column: gridCol });
     },
     [columnFilters],
@@ -489,16 +625,28 @@ export const Grid = React.memo((props: GridProps) => {
     const fieldName = menuState.column.fieldName ?? menuState.column.key;
     setColumnFilters((prev) => {
       const updated = { ...prev };
-      const trimmed = menuFilterValue.trim();
+      // If any values are selected in the list, prefer them (exact match semantics).
+      if (Array.isArray(menuFilterValue)) {
+        const vals = menuFilterValue.map((v) => String(v).trim()).filter((v) => v !== '');
+        if (vals.length > 0) {
+          updated[fieldName] = vals;
+          return updated;
+        }
+      }
+      // Otherwise, apply free‑text contains
+      const trimmed = String(menuFilterText ?? '').trim();
       if (trimmed === '') {
         delete updated[fieldName];
       } else {
         updated[fieldName] = trimmed;
       }
+      if (onColumnFiltersChange) {
+        onColumnFiltersChange(updated);
+      }
       return updated;
     });
     setMenuState(undefined);
-  }, [menuFilterValue, menuState]);
+  }, [menuFilterValue, menuFilterText, menuState, onColumnFiltersChange]);
 
   const clearFilter = React.useCallback(() => {
     if (!menuState) {
@@ -511,16 +659,31 @@ export const Grid = React.memo((props: GridProps) => {
       }
       const updated = { ...prev };
       delete updated[fieldName];
+      if (onColumnFiltersChange) {
+        onColumnFiltersChange(updated);
+      }
       return updated;
     });
-    setMenuFilterValue('');
+    const lookup = isLookupField(fieldName);
+    setMenuFilterValue(lookup ? [] : '');
+    setMenuFilterText('');
     setMenuState(undefined);
-  }, [menuState]);
+  }, [menuState, isLookupField, onColumnFiltersChange]);
 
   const menuItems = React.useMemo<IContextualMenuItem[]>(() => {
     if (!menuState) {
       return [];
     }
+    const fieldName = menuState.column.fieldName ?? menuState.column.key;
+    const lookup = isLookupField(fieldName);
+    const baseOptions: IDropdownOption[] = getDistinctOptions([fieldName ?? '']);
+    const extraOptions: IDropdownOption[] = menuExtraOptions
+      .filter((v) => v && !baseOptions.some((b) => b.text.toLowerCase() === v.toLowerCase()))
+      .map((v) => ({ key: v, text: v }));
+    const valueOptions: IDropdownOption[] = [...baseOptions, ...extraOptions];
+    const filteredValueOptions = valueOptions.filter((o) =>
+      o.text.toLowerCase().includes(menuFilterText.toLowerCase()),
+    );
     return [
       {
         key: 'sortAsc',
@@ -541,21 +704,87 @@ export const Grid = React.memo((props: GridProps) => {
       {
         key: 'filterHeader',
         text: 'Filter',
+        iconProps: { iconName: 'Filter' },
         disabled: true,
         style: { fontWeight: 600 },
       },
       {
         key: 'filterInput',
         onRender: () => (
-          <div style={{ padding: '0 12px 12px', width: 220 }}>
+          <div style={{ padding: '0 12px 12px', width: 260 }}>
             <Text variant="small" style={{ marginBottom: 4, display: 'block' }}>
-              Equal to
+              Contains
             </Text>
-            <TextField
-              placeholder={`Filter ${menuState.column.name}`}
-              value={menuFilterValue}
-              onChange={(_, value) => setMenuFilterValue(value ?? '')}
-            />
+            {lookup ? (
+              <Dropdown
+                placeholder={`Select ${menuState.column.name}`}
+                options={filteredValueOptions}
+                multiSelect
+                selectedKeys={Array.isArray(menuFilterValue) ? menuFilterValue : []}
+                onChange={(_, opt) => {
+                  const key = String(opt?.key ?? '');
+                  setMenuFilterValue((prev) => {
+                    const current = Array.isArray(prev) ? prev.slice() : [];
+                    const idx = current.indexOf(key);
+                    if (opt?.selected) {
+                      if (idx === -1) current.push(key);
+                    } else {
+                      if (idx !== -1) current.splice(idx, 1);
+                    }
+                    return current;
+                  });
+                }}
+                styles={{ dropdown: { width: '100%' } }}
+              />
+            ) : (
+              <>
+                <TextField
+                  placeholder={`Filter ${menuState.column.name}`}
+                  value={menuFilterText}
+                  onChange={(_, v) => {
+                    const next = v ?? '';
+                    setMenuFilterText(next);
+                    if (onLoadFilterOptions) {
+                      if (menuOptionsTimer.current) {
+                        window.clearTimeout(menuOptionsTimer.current);
+                      }
+                      menuOptionsTimer.current = window.setTimeout(() => {
+                        setMenuOptionsLoading(true);
+                        void onLoadFilterOptions(fieldName ?? '', next)
+                          .then((vals) => setMenuExtraOptions(vals ?? []))
+                          .finally(() => setMenuOptionsLoading(false));
+                      }, 350);
+                    }
+                  }}
+                />
+                {menuOptionsLoading && (
+                  <Stack horizontal verticalAlign="center" style={{ margin: '6px 0' }}>
+                    <Spinner size={SpinnerSize.small} />
+                    <Text variant="small" style={{ marginLeft: 8 }}>Searching…</Text>
+                  </Stack>
+                )}
+                <Dropdown
+                  placeholder={`Select ${menuState.column.name}`}
+                  options={filteredValueOptions}
+                  multiSelect
+                  selectedKeys={Array.isArray(menuFilterValue) ? menuFilterValue : (menuFilterValue ? [menuFilterValue] : [])}
+                  onChange={(_, opt) => {
+                    const key = String(opt?.key ?? '');
+                    setMenuFilterValue((prev) => {
+                      const current = Array.isArray(prev) ? prev.slice() : (prev ? [String(prev)] : []);
+                      const idx = current.indexOf(key);
+                      if (opt?.selected) {
+                        if (idx === -1) current.push(key);
+                      } else {
+                        if (idx !== -1) current.splice(idx, 1);
+                      }
+                      return current;
+                    });
+                  }}
+                  styles={{ dropdown: { width: '100%' } }}
+                />
+              </>
+            )}
             <Stack horizontal tokens={{ childrenGap: 8 }} style={{ marginTop: 8 }}>
               <PrimaryButton text="Apply" onClick={applyFilter} />
               <DefaultButton text="Clear" onClick={clearFilter} />
@@ -564,7 +793,7 @@ export const Grid = React.memo((props: GridProps) => {
         ),
       },
     ];
-  }, [applyFilter, clearFilter, handleSort, menuFilterValue, menuState]);
+  }, [applyFilter, clearFilter, handleSort, menuFilterValue, menuState, isLookupField, getDistinctOptions, scheduleLiveTextFilter]);
 
   if (datasetColumns.length === 0) {
     return <NoFields resources={resources} />;
@@ -583,6 +812,7 @@ export const Grid = React.memo((props: GridProps) => {
             {errorMessage}
           </MessageBar>
         )}
+        {showSearchPanel && (
         <Stack
           horizontal
           wrap
@@ -683,6 +913,28 @@ export const Grid = React.memo((props: GridProps) => {
                   </Stack.Item>
                 </>
               )}
+              {filters.searchBy === 'taskStatus' && (
+                <Stack.Item styles={{ root: { minWidth: 200 } }}>
+                  <Dropdown
+                    label="Task Status"
+                    options={getDistinctOptions(['taskstatus', 'taskStatus', 'status', 'statuscode'])}
+                    selectedKey={filters.taskStatus}
+                    onChange={onTaskStatusFilterChange}
+                    styles={{ dropdown: { width: '100%' } }}
+                  />
+                </Stack.Item>
+              )}
+              {filters.searchBy === 'source' && (
+                <Stack.Item styles={{ root: { minWidth: 200 } }}>
+                  <Dropdown
+                    label="Source"
+                    options={getDistinctOptions(['source', 'sale_source', 'salesource'])}
+                    selectedKey={filters.source}
+                    onChange={onSourceFilterChange}
+                    styles={{ dropdown: { width: '100%' } }}
+                  />
+                </Stack.Item>
+              )}
               {filters.searchBy === 'postcode' && (
                 <Stack.Item styles={{ root: { minWidth: 160 } }}>
                   <TextField
@@ -719,12 +971,13 @@ export const Grid = React.memo((props: GridProps) => {
             </Stack>
           </Stack.Item>
         </Stack>
+        )}
         {showResults && (
         <ShimmeredDetailsList
           className={ClassNames.PowerCATFluentDetailsList}
           componentRef={componentRef}
           items={filteredItems}
-          columns={columns}
+          columns={columnsWithIcons}
           setKey="grid"
           enableShimmer={itemsLoading || shimmer}
           selectionMode={selectionType}
