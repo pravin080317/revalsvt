@@ -435,7 +435,14 @@ export const Grid = React.memo((props: GridProps) => {
           sortBy: cfg.ColSortBy,
           childColumns: [],
         };
-        if (resolvedCellType === 'tag' || resolvedCellType === 'indicatortag') {
+        if (
+          resolvedCellType === 'tag' ||
+          resolvedCellType === 'indicatortag' ||
+          resolvedCellType === 'link' ||
+          resolvedCellType === 'image' ||
+          resolvedCellType === 'clickableimage' ||
+          resolvedCellType === 'expand'
+        ) {
           col.onRender = (
             item: ComponentFramework.PropertyHelper.DataSetApi.EntityRecord,
             _?: number,

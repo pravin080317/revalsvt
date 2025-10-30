@@ -1,3 +1,4 @@
+import { Link } from '@fluentui/react';
 import { ColumnConfig } from './Component.types';
 
 // Built-in, code-defined column configuration profiles.
@@ -21,7 +22,7 @@ export const COLUMN_PROFILES: Record<string, ColumnConfig[]> = {
   myassignment: [],
   manager: [
     { ColName: 'saleid', ColDisplayName: 'Sale ID', ColWidth: 120 },
-    { ColName: 'taskid', ColDisplayName: 'Task ID', ColWidth: 120 },
+    { ColName: 'taskid', ColDisplayName: 'Task ID', ColWidth: 120, ColCellType: 'link' },
     { ColName: 'uprn', ColDisplayName: 'UPRN', ColWidth: 120 },
     { ColName: 'address', ColDisplayName: 'Address', ColWidth: 280, ColMultiLine: true },
     { ColName: 'postcode', ColDisplayName: 'Post code', ColWidth: 110 },
@@ -41,7 +42,7 @@ export const COLUMN_PROFILES: Record<string, ColumnConfig[]> = {
   ],
   qa: [
     { ColName: 'saleid', ColDisplayName: 'Sale ID', ColWidth: 120 },
-    { ColName: 'taskid', ColDisplayName: 'Task ID', ColWidth: 120 },
+    { ColName: 'taskid', ColDisplayName: 'Task ID', ColWidth: 120, ColCellType: 'link'  },
     { ColName: 'uprn', ColDisplayName: 'UPRN', ColWidth: 120 },
     { ColName: 'address', ColDisplayName: 'Address', ColWidth: 280, ColMultiLine: true },
     { ColName: 'postcode', ColDisplayName: 'Post code', ColWidth: 110 },
