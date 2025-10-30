@@ -81,6 +81,7 @@ export interface GridProps {
   showResults?: boolean;
   onLoadFilterOptions?: (field: string, query: string) => Promise<string[]>;
   onColumnFiltersChange?: (filters: Record<string, string | string[]>) => void;
+  allowColumnReorder?: boolean;
 }
 
 const defaultTheme = createTheme({
@@ -1080,7 +1081,7 @@ export const Grid = React.memo((props: GridProps) => {
           onColumnHeaderClick={onColumnHeaderClick}
           onColumnHeaderContextMenu={onColumnHeaderContextMenu}
           onItemInvoked={onItemInvoked}
-          columnReorderOptions={columnReorderOptions}
+          columnReorderOptions={props.allowColumnReorder ? columnReorderOptions : undefined}
           compact={compact}
           isHeaderVisible={isHeaderVisible}
         />)}

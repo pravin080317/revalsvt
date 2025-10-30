@@ -11,6 +11,8 @@ export class DetailsListVOA implements ComponentFramework.ReactControl<IInputs, 
   private _saleDetails = '';
   private selectedTaskId?: string;
   private selectedSaleId?: string;
+  private selectedTaskIdsJson?: string;
+  private selectedSaleIdsJson?: string;
 
   public init(
     context: ComponentFramework.Context<IInputs>,
@@ -34,6 +36,15 @@ export class DetailsListVOA implements ComponentFramework.ReactControl<IInputs, 
           this.selectedSaleId = args?.saleId;
           void this.onTaskClick(args?.taskId, args?.saleId);
         },
+        onSelectionChange: (args) => {
+          // Selection should only emit IDs and not fetch details
+          this.selectedTaskId = args?.taskId;
+          this.selectedSaleId = args?.saleId;
+          this.selectedTaskIdsJson = JSON.stringify((args?.selectedTaskIds ?? []).filter((v) => !!v));
+          this.selectedSaleIdsJson = JSON.stringify((args?.selectedSaleIds ?? []).filter((v) => !!v));
+          this._saleDetails = '';
+          this._notifyOutputChanged();
+        },
       }),
     );
   }
@@ -42,6 +53,8 @@ export class DetailsListVOA implements ComponentFramework.ReactControl<IInputs, 
     return {
       selectedTaskId: this.selectedTaskId,
       selectedSaleId: this.selectedSaleId,
+      selectedTaskIdsJson: this.selectedTaskIdsJson,
+      selectedSaleIdsJson: this.selectedSaleIdsJson,
       saleDetails: this._saleDetails,
     } as IOutputs;
   }
@@ -149,4 +162,5 @@ export class DetailsListVOA implements ComponentFramework.ReactControl<IInputs, 
       SDLT: sdltTransactions,
     };
   }
+
 }

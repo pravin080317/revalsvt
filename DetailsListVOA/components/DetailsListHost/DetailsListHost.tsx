@@ -14,11 +14,14 @@ import { IInputs } from '../../generated/ManifestTypes';
 export interface DetailsListHostProps {
   context: ComponentFramework.Context<IInputs>;
   onRowInvoke?: (args: { taskId?: string; saleId?: string }) => void;
+  // Emit IDs on selection (single or multi); arrays support multi-select
+  onSelectionChange?: (args: { taskId?: string; saleId?: string; selectedTaskIds?: string[]; selectedSaleIds?: string[] }) => void;
 }
 
-export const DetailsListHost: React.FC<DetailsListHostProps> = ({ context, onRowInvoke }) => {
+export const DetailsListHost: React.FC<DetailsListHostProps> = ({ context, onRowInvoke, onSelectionChange }) => {
   // Parse basic params
   const pageSize = (context.parameters as unknown as Record<string, { raw?: number }>).pageSize?.raw ?? 10;
+  // Navigation is Canvas-owned (Option 1). Keep params for future use but do not navigate here.
   const navigationTarget = (context.parameters as unknown as Record<string, { raw?: string }>).navigationTarget?.raw ?? '';
   const canvasScreenName = (context.parameters as unknown as Record<string, { raw?: string }>).canvasScreenName?.raw?.trim() ?? '';
   let tableKey = 'sales';
@@ -86,6 +89,8 @@ export const DetailsListHost: React.FC<DetailsListHostProps> = ({ context, onRow
   const [serverDriven, setServerDriven] = React.useState(false);
   const [apimLoading, setApimLoading] = React.useState(false);
   const [hasLoadedApim, setHasLoadedApim] = React.useState(false);
+  const allowColumnReorder = (context.parameters as unknown as Record<string, { raw?: string | boolean }>).allowColumnReorder?.raw === true ||
+    String((context.parameters as unknown as Record<string, { raw?: string | boolean }>).allowColumnReorder?.raw ?? '').toLowerCase() === 'true';
 
   // Build columns (includes auto-add from API item)
   const datasetColumns = React.useMemo(() => {
@@ -207,32 +212,35 @@ export const DetailsListHost: React.FC<DetailsListHostProps> = ({ context, onRow
         const next = selection.getSelectedCount();
         return next !== sel ? next : sel;
       });
+      // Emit selected Task/Sale IDs to parent without fetching details
+      try {
+        const selected = selection.getSelection();
+        const makeIds = (o: unknown) => {
+          const r = o as { taskid?: string; taskId?: string; saleid?: string; saleId?: string };
+          return { taskId: r.taskid ?? r.taskId, saleId: r.saleid ?? r.saleId };
+        };
+        const pairs = (selected ?? [])
+          .map(makeIds)
+          .filter((p) => [p.taskId, p.saleId].some((v) => !!v));
+        const taskIds = pairs.map(p => p.taskId).filter((v): v is string => !!v);
+        const saleIds = pairs.map(p => p.saleId).filter((v): v is string => !!v);
+        const first = pairs[0] ?? { taskId: undefined, saleId: undefined };
+        onSelectionChange?.({ taskId: first.taskId, saleId: first.saleId, selectedTaskIds: taskIds, selectedSaleIds: saleIds });
+      } catch {
+        // ignore selection mapping errors
+      }
     },
   });
   const componentRef = React.createRef<IDetailsList>();
 
   const onNavigate = (item?: ComponentFramework.PropertyHelper.DataSetApi.EntityRecord): void => {
-    if (item) {
-      const taskId = (item as unknown as { taskId?: string }).taskId;
-      const saleId = (item as unknown as { saleId?: string }).saleId;
-      onRowInvoke?.({ taskId, saleId });
-      const targetName = canvasScreenName || navigationTarget;
-      if (targetName) {
-        const isUrl = /^https?:/i.test(navigationTarget);
-        const navAny = context.navigation as unknown as {
-          navigateTo?: (input: { pageName?: string } & Record<string, unknown>, options?: Record<string, unknown>) => Promise<void>;
-          openUrl: (url: string) => void;
-        };
-        // Canvas App screen navigation (preferred): use pageName
-        if (!isUrl && typeof navAny.navigateTo === 'function') {
-          void navAny.navigateTo({ pageName: targetName });
-        } else {
-          // Fallback to URL navigation if a full URL is supplied
-          const url = `${targetName}?saleId=${encodeURIComponent(String(saleId ?? ''))}&taskId=${encodeURIComponent(String(taskId ?? ''))}`;
-          void navAny.openUrl(url);
-        }
-      }
-    }
+    if (!item) return;
+    // Records are normalized to lower‑case keys during mapping; prefer lower‑case, fall back to camelCase
+    const rec = item as unknown as { taskid?: string; taskId?: string; saleid?: string; saleId?: string };
+    const taskId = rec.taskid ?? rec.taskId;
+    const saleId = rec.saleid ?? rec.saleId;
+    // Emit only. Navigation is handled in Canvas via PCF OnChange.
+    onRowInvoke?.({ taskId, saleId });
   };
 
   const onSort = (name: string, desc: boolean): void => {
@@ -276,6 +284,7 @@ export const DetailsListHost: React.FC<DetailsListHostProps> = ({ context, onRow
     searchFilters,
     showResults: true,
     selectedCount,
+    allowColumnReorder,
     onLoadFilterOptions: async (field, query) => {
       const configuredEndpoint = (context.parameters as unknown as Record<string, { raw?: string }>).apimEndpoint?.raw?.trim();
       const customApiName = (context.parameters as unknown as Record<string, { raw?: string }>).customApiName?.raw?.trim();
