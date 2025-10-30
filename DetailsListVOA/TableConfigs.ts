@@ -1,10 +1,12 @@
-import { GridFilterState } from './Filters';
+import { GridFilterState, SearchByOption } from './Filters';
 
 export type TableKey = 'sales' | 'allsales' | 'myassignment' | 'manager' | 'qa';
 
 export interface TableConfig {
   lookupFields: Set<string>;
   buildApiParams: (filters: GridFilterState, page: number, pageSize: number) => Record<string, string>;
+  // Controls which top-of-grid search modes are available per persona/table
+  searchByOptions: SearchByOption[];
 }
 
 const salesLookupFields = new Set<string>([
@@ -71,25 +73,30 @@ export const TABLE_CONFIGS: Record<TableKey, TableConfig> = {
   sales: {
     lookupFields: salesLookupFields,
     buildApiParams: buildSalesParams,
+    searchByOptions: ['address', 'uprn', 'taskId', 'manualCheck', 'taskStatus', 'source', 'postcode'],
   },
   allsales: {
     lookupFields: salesLookupFields,
     buildApiParams: buildSalesParams,
+    searchByOptions: ['address', 'uprn', 'taskId', 'manualCheck', 'taskStatus', 'source', 'postcode'],
   },
   // My Assignment
   myassignment: {
     lookupFields: new Set<string>([...salesLookupFields]),
     buildApiParams: buildSalesParams,
+    searchByOptions: ['address', 'uprn', 'taskId', 'manualCheck', 'taskStatus', 'source', 'postcode'],
   },
   // Manager dashboard
   manager: {
     lookupFields: new Set<string>([...salesLookupFields]),
     buildApiParams: buildSalesParams,
+    searchByOptions: ['address', 'uprn', 'taskId', 'manualCheck', 'taskStatus', 'source', 'postcode'],
   },
   // QA dashboard
   qa: {
     lookupFields: new Set<string>([...salesLookupFields]),
     buildApiParams: buildSalesParams,
+    searchByOptions: ['address', 'uprn', 'taskId', 'manualCheck', 'taskStatus', 'source', 'postcode'],
   },
 };
 
@@ -111,4 +118,8 @@ export function buildApiParamsFor(
   pageSize: number,
 ): Record<string, string> {
   return getConfig(table).buildApiParams(filters, page, pageSize);
+}
+
+export function getSearchByOptionsFor(table?: string): SearchByOption[] {
+  return getConfig(table).searchByOptions;
 }

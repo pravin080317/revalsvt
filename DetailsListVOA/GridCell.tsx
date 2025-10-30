@@ -196,7 +196,7 @@ function getTextTagCell(
     column: IGridColumn,
     item: ComponentFramework.PropertyHelper.DataSetApi.EntityRecord | Record<string, unknown>,
 ) {
-    const tagText = getCellValue<string>(column.fieldName, item)[0];
+    const tagValues = getCellValue<string>(column.fieldName, item).filter((v) => (v ?? '').toString().trim() !== '');
     const tagColor = column.tagColor?.startsWith('#')
         ? column.tagColor
         : getCellValue<string>(column.tagColor, item)[0];
@@ -207,10 +207,14 @@ function getTextTagCell(
         background: tagColor || '#F4F6F7' + CSS_IMPORTANT,
         borderColor: (tagBorderColor || '#CAD0D5') + CSS_IMPORTANT,
     })}`;
-    const isBlank = !tagText || tagText === '';
+    const isBlank = tagValues.length === 0;
     const cellContents = !isBlank ? (
-        <span className={tagColorClass} title={tagText}>
-            {tagText}
+        <span>
+            {tagValues.map((t, idx) => (
+                <span key={idx} className={tagColorClass} title={t} style={{ marginRight: 6 }}>
+                    {t}
+                </span>
+            ))}
         </span>
     ) : (
         <></>
@@ -356,7 +360,12 @@ function getCellValue<T>(
     if (!isArrayValue) {
         values = [value as T];
     } else {
-        values = (value as DatasetArray<T>).map((i) => i.Value);
+        const arr = value as unknown[];
+        if (arr.length > 0 && typeof arr[0] === 'object' && arr[0] !== null && 'Value' in (arr[0] as Record<string, unknown>)) {
+            values = (arr as DatasetArray<T>).map((i) => i.Value);
+        } else {
+            values = arr as T[];
+        }
     }
     return values;
 }
@@ -377,7 +386,7 @@ function getCellContent(
         // Two types of cell rendering - single value and multi-value
         if (values.length > 1) {
             const valueDelimiter = column.multiValuesDelimiter;
-            const delimiterElement = valueDelimiter ?? <br />;
+            const delimiterElement = valueDelimiter ?? ', ';
             cellContents = (
                 <>
                     {values.map((value, index) => {

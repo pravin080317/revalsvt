@@ -39,7 +39,7 @@ import { IGridColumn, ColumnConfig } from './Component.types';
 import { GridCell } from './GridCell';
 import { ClassNames } from './Grid.styles';
 import { GridFilterState, createDefaultGridFilters, sanitizeFilters, SearchByOption, ManualCheckFilter } from './Filters';
-import { isLookupFieldFor } from './TableConfigs';
+import { getSearchByOptionsFor, isLookupFieldFor } from './TableConfigs';
 
 type DataSet = ComponentFramework.PropertyHelper.DataSetApi.EntityRecord & IObjectWithKey;
 
@@ -48,6 +48,8 @@ export interface GridProps {
   showSearchPanel?: boolean;
   tableKey?: string;
   height?: number;
+  taskCount?: number;
+  selectedCount?: number;
   datasetColumns: ComponentFramework.PropertyHelper.DataSetApi.Column[];
   columnConfigs: Record<string, ColumnConfig>;
   records: Record<string, ComponentFramework.PropertyHelper.DataSetApi.EntityRecord>;
@@ -116,6 +118,8 @@ export const Grid = React.memo((props: GridProps) => {
   const {
     showSearchPanel = true,
     tableKey = 'sales',
+    taskCount,
+    selectedCount = 0,
     datasetColumns,
     columnConfigs,
     records,
@@ -197,15 +201,30 @@ export const Grid = React.memo((props: GridProps) => {
     setFilters(searchFilters);
   }, [searchFilters]);
 
-  const searchByOptions = React.useMemo<IDropdownOption[]>(
-    () => [
-      { key: 'address', text: 'Address' },
-      { key: 'uprn', text: 'UPRN' },
-      { key: 'taskId', text: 'Task' },
-      { key: 'manualCheck', text: 'Manual Check' },
-    ],
-    [],
-  );
+  const searchByOptions = React.useMemo<IDropdownOption[]>(() => {
+    const keys = getSearchByOptionsFor(tableKey);
+    const toLabel = (k: string): string => {
+      switch (k) {
+        case 'uprn':
+          return 'UPRN';
+        case 'taskId':
+          return 'Task';
+        case 'manualCheck':
+          return 'Manual Check';
+        case 'address':
+          return 'Address';
+        case 'postcode':
+          return 'Postcode';
+        case 'taskStatus':
+          return 'Task Status';
+        case 'source':
+          return 'Source';
+        default:
+          return k.charAt(0).toUpperCase() + k.slice(1);
+      }
+    };
+    return keys.map((k) => ({ key: k, text: toLabel(k) }));
+  }, [tableKey]);
 
   const manualCheckOptions = React.useMemo<IDropdownOption[]>(
     () => [
@@ -454,6 +473,12 @@ export const Grid = React.memo((props: GridProps) => {
   }, [records, sortedRecordIds]);
 
   const getFilterableText = React.useCallback((raw: unknown): string => {
+    if (Array.isArray(raw)) {
+      return raw
+        .map((v) => (typeof v === 'string' || typeof v === 'number' || typeof v === 'boolean' ? String(v) : ''))
+        .filter((s) => s !== '')
+        .join(', ');
+    }
     if (typeof raw === 'string') {
       return raw;
     }
@@ -506,17 +531,37 @@ export const Grid = React.memo((props: GridProps) => {
       const record = item as unknown as Record<string, unknown>;
       return filterEntries.every(([fieldName, filterValue]) => {
         const raw = record[fieldName];
-        const text = getFilterableText(raw).trim().toLowerCase();
         if (Array.isArray(filterValue)) {
           const needles = filterValue.map((v) => String(v).trim().toLowerCase()).filter((v) => v !== '');
           if (needles.length === 0) return true;
+          if (Array.isArray(raw)) {
+            const hay = raw
+              .map((v) => (typeof v === 'string' || typeof v === 'number' || typeof v === 'boolean' ? String(v).trim().toLowerCase() : ''))
+              .filter((s) => s !== '');
+            return needles.some((n) => hay.includes(n));
+          }
+          const text = getFilterableText(raw).trim().toLowerCase();
           return needles.some((n) => text === n);
         }
         const needle = filterValue.trim().toLowerCase();
+        if (Array.isArray(raw)) {
+          return raw.some((v) => (typeof v === 'string' || typeof v === 'number' || typeof v === 'boolean') && String(v).toLowerCase().includes(needle));
+        }
+        const text = getFilterableText(raw).trim().toLowerCase();
         return text.includes(needle);
       });
     });
   }, [columnFilters, getFilterableText, items]);
+
+  const clearAllColumnFilters = React.useCallback(() => {
+    setColumnFilters(() => {
+      const cleared: Record<string, string | string[]> = {};
+      if (onColumnFiltersChange) {
+        onColumnFiltersChange(cleared);
+      }
+      return cleared;
+    });
+  }, [onColumnFiltersChange]);
 
   const getDistinctOptions = React.useCallback(
     (candidates: string[]): IDropdownOption[] => {
@@ -524,10 +569,19 @@ export const Grid = React.memo((props: GridProps) => {
       Object.values(records).forEach((it) => {
         const rec = it as unknown as Record<string, unknown>;
         for (const c of candidates) {
-          const v = getFilterableText(rec[c]);
-          if (v) {
-            set.add(v.trim());
-            break;
+          const raw = rec[c];
+          if (Array.isArray(raw)) {
+            raw.forEach((v) => {
+              const s = typeof v === 'string' || typeof v === 'number' || typeof v === 'boolean' ? String(v).trim() : '';
+              if (s) set.add(s);
+            });
+            if (raw.length > 0) break;
+          } else {
+            const v = getFilterableText(raw);
+            if (v) {
+              set.add(v.trim());
+              break;
+            }
           }
         }
       });
@@ -989,6 +1043,20 @@ export const Grid = React.memo((props: GridProps) => {
         </Stack>
         )}
         {showResults && (
+          <Stack horizontal verticalAlign="center" tokens={{ childrenGap: 12 }} style={{ margin: '4px 0 8px 0' }}>
+            <Text variant="medium" styles={{ root: { fontWeight: 600 } }}>
+              {selectedCount} selected of {typeof taskCount === 'number' ? taskCount : filteredItems.length}
+            </Text>
+            <DefaultButton
+              text="Clear filters"
+              iconProps={{ iconName: 'ClearFilter' }}
+              onClick={() => clearAllColumnFilters()}
+              disabled={Object.keys(columnFilters).length === 0}
+              styles={{ root: { height: 28 } }}
+            />
+          </Stack>
+        )}
+        {showResults && (
         <ShimmeredDetailsList
           className={ClassNames.PowerCATFluentDetailsList}
           componentRef={componentRef}
@@ -998,7 +1066,7 @@ export const Grid = React.memo((props: GridProps) => {
           enableShimmer={itemsLoading || shimmer}
           selectionMode={selectionType}
           selection={selection}
-          checkboxVisibility={CheckboxVisibility.hidden}
+          checkboxVisibility={selectionType === SelectionMode.none ? CheckboxVisibility.hidden : CheckboxVisibility.always}
           onColumnHeaderClick={onColumnHeaderClick}
           onColumnHeaderContextMenu={onColumnHeaderContextMenu}
           onItemInvoked={onItemInvoked}

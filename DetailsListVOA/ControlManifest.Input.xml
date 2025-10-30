@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8" ?>
 <manifest>
-  <control namespace="Voa.Controls" constructor="DetailsListVOA" version="0.0.1" display-name-key="DetailsListVOA" description-key="DetailsListVOA description" control-type="virtual" >
+  <control namespace="Voa.Controls" constructor="DetailsListVOA" version="0.0.6" display-name-key="DetailsListVOA" description-key="DetailsListVOA description" control-type="virtual" >
     <!--external-service-usage node declares whether this 3rd party PCF control is using external service or not, if yes, this control will be considered as premium and please also add the external domain it is using.
     If it is not using any external service, please set the enabled="false" and DO NOT add any domain below. The "enabled" will be false by default.
     Example1:
@@ -14,16 +14,13 @@
     <external-service-usage enabled="true">
       <domain>api.contoso.gov.uk</domain>
     </external-service-usage>
-    <data-set name="revalSalesDataset" display-name-key="RevalSalesDataset" description-key="RevalSalesDataset description"/>
+    <!-- Unbound control; dataset removed -->
 
-    <!-- Field on each sales record that contains the related task id (GUID) -->
-    <property name="taskIdField" display-name-key="TaskIdField" description-key="TaskIdField description" of-type="SingleLine.Text" usage="input" required="true" />
-
-    <!-- Logical name or entity set name of the task table used to resolve task metadata -->
-    <property name="taskEntity" display-name-key="TaskEntity" description-key="TaskEntity description" of-type="SingleLine.Text" usage="input" required="true" />
+    <!-- Removed dataset-bound task properties for unbound API-first control -->
 
     <!-- Optional canvas page or url to open when a row is invoked -->
     <property name="navigationTarget" display-name-key="NavigationTarget" description-key="NavigationTarget description" of-type="SingleLine.Text" usage="input" required="false" />
+    <property name="canvasScreenName" display-name-key="Canvas Screen Name" description-key="Name of the Canvas App screen to navigate to on row click (e.g., svt-sale-details)." of-type="SingleLine.Text" usage="input" required="false" default-value="" />
     <!-- Number of records shown per page -->
     <property name="pageSize" display-name-key="PageSize" description-key="PageSize description" of-type="Whole.None" usage="input" required="false" default-value="10" />
     <!-- Optional mapping of column logical names to display names as JSON -->
@@ -46,6 +43,16 @@
       required="false"
       default-value="[]"
     />
+    <!-- Named, code-defined column profile. If set, merges with JSON in Column Configuration. -->
+    <property
+      name="columnConfigProfile"
+      display-name-key="Column Configuration Profile"
+      description-key="Name of a built-in column profile (e.g., sales, manager)."
+      of-type="SingleLine.Text"
+      usage="input"
+      required="false"
+      default-value=""
+    />
     <property
       name="apimEndpoint"
       display-name-key="APIM Endpoint"
@@ -55,15 +62,8 @@
       required="false"
       default-value="https://api.contoso.gov.uk/revaluation/tasks"
     />
-    <property
-      name="useSampleSearch"
-      display-name-key="Use Sample Search"
-      description-key="When enabled, renders the sample Search component that loads SAMPLE_RECORDS into the grid."
-      of-type="TwoOptions"
-      usage="input"
-      required="false"
-      default-value="false"
-    />
+    <!-- Removed search UI configuration properties; composition is component-based -->
+    <!-- Removed sample search toggle -->
     <property
       name="customApiName"
       display-name-key="Custom API Name"
@@ -83,6 +83,7 @@
       default-value="sales"
     />
     <property name="selectedTaskId" display-name-key="SelectedTaskId" description-key="SelectedTaskId description" of-type="SingleLine.Text" usage="output" required="false" />
+    <property name="selectedSaleId" display-name-key="SelectedSaleId" description-key="SelectedSaleId description" of-type="SingleLine.Text" usage="output" required="false" />
     <resources>
       <code path="index.ts" order="1"/>
       <platform-library name="React" version="16.14.0" />
