@@ -385,17 +385,20 @@ export const Grid = React.memo((props: GridProps) => {
   React.useEffect(() => {
     setColumns(
       datasetColumns.map((c) => {
+        const lowerName = c.name.toLowerCase();
         const cfg =
-          columnConfigs[c.name.toLowerCase()] ||
+          columnConfigs[lowerName] ||
           (c.alias ? columnConfigs[c.alias.toLowerCase()] : undefined) ||
           {};
+        const datasetCellType = (c as { cellType?: string }).cellType;
         const sort = sorting?.find((s) => s.name === c.name);
         const visualSize =
           typeof c.visualSizeFactor === 'number' && !isNaN(c.visualSizeFactor)
             ? c.visualSizeFactor
             : 100;
         const width = typeof cfg.ColWidth === 'number' ? cfg.ColWidth : visualSize;
-        const cellType = cfg.ColCellType?.toLowerCase();
+        const resolvedCellType = (cfg.ColCellType ?? datasetCellType)?.toLowerCase();
+        const effectiveCellType = cfg.ColCellType ?? datasetCellType;
         const col: IGridColumn = {
           key: c.name,
           name: cfg.ColDisplayName ?? c.displayName,
@@ -406,7 +409,7 @@ export const Grid = React.memo((props: GridProps) => {
           isSorted: !!sort,
           isSortedDescending: sort ? Number(sort.sortDirection) === 1 : undefined,
           isBold: cfg.ColIsBold,
-          cellType: cfg.ColCellType,
+          cellType: effectiveCellType,
           tagColor: cfg.ColTagColor ?? cfg.ColTagColorColumn,
           tagBorderColor: cfg.ColTagBorderColor ?? cfg.ColTagBorderColorColumn,
           isMultiline: cfg.ColMultiLine,
@@ -432,7 +435,7 @@ export const Grid = React.memo((props: GridProps) => {
           sortBy: cfg.ColSortBy,
           childColumns: [],
         };
-        if (cellType === 'tag' || cellType === 'indicatortag') {
+        if (resolvedCellType === 'tag' || resolvedCellType === 'indicatortag') {
           col.onRender = (
             item: ComponentFramework.PropertyHelper.DataSetApi.EntityRecord,
             _?: number,

@@ -10,7 +10,12 @@ export function ensureSampleColumns(
   datasetColumns: ComponentFramework.PropertyHelper.DataSetApi.Column[],
   columnDisplayNames: Record<string, string>,
 ): void {
-  const ensureColumn = (name: string, defaultDisplayName: string, width = 100): void => {
+  const ensureColumn = (
+    name: string,
+    defaultDisplayName: string,
+    width = 100,
+    cellType?: string,
+  ): void => {
     const lowerName = name.toLowerCase();
     if (datasetColumns.some((col) => col.name.toLowerCase() === lowerName)) {
       return;
@@ -22,10 +27,11 @@ export function ensureSampleColumns(
       alias: name,
       order: datasetColumns.length + 1,
       visualSizeFactor: width,
-    } as ComponentFramework.PropertyHelper.DataSetApi.Column);
+      cellType,
+    } as ComponentFramework.PropertyHelper.DataSetApi.Column & { cellType?: string });
   };
 
-  SAMPLE_COLUMNS.forEach((c) => ensureColumn(c.name, c.displayName, c.width ?? 100));
+  SAMPLE_COLUMNS.forEach((c) => ensureColumn(c.name, c.displayName, c.width ?? 100, c.cellType));
 }
 
 export function buildSampleEntityRecords(): {
