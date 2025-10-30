@@ -3,6 +3,7 @@ import { IInputs, IOutputs } from './generated/ManifestTypes';
 import * as React from 'react';
 import { PCFContext } from './components/context/PCFContext';
 import { DetailsListHost } from './components/DetailsListHost/DetailsListHost';
+import { StatutorySpatialUnitBrowser } from './components/SpatialUnitBrowser/StatutorySpatialUnitBrowser';
 import { SVTSaleRecord, SDLTRecord } from './models/SVTModels';
 
 export class DetailsListVOA implements ComponentFramework.ReactControl<IInputs, IOutputs> {
@@ -29,23 +30,28 @@ export class DetailsListVOA implements ComponentFramework.ReactControl<IInputs, 
     return React.createElement(
       PCFContext.Provider,
       { value: context },
-      React.createElement(DetailsListHost, {
-        context,
-        onRowInvoke: (args) => {
-          this.selectedTaskId = args?.taskId;
-          this.selectedSaleId = args?.saleId;
-          void this.onTaskClick(args?.taskId, args?.saleId);
-        },
-        onSelectionChange: (args) => {
-          // Selection should only emit IDs and not fetch details
-          this.selectedTaskId = args?.taskId;
-          this.selectedSaleId = args?.saleId;
-          this.selectedTaskIdsJson = JSON.stringify((args?.selectedTaskIds ?? []).filter((v) => !!v));
-          this.selectedSaleIdsJson = JSON.stringify((args?.selectedSaleIds ?? []).filter((v) => !!v));
-          this._saleDetails = '';
-          this._notifyOutputChanged();
-        },
-      }),
+      React.createElement(
+        React.Fragment,
+        null,
+        React.createElement(DetailsListHost, {
+          context,
+          onRowInvoke: (args) => {
+            this.selectedTaskId = args?.taskId;
+            this.selectedSaleId = args?.saleId;
+            void this.onTaskClick(args?.taskId, args?.saleId);
+          },
+          onSelectionChange: (args) => {
+            // Selection should only emit IDs and not fetch details
+            this.selectedTaskId = args?.taskId;
+            this.selectedSaleId = args?.saleId;
+            this.selectedTaskIdsJson = JSON.stringify((args?.selectedTaskIds ?? []).filter((v) => !!v));
+            this.selectedSaleIdsJson = JSON.stringify((args?.selectedSaleIds ?? []).filter((v) => !!v));
+            this._saleDetails = '';
+            this._notifyOutputChanged();
+          },
+        }),
+        React.createElement(StatutorySpatialUnitBrowser, null),
+      ),
     );
   }
 
