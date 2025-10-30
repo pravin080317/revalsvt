@@ -63,6 +63,13 @@ export const DetailsListHost: React.FC<DetailsListHostProps> = ({ context, onRow
       if (!map.reviewflags) {
         map.reviewflags = { ColName: 'reviewflags', ColCellType: 'tag' } as ColumnConfig;
       }
+      if (map.taskid) {
+        if (!map.taskid.ColCellType) {
+          map.taskid = { ...map.taskid, ColCellType: 'link' } as ColumnConfig;
+        }
+      } else {
+        map.taskid = { ColName: 'taskid', ColCellType: 'link' } as ColumnConfig;
+      }
       setColumnConfigs(map);
     } catch {
       setColumnConfigs({});

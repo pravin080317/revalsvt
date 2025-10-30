@@ -2,9 +2,14 @@ import * as React from 'react';
 import { DetailsList } from '../DetailsList';
 import { Selection, SelectionMode, IObjectWithKey, IDetailsList, IRefObject, Stack, Dropdown, IDropdownOption, PrimaryButton, TextField } from '@fluentui/react';
 import { SAMPLE_COLUMNS, SAMPLE_RECORDS } from '../../SampleData';
+import { ColumnConfig } from '../../Component.types';
 import { createDefaultGridFilters, GridFilterState } from '../../Filters';
 
+const EMPTY_COLUMN_CONFIGS: Record<string, ColumnConfig> = {};
+
 type EntityRecord = ComponentFramework.PropertyHelper.DataSetApi.EntityRecord & Record<string, unknown>;
+
+type SampleColumn = ComponentFramework.PropertyHelper.DataSetApi.Column & { cellType?: string };
 
 function buildDatasetColumns(): ComponentFramework.PropertyHelper.DataSetApi.Column[] {
   return SAMPLE_COLUMNS.map((c, idx) => ({
@@ -14,7 +19,8 @@ function buildDatasetColumns(): ComponentFramework.PropertyHelper.DataSetApi.Col
     alias: c.name,
     order: idx + 1,
     visualSizeFactor: c.width ?? 100,
-  } as unknown as ComponentFramework.PropertyHelper.DataSetApi.Column));
+    cellType: c.cellType,
+  } as unknown as SampleColumn));
 }
 
 function toText(value: unknown): string {
@@ -262,7 +268,7 @@ export function SampleSearch(props: { pageSize?: number } = {}): JSX.Element {
           showSearchPanel={false}
           tableKey="sales"
           datasetColumns={datasetColumns}
-          columnConfigs={{}}
+          columnConfigs={EMPTY_COLUMN_CONFIGS}
           records={data.records}
           sortedRecordIds={pageIds}
           shimmer={false}
