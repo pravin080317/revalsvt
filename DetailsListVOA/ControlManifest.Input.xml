@@ -54,6 +54,15 @@
       default-value=""
     />
     <property
+      name="apiBaseUrl"
+      display-name-key="API Base URL"
+      description-key="Base URL of the SVT sales API"
+      of-type="SingleLine.Text"
+      usage="input"
+      required="false"
+      default-value=""
+    />
+    <property
       name="apimEndpoint"
       display-name-key="APIM Endpoint"
       description-key="Fully qualified URL of the APIM search endpoint"
@@ -84,6 +93,7 @@
     />
     <property name="selectedTaskId" display-name-key="SelectedTaskId" description-key="SelectedTaskId description" of-type="SingleLine.Text" usage="output" required="false" />
     <property name="selectedSaleId" display-name-key="SelectedSaleId" description-key="SelectedSaleId description" of-type="SingleLine.Text" usage="output" required="false" />
+    <property name="saleDetails" display-name-key="Sale Details" description-key="Serialized sale details JSON" of-type="SingleLine.Text" usage="output" required="false" />
     <resources>
       <code path="index.ts" order="1"/>
       <platform-library name="React" version="16.14.0" />
