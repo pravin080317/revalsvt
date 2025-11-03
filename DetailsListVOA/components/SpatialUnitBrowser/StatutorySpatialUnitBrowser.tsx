@@ -62,14 +62,14 @@ interface FilterState {
 }
 
 const API_URL =
-  'https://gatewaye1.voa.ns3n.corp.hmrc.gov.uk/dev/internal/bst/property-app/v1/statutorySpatialUnitLabelAddressQuery';
+  '/v1/statutorySpatialUnitLabelAddressQuery';
 
 const DEFAULT_HEADERS = new Headers({
-  ActiveDirectoryObjectId: 'b9d871a9-bc39-4de1-ac8f-f4a7cfc87aa1',
-  CorrelationId: 'f40022f7-5075-4d87-9714-9b4c04f97d06',
-  CaseObjectType: 'VOA',
-  CaseObjectId: 'dc06c1b5-19ef-4669-9eb7-8ad7cfeb7d0c',
-  'ocp-apim-subscription-key': '5057e9a3b8e84354a687e40562324a14',
+  ActiveDirectoryObjectId: '',
+  CorrelationId: '',
+  CaseObjectType: '',
+  CaseObjectId: '',
+  'ocp-apim-subscription-key': '',
 });
 
 const defaultFilters: FilterState = {

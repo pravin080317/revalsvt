@@ -33,23 +33,23 @@ export class DetailsListVOA implements ComponentFramework.ReactControl<IInputs, 
       React.createElement(
         React.Fragment,
         null,
-        React.createElement(DetailsListHost, {
-          context,
-          onRowInvoke: (args) => {
-            this.selectedTaskId = args?.taskId;
-            this.selectedSaleId = args?.saleId;
-            void this.onTaskClick(args?.taskId, args?.saleId);
-          },
-          onSelectionChange: (args) => {
-            // Selection should only emit IDs and not fetch details
-            this.selectedTaskId = args?.taskId;
-            this.selectedSaleId = args?.saleId;
-            this.selectedTaskIdsJson = JSON.stringify((args?.selectedTaskIds ?? []).filter((v) => !!v));
-            this.selectedSaleIdsJson = JSON.stringify((args?.selectedSaleIds ?? []).filter((v) => !!v));
-            this._saleDetails = '';
-            this._notifyOutputChanged();
-          },
-        }),
+        // React.createElement(DetailsListHost, {
+        //   context,
+        //   onRowInvoke: (args) => {
+        //     this.selectedTaskId = args?.taskId;
+        //     this.selectedSaleId = args?.saleId;
+        //     void this.onTaskClick(args?.taskId, args?.saleId);
+        //   },
+        //   onSelectionChange: (args) => {
+        //     // Selection should only emit IDs and not fetch details
+        //     this.selectedTaskId = args?.taskId;
+        //     this.selectedSaleId = args?.saleId;
+        //     this.selectedTaskIdsJson = JSON.stringify((args?.selectedTaskIds ?? []).filter((v) => !!v));
+        //     this.selectedSaleIdsJson = JSON.stringify((args?.selectedSaleIds ?? []).filter((v) => !!v));
+        //     this._saleDetails = '';
+        //     this._notifyOutputChanged();
+        //   },
+        // }),
         React.createElement(StatutorySpatialUnitBrowser, null),
       ),
     );
