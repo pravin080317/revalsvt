@@ -1,3 +1,2 @@
-export { Grid as DetailsList } from '../../Grid';
-export type { GridProps } from '../../Grid';
-
+export { Grid as DetailsList } from '../../grid/Grid';
+export type { GridProps } from '../../grid/Grid';

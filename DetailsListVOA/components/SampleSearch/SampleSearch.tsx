@@ -1,7 +1,7 @@
 import * as React from 'react';
 import { DetailsList } from '../DetailsList';
 import { Selection, SelectionMode, IObjectWithKey, IDetailsList, IRefObject, Stack, Dropdown, IDropdownOption, PrimaryButton, TextField } from '@fluentui/react';
-import { SAMPLE_COLUMNS, SAMPLE_RECORDS } from '../../SampleData';
+import { SAMPLE_COLUMNS, SAMPLE_RECORDS } from '../../data/SampleData';
 import { ColumnConfig } from '../../Component.types';
 import { createDefaultGridFilters, GridFilterState } from '../../Filters';
 

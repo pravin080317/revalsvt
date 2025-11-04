@@ -1,7 +1,7 @@
 import { IInputs } from '../generated/ManifestTypes';
 import { GridFilterState } from '../Filters';
-import { buildApiParamsFor } from '../TableConfigs';
-import { TaskSearchItem, TaskSearchResponse } from '../TaskSearchSample';
+import { buildApiParamsFor } from '../config/TableConfigs';
+import { TaskSearchItem, TaskSearchResponse } from '../data/TaskSearchSample';
 
 export interface SearchRequest {
   tableKey: string;

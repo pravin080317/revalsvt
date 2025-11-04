@@ -1,6 +1,6 @@
-import { GridFilterState, SearchByOption } from './Filters';
+import { GridFilterState, SearchByOption } from '../Filters';
 
-export type TableKey = 'sales' | 'allsales' | 'myassignment' | 'manager' | 'qa';
+export type TableKey = 'sales' | 'allsales' | 'myassignment' | 'manager' | 'qa' | 'ssu';
 
 export interface TableConfig {
   lookupFields: Set<string>;
@@ -97,6 +97,21 @@ export const TABLE_CONFIGS: Record<TableKey, TableConfig> = {
     lookupFields: new Set<string>([...salesLookupFields]),
     buildApiParams: buildSalesParams,
     searchByOptions: ['address', 'uprn', 'taskId', 'manualCheck', 'taskStatus', 'source', 'postcode'],
+  },
+   // Statutory Spatial Unit POC
+  ssu: {
+    // Limit dropdown filters to postcode, street, town, and bacode; everything else uses textbox
+    lookupFields: new Set<string>(['postcode', 'street', 'town', 'bacode']),
+    // External items are used in the POC; API param builder not used but keep minimal compatibility
+    buildApiParams: (filters: GridFilterState, page: number, pageSize: number) => {
+      const params: Record<string, string> = { page: String(page), pageSize: String(pageSize) };
+      if (filters.postcode) params.postcode = filters.postcode;
+      if (filters.street) params.street = filters.street;
+      if (filters.townCity) params.town = filters.townCity;
+      if ((filters as unknown as { bacode?: string }).bacode) params.bacode = String((filters as unknown as { bacode?: string }).bacode);
+      return params;
+    },
+    searchByOptions: ['address', 'postcode', 'street', 'town'],
   },
 };
 

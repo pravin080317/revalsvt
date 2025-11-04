@@ -1,6 +1,6 @@
-import { buildApiParamsFor } from '../TableConfigs';
-import { TaskSearchItem, TaskSearchResponse } from '../TaskSearchSample';
-import { SAMPLE_RECORDS } from '../SampleData';
+import { buildApiParamsFor } from '../config/TableConfigs';
+import { TaskSearchItem, TaskSearchResponse } from '../data/TaskSearchSample';
+import { SAMPLE_RECORDS } from '../data/SampleData';
 import { IInputs } from '../generated/ManifestTypes';
 
 export interface ClientSortState {

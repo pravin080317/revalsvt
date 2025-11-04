@@ -1,10 +1,10 @@
 import * as React from 'react';
 import { Selection, SelectionMode, IDetailsList, IObjectWithKey } from '@fluentui/react';
-import { Grid, GridProps } from '../../Grid';
+import { DetailsList as Grid, GridProps } from '../DetailsList';
 import { PCFContext } from '../context/PCFContext';
 import { ColumnConfig } from '../../Component.types';
 import { GridFilterState, createDefaultGridFilters, sanitizeFilters } from '../../Filters';
-import { getProfileConfigs } from '../../ColumnProfiles';
+import { getProfileConfigs } from '../../config/ColumnProfiles';
 import { fetchFilterOptions } from '../../services/DataService';
 import { buildColumns } from '../../utils/ColumnsBuilder';
 import { ensureSampleColumns, buildSampleEntityRecords } from '../../utils/SampleHelpers';
@@ -16,9 +16,11 @@ export interface DetailsListHostProps {
   onRowInvoke?: (args: { taskId?: string; saleId?: string }) => void;
   // Emit IDs on selection (single or multi); arrays support multi-select
   onSelectionChange?: (args: { taskId?: string; saleId?: string; selectedTaskIds?: string[]; selectedSaleIds?: string[] }) => void;
+  // When provided, the host renders these items instead of loading via APIM.
+  externalItems?: unknown[];
 }
 
-export const DetailsListHost: React.FC<DetailsListHostProps> = ({ context, onRowInvoke, onSelectionChange }) => {
+export const DetailsListHost: React.FC<DetailsListHostProps> = ({ context, onRowInvoke, onSelectionChange, externalItems }) => {
   // Parse basic params
   const pageSize = (context.parameters as unknown as Record<string, { raw?: number }>).pageSize?.raw ?? 10;
   // Navigation is Canvas-owned (Option 1). Keep params for future use but do not navigate here.
@@ -30,6 +32,10 @@ export const DetailsListHost: React.FC<DetailsListHostProps> = ({ context, onRow
     tableKey = raw?.trim()?.toLowerCase() ?? 'sales';
   } catch {
     tableKey = 'sales';
+  }
+  // For externalItems (SSU POC), force the SSU table profile so filters behave as requested
+  if (externalItems !== undefined) {
+    tableKey = 'ssu';
   }
 
   // Column display names and configs
@@ -51,7 +57,9 @@ export const DetailsListHost: React.FC<DetailsListHostProps> = ({ context, onRow
   React.useEffect(() => {
     const raw = (context.parameters as unknown as Record<string, { raw?: string }>).columnConfig?.raw?.trim() ?? '[]';
     try {
-      const fromProfile = getProfileConfigs((context.parameters as unknown as Record<string, { raw?: string }>).columnConfigProfile?.raw?.trim()?.toLowerCase());
+      // When external items are supplied, use the SSU POC column profile by default
+      const profileKey = (externalItems !== undefined ? 'ssu' : (context.parameters as unknown as Record<string, { raw?: string }>).columnConfigProfile?.raw)?.trim()?.toLowerCase();
+      const fromProfile = getProfileConfigs(profileKey);
       const fromJson = JSON.parse(raw) as ColumnConfig[];
       const merged = [...fromProfile, ...fromJson];
       const map: Record<string, ColumnConfig> = {};
@@ -94,12 +102,18 @@ export const DetailsListHost: React.FC<DetailsListHostProps> = ({ context, onRow
 
   // Build columns (includes auto-add from API item)
   const datasetColumns = React.useMemo(() => {
-    const sampleFromApi = hasLoadedApim && apimItems.length > 0 ? (apimItems[0] as Record<string, unknown>) : undefined;
-    return buildColumns(columnDisplayNames, columnConfigs, sampleFromApi);
-  }, [apimItems, columnConfigs, columnDisplayNames, hasLoadedApim]);
+    const t0 = performance.now();
+    // When using externalItems, avoid auto-adding all API fields; rely on profile/config only
+    const sampleFromApi = hasLoadedApim && apimItems.length > 0 && externalItems === undefined ? (apimItems[0] as Record<string, unknown>) : undefined;
+    const cols = buildColumns(columnDisplayNames, columnConfigs, sampleFromApi);
+    const t1 = performance.now();
+    console.log('[Grid Perf] Build columns (ms):', Math.round(t1 - t0), 'count:', cols.length);
+    return cols;
+  }, [apimItems, columnConfigs, columnDisplayNames, hasLoadedApim, externalItems]);
 
   // Records mapping
   const { records, ids } = React.useMemo(() => {
+    const t0 = performance.now();
     const recs: Record<string, ComponentFramework.PropertyHelper.DataSetApi.EntityRecord> = {};
     const all: string[] = [];
     const toText = (v: unknown) => (typeof v === 'string' ? v : typeof v === 'number' || typeof v === 'boolean' ? String(v) : '');
@@ -127,15 +141,18 @@ export const DetailsListHost: React.FC<DetailsListHostProps> = ({ context, onRow
       Object.assign(recs, sample.records);
       all.push(...sample.ids);
     }
+    const t1 = performance.now();
+    console.log('[Grid Perf] Map records (ms):', Math.round(t1 - t0), 'count:', all.length);
     return { records: recs, ids: all };
   }, [apimItems, columnDisplayNames, datasetColumns, hasLoadedApim]);
 
   const filteredIds = React.useMemo(() => {
+    const t0 = performance.now();
     const ds = datasetColumns;
     const toText = (val: unknown): string => (typeof val === 'string' ? val : typeof val === 'number' || typeof val === 'boolean' ? String(val) : '');
     const entries = Object.entries(headerFilters).filter(([, v]) => (Array.isArray(v) ? v.length > 0 : (v ?? '').toString().trim() !== ''));
     if (entries.length === 0) return ids;
-    return ids.filter((id) => {
+    const out = ids.filter((id) => {
       const rec = records[id] as unknown as Record<string, unknown>;
       return entries.every(([field, v]) => {
         const value = toText(rec[field]);
@@ -147,10 +164,14 @@ export const DetailsListHost: React.FC<DetailsListHostProps> = ({ context, onRow
         return value.toLowerCase().includes(String(v).trim().toLowerCase());
       });
     });
+    const t1 = performance.now();
+    console.log('[Grid Perf] Host filter ids (ms):', Math.round(t1 - t0), 'ids:', ids.length, 'filters:', entries.length, 'result:', out.length);
+    return out;
   }, [headerFilters, ids, records, datasetColumns]);
 
   const sortedIds = React.useMemo(() => {
     if (!clientSort || serverDriven) return filteredIds;
+    const t0 = performance.now();
     const field = clientSort.name?.toLowerCase?.() ?? '';
     const desc = clientSort.sortDirection === 1;
     const getVal = (id: string): string => {
@@ -168,6 +189,8 @@ export const DetailsListHost: React.FC<DetailsListHostProps> = ({ context, onRow
       const cmp = va.localeCompare(vb, undefined, { numeric: true, sensitivity: 'base' });
       return desc ? -cmp : cmp;
     });
+    const t1 = performance.now();
+    console.log('[Grid Perf] Host sort (ms):', Math.round(t1 - t0), 'field:', field, 'desc:', desc, 'count:', arr.length);
     return arr;
   }, [clientSort, filteredIds, records, serverDriven]);
 
@@ -177,9 +200,24 @@ export const DetailsListHost: React.FC<DetailsListHostProps> = ({ context, onRow
   const canNext = serverDriven ? (currentPage + 1) * pageSize < totalCount : start + pageSize < filteredIds.length;
   const totalPages = serverDriven ? Math.ceil(totalCount / pageSize) : Math.ceil(filteredIds.length / pageSize);
 
-  // Initial load and reloads when critical props change
+  // If externalItems are provided, use them and skip APIM loading
+  React.useEffect(() => {
+    if (externalItems !== undefined) {
+      setApimLoading(false);
+      setApimItems(externalItems ?? []);
+      setTotalCount((externalItems ?? []).length);
+      setServerDriven(false);
+      setHasLoadedApim(true);
+    }
+  }, [externalItems]);
+
+  // Initial load and reloads when critical props change (skips when externalItems are supplied)
   const lastRef = React.useRef<{ apim?: string; apiName?: string; table?: string }>({});
   React.useEffect(() => {
+    if (externalItems !== undefined) {
+      // External data path; do not load from APIM
+      return;
+    }
     const apim = (context.parameters as unknown as Record<string, { raw?: string }>).apimEndpoint?.raw?.trim() ?? '';
     const apiName = (context.parameters as unknown as Record<string, { raw?: string }>).customApiName?.raw?.trim() ?? '';
     const changed = lastRef.current.apim !== apim || lastRef.current.apiName !== apiName || lastRef.current.table !== tableKey || !hasLoadedApim;

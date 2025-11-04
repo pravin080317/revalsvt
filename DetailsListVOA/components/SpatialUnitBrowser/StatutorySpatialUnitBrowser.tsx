@@ -13,6 +13,9 @@ import {
   TextField,
   DefaultButton,
 } from '@fluentui/react';
+import { DetailsListHost } from '../DetailsListHost/DetailsListHost';
+import { PCFContext } from '../context/PCFContext';
+import { IInputs } from '../../generated/ManifestTypes';
 
 interface StatutorySpatialUnitLabel {
   statutorySpatialUnitLabelId: string;
@@ -84,6 +87,7 @@ const rowStackTokens = { childrenGap: 12 };
 const columnWidth = 180;
 
 export const StatutorySpatialUnitBrowser: React.FC = () => {
+  const context = React.useContext(PCFContext);
   const [filters, setFilters] = React.useState<FilterState>({ ...defaultFilters });
   const [items, setItems] = React.useState<StatutorySpatialUnitLabel[]>([]);
   const [isLoading, setIsLoading] = React.useState(false);
@@ -126,7 +130,8 @@ export const StatutorySpatialUnitBrowser: React.FC = () => {
         name: 'Street',
         fieldName: 'street',
         minWidth: columnWidth,
-        isResizable: true,
+        maxWidth: columnWidth,
+        isResizable: false,
       },
       {
         key: 'town',
@@ -202,19 +207,26 @@ export const StatutorySpatialUnitBrowser: React.FC = () => {
       const query = buildQueryString(filters);
       const url = query ? `${API_URL}?${query}` : API_URL;
 
+      const t0 = performance.now();
       const response = await fetch(url, {
         method: 'GET',
         headers: DEFAULT_HEADERS,
       });
-
+      const t1 = performance.now();
       if (!response.ok) {
         throw new Error(`Request failed with status ${response.status}`);
       }
-
+      const t2 = performance.now();
       const data = (await response.json()) as StatutorySpatialUnitResponse;
+      const t3 = performance.now();
       const results = Array.isArray(data?.results) ? data.results : [];
       setItems(results);
       setMoreResultsAvailable(Boolean(data?.moreResultsAvailable));
+      console.log('[SSU Perf] API URL:', url);
+      console.log('[SSU Perf] Network+server time (ms):', Math.round(t1 - t0));
+      console.log('[SSU Perf] Time to first byte to JSON start (ms):', Math.round(t2 - t1));
+      console.log('[SSU Perf] JSON parse time (ms):', Math.round(t3 - t2));
+      console.log('[SSU Perf] Items returned:', results.length);
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Unknown error calling VOA API';
       setError(message);
@@ -284,6 +296,10 @@ export const StatutorySpatialUnitBrowser: React.FC = () => {
               }`}
         </Text>
       )}
+      {/* Embedded standard grid with column filters */}
+      <Stack tokens={{ childrenGap: 12 }} styles={{ root: { marginTop: 24 } }}>
+        {context ? <DetailsListHost context={context} externalItems={items} /> : null}
+      </Stack>
     </Stack>
   );
 };

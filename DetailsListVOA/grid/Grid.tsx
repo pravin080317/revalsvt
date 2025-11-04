@@ -33,13 +33,13 @@ import {
   Link,
 } from '@fluentui/react';
 import * as React from 'react';
-import { NoFields } from '../DetailsListVOA/grid/NoFields';
-import { RecordsColumns } from '../DetailsListVOA/config/ManifestConstants';
-import { IGridColumn, ColumnConfig } from './Component.types';
-import { GridCell } from '../DetailsListVOA/grid/GridCell';
-import { ClassNames } from '../DetailsListVOA/grid/Grid.styles';
-import { GridFilterState, createDefaultGridFilters, sanitizeFilters, SearchByOption, ManualCheckFilter } from './Filters';
-import { getSearchByOptionsFor, isLookupFieldFor } from '../DetailsListVOA/config/TableConfigs';
+import { NoFields } from './NoFields';
+import { RecordsColumns } from '../config/ManifestConstants';
+import { IGridColumn, ColumnConfig } from '../Component.types';
+import { GridCell } from './GridCell';
+import { ClassNames } from './Grid.styles';
+import { GridFilterState, createDefaultGridFilters, sanitizeFilters, SearchByOption, ManualCheckFilter } from '../Filters';
+import { getSearchByOptionsFor, isLookupFieldFor } from '../config/TableConfigs';
 
 type DataSet = ComponentFramework.PropertyHelper.DataSetApi.EntityRecord & IObjectWithKey;
 
@@ -203,7 +203,7 @@ export const Grid = React.memo((props: GridProps) => {
   }, [searchFilters]);
 
   const searchByOptions = React.useMemo<IDropdownOption[]>(() => {
-    const keys = getSearchByOptionsFor(tableKey);
+    const keys: SearchByOption[] = getSearchByOptionsFor(String(tableKey));
     const toLabel = (k: string): string => {
       switch (k) {
         case 'uprn':
@@ -228,7 +228,7 @@ export const Grid = React.memo((props: GridProps) => {
           return k.charAt(0).toUpperCase() + k.slice(1);
       }
     };
-    return keys.map((k) => ({ key: k, text: toLabel(k) }));
+    return keys.map((k: SearchByOption) => ({ key: k as string, text: toLabel(k as string) }));
   }, [tableKey]);
 
   const manualCheckOptions = React.useMemo<IDropdownOption[]>(
@@ -505,7 +505,7 @@ export const Grid = React.memo((props: GridProps) => {
 
   // Identify columns that should use a value dropdown (lookup/choice-like fields)
   const isLookupField = React.useCallback((field: string | undefined): boolean => {
-    return isLookupFieldFor(tableKey, field);
+    return Boolean(isLookupFieldFor(String(tableKey), field));
   }, [tableKey]);
 
   const isTextOnlyField = React.useCallback((field: string | undefined): boolean => {

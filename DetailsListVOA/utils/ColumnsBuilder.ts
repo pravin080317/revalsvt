@@ -1,5 +1,5 @@
 import { ColumnConfig } from '../Component.types';
-import { SAMPLE_COLUMNS } from '../SampleData';
+import { SAMPLE_COLUMNS } from '../data/SampleData';
 
 export function buildColumns(
   columnDisplayNames: Record<string, string>,

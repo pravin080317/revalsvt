@@ -1,11 +1,34 @@
 import { Link } from '@fluentui/react';
-import { ColumnConfig } from './Component.types';
+import { ColumnConfig } from '../Component.types';
 
 // Built-in, code-defined column configuration profiles.
 // Makers can select a profile via the PCF property `columnConfigProfile`.
 // Any JSON provided in `columnConfig` will be merged on top to override.
 
 export const COLUMN_PROFILES: Record<string, ColumnConfig[]> = {
+  // Statutory Spatial Unit POC profile
+  ssu: [
+    { ColName: 'addressstring', ColDisplayName: 'Address', ColWidth: 280, ColMultiLine: true },
+    { ColName: 'buildingnumber', ColDisplayName: 'Building No.', ColWidth: 110 },
+    { ColName: 'street', ColDisplayName: 'Street', ColWidth: 180, ColResizable: false },
+    { ColName: 'locality', ColDisplayName: 'Locality', ColWidth: 160 },
+    { ColName: 'town', ColDisplayName: 'Town/City', ColWidth: 160 },
+    { ColName: 'postcode', ColDisplayName: 'Postcode', ColWidth: 110 },
+    { ColName: 'uprn', ColDisplayName: 'UPRN', ColWidth: 120 },
+    { ColName: 'uprnparent', ColDisplayName: 'UPRN Parent', ColWidth: 140 },
+    { ColName: 'effectivefromdate', ColDisplayName: 'Effective From', ColWidth: 160 },
+    { ColName: 'createddate', ColDisplayName: 'Created Date', ColWidth: 180 },
+    { ColName: 'statutoryspatialunitlabelid', ColDisplayName: 'Label ID', ColWidth: 240 },
+    { ColName: 'statutoryspatialunitid', ColDisplayName: 'SSU ID', ColWidth: 240 },
+    { ColName: 'labelstatusid', ColDisplayName: 'Label Status ID', ColWidth: 220 },
+    { ColName: 'labelsourceid', ColDisplayName: 'Label Source ID', ColWidth: 220 },
+    { ColName: 'is8s7666compliant', ColDisplayName: 'BS7666 Compliant', ColWidth: 160 },
+    { ColName: 'isbs7666compliant', ColDisplayName: 'BS7666 Compliant', ColWidth: 160 },
+    { ColName: 'lpilanguage', ColDisplayName: 'LPI Language', ColWidth: 140 },
+    { ColName: 'lpiusrn', ColDisplayName: 'LPI USRN', ColWidth: 140 },
+    { ColName: 'lpikey', ColDisplayName: 'LPI Key', ColWidth: 160 },
+    { ColName: 'lpilevel', ColDisplayName: 'LPI Level', ColWidth: 120 },
+  ],
   // Default sales-style grid
   sales: [
     { ColName: 'uprn', ColDisplayName: 'UPRN', ColWidth: 120 },

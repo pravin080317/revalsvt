@@ -1,9 +1,9 @@
 import { DefaultButton, FontIcon, IColumn, IconButton, Image, IRawStyle, Link, mergeStyles } from '@fluentui/react';
 import * as React from 'react';
-import { IGridColumn } from './Component.types';
-import { DatasetArray } from './DatasetArrayItem';
+import { IGridColumn } from '../Component.types';
+import { DatasetArray } from '../utils/DatasetArrayItem';
 import { ClassNames, FontStyles } from './Grid.styles';
-import { CellTypes } from './ManifestConstants';
+import { CellTypes } from '../config/ManifestConstants';
 
 const CSS_IMPORTANT = ' !important';
 

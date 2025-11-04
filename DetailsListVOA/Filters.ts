@@ -4,6 +4,8 @@ export type SearchByOption =
   | 'address'
   | 'manualCheck'
   | 'postcode'
+  | 'street'
+  | 'town'
   | 'taskStatus'
   | 'source';
 
