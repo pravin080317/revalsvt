@@ -5,11 +5,13 @@ import { PCFContext } from '../context/PCFContext';
 import { ColumnConfig } from '../../Component.types';
 import { GridFilterState, createDefaultGridFilters, sanitizeFilters } from '../../Filters';
 import { getProfileConfigs } from '../../config/ColumnProfiles';
+import { isLookupFieldFor } from '../../config/TableConfigs';
 import { fetchFilterOptions } from '../../services/DataService';
 import { buildColumns } from '../../utils/ColumnsBuilder';
 import { ensureSampleColumns, buildSampleEntityRecords } from '../../utils/SampleHelpers';
 import { loadGridData } from '../../services/GridDataController';
 import { IInputs } from '../../generated/ManifestTypes';
+import { logPerf } from '../../utils/Perf';
 
 export interface DetailsListHostProps {
   context: ComponentFramework.Context<IInputs>;
@@ -18,9 +20,11 @@ export interface DetailsListHostProps {
   onSelectionChange?: (args: { taskId?: string; saleId?: string; selectedTaskIds?: string[]; selectedSaleIds?: string[] }) => void;
   // When provided, the host renders these items instead of loading via APIM.
   externalItems?: unknown[];
+  // Bubble header filter Apply back to parent (used by SSU POC to call API with extra params)
+  onColumnFiltersApply?: (filters: Record<string, string | string[]>) => void;
 }
 
-export const DetailsListHost: React.FC<DetailsListHostProps> = ({ context, onRowInvoke, onSelectionChange, externalItems }) => {
+export const DetailsListHost: React.FC<DetailsListHostProps> = ({ context, onRowInvoke, onSelectionChange, externalItems, onColumnFiltersApply }) => {
   // Parse basic params
   const pageSize = (context.parameters as unknown as Record<string, { raw?: number }>).pageSize?.raw ?? 10;
   // Navigation is Canvas-owned (Option 1). Keep params for future use but do not navigate here.
@@ -90,15 +94,99 @@ export const DetailsListHost: React.FC<DetailsListHostProps> = ({ context, onRow
   // State
   const [currentPage, setCurrentPage] = React.useState(0);
   const [headerFilters, setHeaderFilters] = React.useState<Record<string, string | string[]>>({});
-  const [clientSort, setClientSort] = React.useState<{ name: string; sortDirection: number } | undefined>({ name: 'saleid', sortDirection: 0 });
+  const lastAppliedFiltersRef = React.useRef<Record<string, string | string[]>>({});
+  const [clientSort, setClientSort] = React.useState<{ name: string; sortDirection: number } | undefined>(
+    tableKey === 'ssu' ? { name: 'addressstring', sortDirection: 0 } : { name: 'saleid', sortDirection: 0 },
+  );
   const [searchFilters, setSearchFilters] = React.useState<GridFilterState>({ ...createDefaultGridFilters(), searchBy: 'taskStatus', taskStatus: 'New' });
   const [apimItems, setApimItems] = React.useState<unknown[]>([]);
   const [totalCount, setTotalCount] = React.useState(0);
   const [serverDriven, setServerDriven] = React.useState(false);
   const [apimLoading, setApimLoading] = React.useState(false);
   const [hasLoadedApim, setHasLoadedApim] = React.useState(false);
+  // Defer persistence until after initial hydration to avoid add/remove flicker in localStorage
+  const [hydrated, setHydrated] = React.useState(false);
   const allowColumnReorder = (context.parameters as unknown as Record<string, { raw?: string | boolean }>).allowColumnReorder?.raw === true ||
     String((context.parameters as unknown as Record<string, { raw?: string | boolean }>).allowColumnReorder?.raw ?? '').toLowerCase() === 'true';
+
+  // Persist header filters per table for consistent UX across reloads
+  const storageKey = React.useMemo(() => `voa-grid-filters:${tableKey}`, [tableKey]);
+  const storageKeySort = React.useMemo(() => `voa-grid-sort:${tableKey}`, [tableKey]);
+  const storageKeyPage = React.useMemo(() => `voa-grid-page:${tableKey}`, [tableKey]);
+  // Some environments show keys without ':' in DevTools; support both forms for compatibility
+  const storageKeyNC = React.useMemo(() => storageKey.replace(':', ''), [storageKey]);
+  const storageKeySortNC = React.useMemo(() => storageKeySort.replace(':', ''), [storageKeySort]);
+  const storageKeyPageNC = React.useMemo(() => storageKeyPage.replace(':', ''), [storageKeyPage]);
+  // Hydrate from localStorage on table change (URL persistence disabled by policy)
+  React.useEffect(() => {
+    try {
+      // Filters
+      const rawLocalFilters = localStorage.getItem(storageKey) ?? localStorage.getItem(storageKeyNC);
+      if (rawLocalFilters) {
+        // Stored as arrays for every field; coerce to proper types per lookup/text
+        const parsed = JSON.parse(rawLocalFilters) as Record<string, string[]>;
+        const normalized: Record<string, string | string[]> = {};
+        Object.entries(parsed).forEach(([k, v]) => {
+          const keyLower = k.toLowerCase();
+          const isLookup = isLookupFieldFor(String(tableKey), keyLower);
+          normalized[keyLower] = isLookup ? (Array.isArray(v) ? v : [String(v ?? '')]) : (Array.isArray(v) ? (v[0] ?? '') : String(v ?? ''));
+        });
+        lastAppliedFiltersRef.current = normalized;
+        setHeaderFilters(normalized);
+        try { onColumnFiltersApply?.(normalized); } catch { /* ignore */ }
+      }
+      // Sort
+      const rawLocalSort = localStorage.getItem(storageKeySort) ?? localStorage.getItem(storageKeySortNC);
+      if (rawLocalSort) {
+        try {
+          const parsed = JSON.parse(rawLocalSort) as { name?: string; sortDirection?: number };
+          if (parsed?.name && (parsed.sortDirection === 0 || parsed.sortDirection === 1)) {
+            setClientSort({ name: parsed.name, sortDirection: parsed.sortDirection });
+          }
+        } catch { /* ignore invalid */ }
+      }
+      // Page
+      const rawLocalPage = localStorage.getItem(storageKeyPage) ?? localStorage.getItem(storageKeyPageNC);
+      if (rawLocalPage) {
+        const n = Number(rawLocalPage);
+        if (!Number.isNaN(n) && n >= 0) setCurrentPage(n);
+      }
+    } catch {
+      // ignore hydrate failures
+    }
+    // Mark hydration complete so persistence can begin on subsequent changes
+    setHydrated(true);
+  }, [storageKey, storageKeyNC, storageKeySort, storageKeySortNC, storageKeyPage, storageKeyPageNC]);
+  // Persist to localStorage whenever filters/page/sort change
+  React.useEffect(() => {
+    if (!hydrated) return; // skip initial mount until hydration finishes
+    try {
+      // localStorage
+      if (Object.keys(headerFilters).length === 0) {
+        localStorage.removeItem(storageKey); localStorage.removeItem(storageKeyNC);
+      } else {
+        // Persist as arrays for all fields
+        const arrayStore: Record<string, string[]> = {};
+        Object.entries(headerFilters).forEach(([k, v]) => {
+          arrayStore[k] = Array.isArray(v) ? v : [String(v ?? '')];
+        });
+        const filtersJSON = JSON.stringify(arrayStore);
+        localStorage.setItem(storageKey, filtersJSON);
+        localStorage.setItem(storageKeyNC, filtersJSON);
+      }
+      if (clientSort) {
+        const sortJSON = JSON.stringify(clientSort);
+        localStorage.setItem(storageKeySort, sortJSON);
+        localStorage.setItem(storageKeySortNC, sortJSON);
+      } else {
+        localStorage.removeItem(storageKeySort); localStorage.removeItem(storageKeySortNC);
+      }
+      localStorage.setItem(storageKeyPage, String(currentPage));
+      localStorage.setItem(storageKeyPageNC, String(currentPage));
+    } catch {
+      // ignore persist failures
+    }
+  }, [headerFilters, clientSort, currentPage, storageKey, storageKeyNC, storageKeySort, storageKeySortNC, storageKeyPage, storageKeyPageNC, hydrated]);
 
   // Build columns (includes auto-add from API item)
   const datasetColumns = React.useMemo(() => {
@@ -107,7 +195,7 @@ export const DetailsListHost: React.FC<DetailsListHostProps> = ({ context, onRow
     const sampleFromApi = hasLoadedApim && apimItems.length > 0 && externalItems === undefined ? (apimItems[0] as Record<string, unknown>) : undefined;
     const cols = buildColumns(columnDisplayNames, columnConfigs, sampleFromApi);
     const t1 = performance.now();
-    console.log('[Grid Perf] Build columns (ms):', Math.round(t1 - t0), 'count:', cols.length);
+    logPerf('[Grid Perf] Build columns (ms):', Math.round(t1 - t0), 'count:', cols.length);
     return cols;
   }, [apimItems, columnConfigs, columnDisplayNames, hasLoadedApim, externalItems]);
 
@@ -122,9 +210,18 @@ export const DetailsListHost: React.FC<DetailsListHostProps> = ({ context, onRow
         const base: Record<string, unknown> = {};
         const r = base as ComponentFramework.PropertyHelper.DataSetApi.EntityRecord & Record<string, unknown>;
         const obj = item as Record<string, unknown>;
-        const uprnVal = obj.uprn;
+        const o = obj as {
+          statutorySpatialUnitLabelId?: string;
+          statutoryspatialunitlabelid?: string;
+          taskId?: string;
+          uprn?: unknown;
+        };
+        const lblId = o.statutorySpatialUnitLabelId ?? o.statutoryspatialunitlabelid;
+        const uprnVal = o.uprn;
         const uprnStr = typeof uprnVal === 'string' || typeof uprnVal === 'number' ? String(uprnVal) : '';
-        const id = (obj.taskId as string) || `${uprnStr}-${index}` || `apim-${index}`;
+        const primaryId = lblId ?? o.taskId;
+        const fallbackId = uprnStr ? `${uprnStr}-${index}` : `apim-${index}`;
+        const id = primaryId ? `${primaryId}-${index}` : fallbackId;
         r.getRecordId = () => id;
         r.getNamedReference = undefined as unknown as ComponentFramework.PropertyHelper.DataSetApi.EntityRecord['getNamedReference'];
         r.getValue = ((columnName: string) => r[columnName] ?? '') as ComponentFramework.PropertyHelper.DataSetApi.EntityRecord['getValue'];
@@ -142,7 +239,7 @@ export const DetailsListHost: React.FC<DetailsListHostProps> = ({ context, onRow
       all.push(...sample.ids);
     }
     const t1 = performance.now();
-    console.log('[Grid Perf] Map records (ms):', Math.round(t1 - t0), 'count:', all.length);
+    logPerf('[Grid Perf] Map records (ms):', Math.round(t1 - t0), 'count:', all.length);
     return { records: recs, ids: all };
   }, [apimItems, columnDisplayNames, datasetColumns, hasLoadedApim]);
 
@@ -165,7 +262,7 @@ export const DetailsListHost: React.FC<DetailsListHostProps> = ({ context, onRow
       });
     });
     const t1 = performance.now();
-    console.log('[Grid Perf] Host filter ids (ms):', Math.round(t1 - t0), 'ids:', ids.length, 'filters:', entries.length, 'result:', out.length);
+    logPerf('[Grid Perf] Host filter ids (ms):', Math.round(t1 - t0), 'ids:', ids.length, 'filters:', entries.length, 'result:', out.length);
     return out;
   }, [headerFilters, ids, records, datasetColumns]);
 
@@ -190,12 +287,17 @@ export const DetailsListHost: React.FC<DetailsListHostProps> = ({ context, onRow
       return desc ? -cmp : cmp;
     });
     const t1 = performance.now();
-    console.log('[Grid Perf] Host sort (ms):', Math.round(t1 - t0), 'field:', field, 'desc:', desc, 'count:', arr.length);
+    logPerf('[Grid Perf] Host sort (ms):', Math.round(t1 - t0), 'field:', field, 'desc:', desc, 'count:', arr.length);
     return arr;
   }, [clientSort, filteredIds, records, serverDriven]);
 
   const start = currentPage * pageSize;
+  const pageSliceT0 = performance.now();
   const pageIds = sortedIds.slice(start, start + pageSize);
+  const pageSliceT1 = performance.now();
+  if (sortedIds.length > 0) {
+    logPerf('[Grid Perf] Host page slice (ms):', Math.round(pageSliceT1 - pageSliceT0), 'start:', start, 'size:', pageSize, 'result:', pageIds.length);
+  }
   const canPrev = currentPage > 0;
   const canNext = serverDriven ? (currentPage + 1) * pageSize < totalCount : start + pageSize < filteredIds.length;
   const totalPages = serverDriven ? Math.ceil(totalCount / pageSize) : Math.ceil(filteredIds.length / pageSize);
@@ -334,9 +436,53 @@ export const DetailsListHost: React.FC<DetailsListHostProps> = ({ context, onRow
       }
     },
     onColumnFiltersChange: (f) => {
-      setHeaderFilters(f);
-      setCurrentPage(0);
+      const normalized: Record<string, string | string[]> = {};
+      Object.entries(f).forEach(([k, v]) => (normalized[k.toLowerCase()] = v));
+      // No-op if unchanged to avoid duplicate apply calls
+      const prev = lastAppliedFiltersRef.current;
+      const same = (() => {
+        const aKeys = Object.keys(prev).sort();
+        const bKeys = Object.keys(normalized).sort();
+        if (aKeys.length !== bKeys.length) return false;
+        for (let i = 0; i < aKeys.length; i++) {
+          if (aKeys[i] !== bKeys[i]) return false;
+          const av = prev[aKeys[i]];
+          const bv = normalized[bKeys[i]];
+          if (Array.isArray(av) || Array.isArray(bv)) {
+            const aa = Array.isArray(av) ? av : [String(av ?? '')];
+            const bb = Array.isArray(bv) ? bv : [String(bv ?? '')];
+            if (aa.length !== bb.length) return false;
+            for (let j = 0; j < aa.length; j++) if (String(aa[j]) !== String(bb[j])) return false;
+          } else if (String(av ?? '') !== String(bv ?? '')) {
+            return false;
+          }
+        }
+        return true;
+      })();
+      if (!same) {
+        lastAppliedFiltersRef.current = normalized;
+        setHeaderFilters(normalized);
+        // Persist immediately to localStorage as arrays
+        try {
+          if (Object.keys(normalized).length === 0) {
+            localStorage.removeItem(storageKey); localStorage.removeItem(storageKeyNC);
+          } else {
+            const arrayStore: Record<string, string[]> = {};
+            Object.entries(normalized).forEach(([k, v]) => {
+              arrayStore[k] = Array.isArray(v) ? v : [String(v ?? '')];
+            });
+            const filtersJSON = JSON.stringify(arrayStore);
+            localStorage.setItem(storageKey, filtersJSON);
+            localStorage.setItem(storageKeyNC, filtersJSON);
+          }
+        } catch {
+          // ignore storage failures
+        }
+        setCurrentPage(0);
+        try { onColumnFiltersApply?.(normalized); } catch { void 0; }
+      }
     },
+    columnFilters: headerFilters,
     taskCount: serverDriven ? totalCount : filteredIds.length,
   };
 

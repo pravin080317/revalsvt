@@ -138,3 +138,4 @@ export function buildApiParamsFor(
 export function getSearchByOptionsFor(table?: string): SearchByOption[] {
   return getConfig(table).searchByOptions;
 }
+

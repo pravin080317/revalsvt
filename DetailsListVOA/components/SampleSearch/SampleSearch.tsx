@@ -282,6 +282,7 @@ export function SampleSearch(props: { pageSize?: number } = {}): JSX.Element {
           resources={dummyResources}
           onSearch={() => handleSearch()}
           onColumnFiltersChange={(f) => { setHeaderFilters(f); /* apply immediately */ handleSearch(); }}
+          columnFilters={headerFilters}
           onLoadFilterOptions={onLoadFilterOptions}
           onNextPage={() => setPage((p) => Math.min(totalPages - 1, p + 1))}
           onPrevPage={() => setPage((p) => Math.max(0, p - 1))}

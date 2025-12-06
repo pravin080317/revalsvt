@@ -16,6 +16,7 @@ import {
 import { DetailsListHost } from '../DetailsListHost/DetailsListHost';
 import { PCFContext } from '../context/PCFContext';
 import { IInputs } from '../../generated/ManifestTypes';
+import { logPerf } from '../../utils/Perf';
 
 interface StatutorySpatialUnitLabel {
   statutorySpatialUnitLabelId: string;
@@ -64,8 +65,8 @@ interface FilterState {
   bacode: string;
 }
 
-const API_URL =
-  '/v1/statutorySpatialUnitLabelAddressQuery';
+// Endpoint path is case‑sensitive in some gateways; use the lowercase variant required by the API
+const API_URL = '/v1/statutoryspatialunitlabeladdressquery';
 
 const DEFAULT_HEADERS = new Headers({
   ActiveDirectoryObjectId: '',
@@ -94,6 +95,8 @@ export const StatutorySpatialUnitBrowser: React.FC = () => {
   const [error, setError] = React.useState<string | undefined>();
   const [hasSearched, setHasSearched] = React.useState(false);
   const [moreResultsAvailable, setMoreResultsAvailable] = React.useState(false);
+  const lastHeaderFiltersRef = React.useRef<Record<string, string | string[]>>({});
+  const inFlightKeyRef = React.useRef<string | undefined>(undefined);
 
   const onFilterChange = React.useCallback((key: keyof FilterState, value?: string) => {
     setFilters((prev) => ({ ...prev, [key]: value ?? '' }));
@@ -187,24 +190,22 @@ export const StatutorySpatialUnitBrowser: React.FC = () => {
     [],
   );
 
-  const buildQueryString = React.useCallback((state: FilterState) => {
+  const buildQueryString = React.useCallback((state: FilterState, extra?: { street?: string; town?: string }) => {
     const params = new URLSearchParams();
-    (Object.keys(state) as (keyof FilterState)[]).forEach((key) => {
-      const value = state[key]?.trim();
-      if (value) {
-        params.append(key, value);
-      }
-    });
+    const pc = state.postcode?.trim();
+    if (pc) params.append('postcode', pc);
+    if (extra?.street) params.append('street', extra.street);
+    if (extra?.town) params.append('town', extra.town);
     return params.toString();
   }, []);
 
-  const fetchResults = React.useCallback(async () => {
+  const fetchResults = React.useCallback(async (extra?: { street?: string; town?: string }) => {
     setIsLoading(true);
     setError(undefined);
     setHasSearched(true);
 
     try {
-      const query = buildQueryString(filters);
+      const query = buildQueryString(filters, extra);
       const url = query ? `${API_URL}?${query}` : API_URL;
 
       const t0 = performance.now();
@@ -222,11 +223,11 @@ export const StatutorySpatialUnitBrowser: React.FC = () => {
       const results = Array.isArray(data?.results) ? data.results : [];
       setItems(results);
       setMoreResultsAvailable(Boolean(data?.moreResultsAvailable));
-      console.log('[SSU Perf] API URL:', url);
-      console.log('[SSU Perf] Network+server time (ms):', Math.round(t1 - t0));
-      console.log('[SSU Perf] Time to first byte to JSON start (ms):', Math.round(t2 - t1));
-      console.log('[SSU Perf] JSON parse time (ms):', Math.round(t3 - t2));
-      console.log('[SSU Perf] Items returned:', results.length);
+      logPerf('[SSU Perf] API URL:', url);
+      logPerf('[SSU Perf] Network+server time (ms):', Math.round(t1 - t0));
+      logPerf('[SSU Perf] Time to first byte to JSON start (ms):', Math.round(t2 - t1));
+      logPerf('[SSU Perf] JSON parse time (ms):', Math.round(t3 - t2));
+      logPerf('[SSU Perf] Items returned:', results.length);
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Unknown error calling VOA API';
       setError(message);
@@ -236,6 +237,52 @@ export const StatutorySpatialUnitBrowser: React.FC = () => {
       setIsLoading(false);
     }
   }, [buildQueryString, filters]);
+
+  const onHeaderFiltersApply = React.useCallback((header: Record<string, string | string[]>) => {
+    // De-dupe: skip if identical to last applied
+    const prev = lastHeaderFiltersRef.current;
+    const same = (() => {
+      const aKeys = Object.keys(prev).sort();
+      const bKeys = Object.keys(header).sort();
+      if (aKeys.length !== bKeys.length) return false;
+      for (let i = 0; i < aKeys.length; i++) {
+        if (aKeys[i] !== bKeys[i]) return false;
+        const av = prev[aKeys[i]];
+        const bv = header[bKeys[i]];
+        if (Array.isArray(av) || Array.isArray(bv)) {
+          const aa = Array.isArray(av) ? av : [String(av ?? '')];
+          const bb = Array.isArray(bv) ? bv : [String(bv ?? '')];
+          if (aa.length !== bb.length) return false;
+          for (let j = 0; j < aa.length; j++) if (String(aa[j]) !== String(bb[j])) return false;
+        } else if (String(av ?? '') !== String(bv ?? '')) {
+          return false;
+        }
+      }
+      return true;
+    })();
+    if (same) return;
+    lastHeaderFiltersRef.current = header;
+
+    if (!moreResultsAvailable) return;
+    const valOf = (k: string): string => {
+      const v = header[k];
+      if (Array.isArray(v)) return v.map((s) => String(s).trim()).filter((s) => s !== '').join(',');
+      return (v ?? '').toString().trim();
+    };
+    const street = valOf('street');
+    const town = valOf('town');
+    if (!street && !town) return;
+    const q = buildQueryString(filters, { street: street || undefined, town: town || undefined });
+    if (inFlightKeyRef.current === q) return; // de-dupe same query in-flight
+    inFlightKeyRef.current = q;
+    void (async () => {
+      try {
+        await fetchResults({ street: street || undefined, town: town || undefined });
+      } finally {
+        inFlightKeyRef.current = undefined;
+      }
+    })();
+  }, [buildQueryString, fetchResults, filters, moreResultsAvailable]);
 
   return (
     <Stack tokens={stackTokens} styles={{ root: { marginTop: 24 } }}>
@@ -278,14 +325,16 @@ export const StatutorySpatialUnitBrowser: React.FC = () => {
       {isLoading ? (
         <Spinner label="Loading statutory spatial unit labels..." />
       ) : (
-        <DetailsList
-          items={items}
-          columns={columns}
-          selectionMode={SelectionMode.none}
-          layoutMode={DetailsListLayoutMode.justified}
-          setKey="statutorySpatialUnits"
-          styles={{ root: { maxHeight: 380, overflowY: 'auto' } }}
-        />
+        // Render only the enhanced grid with header filters
+        <Stack tokens={{ childrenGap: 12 }}>
+          {context ? (
+            <DetailsListHost
+              context={context}
+              externalItems={items}
+              onColumnFiltersApply={onHeaderFiltersApply}
+            />
+          ) : null}
+        </Stack>
       )}
       {hasSearched && !isLoading && !error && (
         <Text variant="smallPlus">
@@ -296,10 +345,8 @@ export const StatutorySpatialUnitBrowser: React.FC = () => {
               }`}
         </Text>
       )}
-      {/* Embedded standard grid with column filters */}
-      <Stack tokens={{ childrenGap: 12 }} styles={{ root: { marginTop: 24 } }}>
-        {context ? <DetailsListHost context={context} externalItems={items} /> : null}
-      </Stack>
+      {/* Only the DetailsListHost grid is shown above; no duplicate list here */}
     </Stack>
   );
 };
+

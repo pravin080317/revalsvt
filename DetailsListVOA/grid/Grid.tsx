@@ -39,6 +39,7 @@ import { IGridColumn, ColumnConfig } from '../Component.types';
 import { GridCell } from './GridCell';
 import { ClassNames } from './Grid.styles';
 import { GridFilterState, createDefaultGridFilters, sanitizeFilters, SearchByOption, ManualCheckFilter } from '../Filters';
+import { logPerf } from '../utils/Perf';
 import { getSearchByOptionsFor, isLookupFieldFor } from '../config/TableConfigs';
 
 type DataSet = ComponentFramework.PropertyHelper.DataSetApi.EntityRecord & IObjectWithKey;
@@ -82,6 +83,8 @@ export interface GridProps {
   onLoadFilterOptions?: (field: string, query: string) => Promise<string[]>;
   onColumnFiltersChange?: (filters: Record<string, string | string[]>) => void;
   allowColumnReorder?: boolean;
+  // Fully controlled header filters from host
+  columnFilters: Record<string, string | string[]>;
 }
 
 const defaultTheme = createTheme({
@@ -153,13 +156,14 @@ export const Grid = React.memo((props: GridProps) => {
     showResults,
     onLoadFilterOptions,
     onColumnFiltersChange,
+    columnFilters,
   } = props;
 
   const theme = useTheme(themeJSON);
 
   const [columns, setColumns] = React.useState<IGridColumn[]>([]);
   const [isComponentLoading, setIsLoading] = React.useState(false);
-  const [columnFilters, setColumnFilters] = React.useState<Record<string, string | string[]>>({});
+  // No local columnFilters; use controlled prop
   const [menuState, setMenuState] = React.useState<{
     target: HTMLElement;
     column: IGridColumn;
@@ -171,6 +175,8 @@ export const Grid = React.memo((props: GridProps) => {
   const menuOptionsTimer = React.useRef<number | undefined>(undefined);
   const liveFilterTimer = React.useRef<number | undefined>(undefined);
   const [filters, setFilters] = React.useState<GridFilterState>(searchFilters);
+
+  // No sync needed; columnFilters is controlled by host
 
   // Debounced search when typing in non-UPRN text fields
   const searchTimer = React.useRef<number | undefined>(undefined);
@@ -480,12 +486,16 @@ export const Grid = React.memo((props: GridProps) => {
   const items = React.useMemo<DataSet[]>(() => {
     const mapped = sortedRecordIds.map((id) => {
       const record = records[id];
-      (record as DataSet).key = getRecordKey(record);
+      const k = getRecordKey(record);
+      const stableKey = typeof k === 'string' && k.trim() !== '' ? k : id;
+      (record as DataSet).key = stableKey;
       return record as DataSet;
     });
     setIsLoading(false);
     return mapped;
   }, [records, sortedRecordIds]);
+
+  const recordCount = React.useMemo(() => Object.keys(records).length, [records]);
 
   const getFilterableText = React.useCallback((raw: unknown): string => {
     if (Array.isArray(raw)) {
@@ -533,7 +543,11 @@ export const Grid = React.memo((props: GridProps) => {
   const columnsWithIcons = React.useMemo<IGridColumn[]>(() => {
     return columns.map((c) => {
       const field = c.fieldName ?? c.key;
-      const activeFilter = !!columnFilters[(field ?? '').toString()];
+      const key = (field ?? '').toString();
+      const keyLower = key.toLowerCase();
+      const hasLocal = !!columnFilters[key] || !!columnFilters[keyLower];
+      const hasControlled = !!(columnFilters[key]) || !!(columnFilters[keyLower]);
+      const activeFilter = hasLocal || hasControlled;
       const sort = sorting?.find((s) => s.name === field);
       const sortIcon = sort ? (Number(sort.sortDirection) === 1 ? 'SortDown' : 'SortUp') : undefined;
       const iconName = sortIcon ?? (activeFilter ? 'Filter' : undefined);
@@ -548,7 +562,7 @@ export const Grid = React.memo((props: GridProps) => {
     );
     if (filterEntries.length === 0) {
       const t1 = performance.now();
-      console.log('[Grid Perf] Client filteredItems (no filters) (ms):', Math.round(t1 - t0), 'items:', items.length);
+      logPerf('[Grid Perf] Client filteredItems (no filters) (ms):', Math.round(t1 - t0), 'items:', items.length);
       return items;
     }
     const out = items.filter((item) => {
@@ -576,22 +590,20 @@ export const Grid = React.memo((props: GridProps) => {
       });
     });
     const t1 = performance.now();
-    console.log('[Grid Perf] Client filteredItems (ms):', Math.round(t1 - t0), 'items:', items.length, 'filters:', filterEntries.length, 'result:', out.length);
+    logPerf('[Grid Perf] Client filteredItems (ms):', Math.round(t1 - t0), 'items:', items.length, 'filters:', filterEntries.length, 'result:', out.length);
     return out;
   }, [columnFilters, getFilterableText, items]);
 
   const clearAllColumnFilters = React.useCallback(() => {
-    setColumnFilters(() => {
-      const cleared: Record<string, string | string[]> = {};
-      if (onColumnFiltersChange) {
-        onColumnFiltersChange(cleared);
-      }
-      return cleared;
-    });
+    const cleared: Record<string, string | string[]> = {};
+    onColumnFiltersChange?.(cleared);
   }, [onColumnFiltersChange]);
 
   const getDistinctOptions = React.useCallback(
     (candidates: string[]): IDropdownOption[] => {
+      if (recordCount > 250 && onLoadFilterOptions) {
+        return [];
+      }
       const t0 = performance.now();
       const set = new Set<string>();
       Object.values(records).forEach((it) => {
@@ -618,10 +630,10 @@ export const Grid = React.memo((props: GridProps) => {
         .sort((a, b) => a.localeCompare(b))
         .map((v) => ({ key: v, text: v }));
       const t1 = performance.now();
-      console.log('[Grid Perf] Distinct options (ms):', Math.round(t1 - t0), 'candidates:', candidates.join(','), 'records:', Object.keys(records).length, 'options:', arr.length);
+      logPerf('[Grid Perf] Distinct options (ms):', Math.round(t1 - t0), 'candidates:', candidates.join(','), 'records:', Object.keys(records).length, 'options:', arr.length);
       return arr;
     },
-    [getFilterableText, records],
+    [getFilterableText, records, onLoadFilterOptions, recordCount],
   );
 
   const scheduleLiveTextFilter = React.useCallback((fieldName: string, value: string) => {
@@ -629,18 +641,16 @@ export const Grid = React.memo((props: GridProps) => {
       window.clearTimeout(liveFilterTimer.current);
     }
     liveFilterTimer.current = window.setTimeout(() => {
-      setColumnFilters((prev) => {
-        const updated = { ...prev };
-        const trimmed = value.trim();
-        if (trimmed === '') {
-          delete updated[fieldName];
-        } else {
-          updated[fieldName] = trimmed;
-        }
-        return updated;
-      });
+      const updated: Record<string, string | string[]> = { ...columnFilters };
+      const trimmed = value.trim();
+      if (trimmed === '') {
+        delete updated[fieldName];
+      } else {
+        updated[fieldName] = trimmed;
+      }
+      onColumnFiltersChange?.(updated);
     }, 300);
-  }, []);
+  }, [columnFilters, onColumnFiltersChange]);
 
   React.useEffect(() => () => {
     if (liveFilterTimer.current) {
@@ -676,7 +686,19 @@ export const Grid = React.memo((props: GridProps) => {
         return;
       }
       const fieldName = gridCol.fieldName ?? gridCol.key;
-      const existing = columnFilters[fieldName];
+      // Prefer local value; fall back to controlled header filters to prefill text after reloads
+      const key = String(fieldName ?? '');
+      const keyLower = key.toLowerCase();
+      // Controlled filters only
+      const existing = columnFilters[key] ?? columnFilters[keyLower];
+      // Perf: log what we will prefill (controlled vs local)
+      logPerf('[Grid Perf] OpenMenu prefill', {
+        field: keyLower,
+        existingControlled: columnFilters[keyLower] ?? columnFilters[key],
+        existingLocal: undefined,
+        mode: Array.isArray(existing) ? 'multi' : 'text',
+        text: typeof existing === 'string' ? existing : '',
+      });
       if (Array.isArray(existing)) {
         setMenuFilterValue(existing);
         setMenuFilterText('');
@@ -687,9 +709,41 @@ export const Grid = React.memo((props: GridProps) => {
       setMenuExtraOptions([]);
       setMenuOptionsLoading(false);
       setMenuState({ target, column: gridCol });
+      // For large datasets, prefer server-provided options for lookup fields
+      const lookup = isLookupField(fieldName);
+      if (lookup && recordCount > 250 && onLoadFilterOptions) {
+        setMenuOptionsLoading(true);
+        void onLoadFilterOptions(fieldName ?? '', '')
+          .then((vals) => {
+            setMenuExtraOptions(vals ?? []);
+            setMenuOptionsLoading(false);
+            return null;
+          })
+          .catch(() => {
+            setMenuOptionsLoading(false);
+            return null;
+          });
+      }
     },
-    [columnFilters],
+    [columnFilters, isLookupField, onLoadFilterOptions, recordCount],
   );
+
+  // Ensure prefill is applied after the menu is set (covers any race on first open after reload)
+  React.useEffect(() => {
+    if (!menuState) return;
+    const fieldName = menuState.column.fieldName ?? menuState.column.key;
+    const key = String(fieldName ?? '');
+    const keyLower = key.toLowerCase();
+    const existing = columnFilters[key] ?? columnFilters[keyLower];
+    if (Array.isArray(existing)) {
+      setMenuFilterValue(existing);
+      setMenuFilterText('');
+    } else {
+      const text = typeof existing === 'string' ? existing : '';
+      setMenuFilterValue(text);
+      setMenuFilterText(text);
+    }
+  }, [menuState, columnFilters]);
 
   const onColumnHeaderClick = React.useCallback(
     (ev?: React.MouseEvent<HTMLElement>, column?: IColumn) => {
@@ -723,52 +777,48 @@ export const Grid = React.memo((props: GridProps) => {
       return;
     }
     const fieldName = menuState.column.fieldName ?? menuState.column.key;
-    setColumnFilters((prev) => {
-      const updated = { ...prev };
-      // If any values are selected in the list, prefer them (exact match semantics).
-      if (Array.isArray(menuFilterValue)) {
-        const vals = menuFilterValue.map((v) => String(v).trim()).filter((v) => v !== '');
-        if (vals.length > 0) {
-          updated[fieldName] = vals;
-          return updated;
-        }
+    const updated: Record<string, string | string[]> = { ...columnFilters };
+    // If any values are selected in the list, prefer them (exact match semantics).
+    if (Array.isArray(menuFilterValue)) {
+      const vals = menuFilterValue.map((v) => String(v).trim()).filter((v) => v !== '');
+      if (vals.length > 0) {
+        updated[fieldName] = vals;
+        onColumnFiltersChange?.(updated);
+        setMenuState(undefined);
+        return;
       }
-      // Otherwise, apply free‑text contains
-      const trimmed = String(menuFilterText ?? '').trim();
-      if (trimmed === '') {
-        delete updated[fieldName];
-      } else {
-        updated[fieldName] = trimmed;
-      }
-      if (onColumnFiltersChange) {
-        onColumnFiltersChange(updated);
-      }
-      return updated;
-    });
+    }
+    // Otherwise, apply free‑text contains
+    const trimmed = String(menuFilterText ?? '').trim();
+    if (trimmed === '') {
+      delete updated[fieldName];
+    } else {
+      updated[fieldName] = trimmed;
+    }
+    onColumnFiltersChange?.(updated);
     setMenuState(undefined);
-  }, [menuFilterValue, menuFilterText, menuState, onColumnFiltersChange]);
+  }, [menuFilterValue, menuFilterText, menuState, onColumnFiltersChange, columnFilters]);
 
   const clearFilter = React.useCallback(() => {
     if (!menuState) {
       return;
     }
     const fieldName = menuState.column.fieldName ?? menuState.column.key;
-    setColumnFilters((prev) => {
-      if (!(fieldName in prev)) {
-        return prev;
-      }
-      const updated = { ...prev };
-      delete updated[fieldName];
-      if (onColumnFiltersChange) {
-        onColumnFiltersChange(updated);
-      }
-      return updated;
-    });
+    if (!(fieldName in columnFilters)) {
+      const lookup = isLookupField(fieldName);
+      setMenuFilterValue(lookup ? [] : '');
+      setMenuFilterText('');
+      setMenuState(undefined);
+      return;
+    }
+    const updated = { ...columnFilters };
+    delete updated[fieldName];
+    onColumnFiltersChange?.(updated);
     const lookup = isLookupField(fieldName);
     setMenuFilterValue(lookup ? [] : '');
     setMenuFilterText('');
     setMenuState(undefined);
-  }, [menuState, isLookupField, onColumnFiltersChange]);
+  }, [menuState, isLookupField, onColumnFiltersChange, columnFilters]);
 
   const menuItems = React.useMemo<IContextualMenuItem[]>(() => {
     if (!menuState) {

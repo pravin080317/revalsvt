@@ -100,6 +100,15 @@
       required="false"
       default-value="false"
     />
+    <property
+      name="perfLogsEnabled"
+      display-name-key="Enable Performance Logs"
+      description-key="When on, control logs API and UI performance timings to the console."
+      of-type="TwoOptions"
+      usage="input"
+      required="false"
+      default-value="false"
+    />
     <property name="selectedTaskId" display-name-key="SelectedTaskId" description-key="SelectedTaskId description" of-type="SingleLine.Text" usage="output" required="false" />
     <property name="selectedSaleId" display-name-key="SelectedSaleId" description-key="SelectedSaleId description" of-type="SingleLine.Text" usage="output" required="false" />
     <property name="saleDetails" display-name-key="Sale Details" description-key="Serialized sale details JSON" of-type="SingleLine.Text" usage="output" required="false" />

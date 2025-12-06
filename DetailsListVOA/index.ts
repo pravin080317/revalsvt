@@ -26,6 +26,13 @@ export class DetailsListVOA implements ComponentFramework.ReactControl<IInputs, 
 
   public updateView(context: ComponentFramework.Context<IInputs>): React.ReactElement {
     this._context = context;
+    try {
+      const raw = (context.parameters as unknown as Record<string, { raw?: boolean | string }>).perfLogsEnabled?.raw;
+      const enabled = raw === true || String(raw ?? '').toLowerCase() === 'true';
+      (globalThis as unknown as { SVT_PERF?: unknown }).SVT_PERF = enabled;
+    } catch {
+      // ignore
+    }
 
     return React.createElement(
       PCFContext.Provider,
@@ -33,24 +40,24 @@ export class DetailsListVOA implements ComponentFramework.ReactControl<IInputs, 
       React.createElement(
         React.Fragment,
         null,
-        // React.createElement(DetailsListHost, {
-        //   context,
-        //   onRowInvoke: (args) => {
-        //     this.selectedTaskId = args?.taskId;
-        //     this.selectedSaleId = args?.saleId;
-        //     void this.onTaskClick(args?.taskId, args?.saleId);
-        //   },
-        //   onSelectionChange: (args) => {
-        //     // Selection should only emit IDs and not fetch details
-        //     this.selectedTaskId = args?.taskId;
-        //     this.selectedSaleId = args?.saleId;
-        //     this.selectedTaskIdsJson = JSON.stringify((args?.selectedTaskIds ?? []).filter((v) => !!v));
-        //     this.selectedSaleIdsJson = JSON.stringify((args?.selectedSaleIds ?? []).filter((v) => !!v));
-        //     this._saleDetails = '';
-        //     this._notifyOutputChanged();
-        //   },
-        // }),
-        React.createElement(StatutorySpatialUnitBrowser, null),
+        React.createElement(DetailsListHost, {
+          context,
+          onRowInvoke: (args) => {
+            this.selectedTaskId = args?.taskId;
+            this.selectedSaleId = args?.saleId;
+            void this.onTaskClick(args?.taskId, args?.saleId);
+          },
+          onSelectionChange: (args) => {
+            // Selection should only emit IDs and not fetch details
+            this.selectedTaskId = args?.taskId;
+            this.selectedSaleId = args?.saleId;
+            this.selectedTaskIdsJson = JSON.stringify((args?.selectedTaskIds ?? []).filter((v) => !!v));
+            this.selectedSaleIdsJson = JSON.stringify((args?.selectedSaleIds ?? []).filter((v) => !!v));
+            this._saleDetails = '';
+            this._notifyOutputChanged();
+          },
+        })
+       // React.createElement(StatutorySpatialUnitBrowser, null),
       ),
     );
   }

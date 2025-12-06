@@ -104,3 +104,66 @@ The top panel contains quick filters (e.g., UPRN, Task ID, Address, Postcode, Ta
 - Column and filter matching is case-insensitive and uses "contains" semantics.
 - If a dataset column is missing but appears in the Custom API payload, the control will add it at runtime with a generated display name.
 - The control shows shimmer and overlay on sort or while loading.
+
+## Deployment
+
+There are two common ways to get this PCF control into a Dataverse environment: a quick developer push for rapid iteration, and packaging it in a solution for ALM/promotions.
+
+### Prerequisites
+
+- Node.js LTS and npm installed.
+- Power Platform CLI (`pac`) installed and authenticated to your environment.
+- Appropriate permissions in the target Dataverse environment.
+
+If your production API domain is not `api.contoso.gov.uk`, update `DetailsListVOA/ControlManifest.Input.xml` `<external-service-usage>` `<domain>` to your real domain and rebuild, as external service usage makes the control premium.
+
+### Quick Dev Push (for rapid testing)
+
+1. Install dependencies and build:
+   - `npm ci`
+   - `npm run build`
+2. Authenticate to your environment (one-time):
+   - `pac auth create --url https://<your-org>.crm.dynamics.com`
+3. Push the control to the environment:
+   - `pac pcf push --publisher-prefix <prefix>`
+
+This creates or updates an unmanaged, temporary solution in the environment for quick iteration. After pushing, add the control to a form/app in the maker UI.
+
+### Package as a Solution (for ALM)
+
+1. Create a solution workspace (once):
+   - `mkdir solution && cd solution`
+   - `pac solution init --publisher-name "Contoso" --publisher-prefix cts`
+2. Add the PCF project reference (from repo root use the correct relative path):
+   - `pac solution add-reference --path ..\DetailsListVOA`
+3. Build the control and pack the solution zip:
+   - In repo root: `npm ci && npm run build`
+   - In `solution/`: `pac solution pack --zipFile ..\bin\DetailsListVOA_unmanaged.zip --packageType Unmanaged`
+   - Optionally also create managed: `pac solution pack --zipFile ..\bin\DetailsListVOA_managed.zip --packageType Managed`
+4. Import into your target environment:
+   - `pac auth create --url https://<your-org>.crm.dynamics.com`
+   - `pac solution import --path ..\bin\DetailsListVOA_unmanaged.zip`
+
+After import, the control appears in maker under code components and can be added to forms/canvas apps.
+
+### Configure In App
+
+Set the following properties in the app/form where the control is used:
+
+- `customApiName` (optional): Name of an unbound Dataverse Custom API to execute. If set, the control uses `context.webAPI.execute` and passes built query parameters.
+- `apimEndpoint` (optional): Fully qualified HTTP URL used when `customApiName` is not provided.
+- `apiBaseUrl` (optional): Base URL used for sale details fetch on row invoke.
+- `tableKey` (optional): Profile key selecting column/parameter behavior (defaults to `sales`).
+- `pageSize`, `columnDisplayNames`, `columnConfig`, `columnConfigProfile`, `allowColumnReorder`, `perfLogsEnabled`: Tuning options; see sections above.
+
+### Useful Scripts
+
+- `npm start` — run the PCF test harness locally.
+- `npm run build` — build production bundle under `out/controls`.
+- `npm run clean` / `npm run rebuild` — clean or full rebuild.
+
+### Troubleshooting
+
+- If the control is not visible after `pac pcf push`, clear app designer cache or open a new session.
+- If calls to your API fail, verify CORS and that the manifest `<external-service-usage>` domain matches the actual host.
+- If using `customApiName`, ensure the Custom API exists, user has privileges, and it returns the expected payload shape.
