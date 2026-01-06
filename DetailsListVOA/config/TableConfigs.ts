@@ -13,9 +13,7 @@ const salesLookupFields = new Set<string>([
   'taskstatus',
   'status',
   'statuscode',
-  'source',
-  'salesource',
-  'sale_source',
+  'billingauthority',
   'flaggedforreview',
   'reviewflags',
   'overallflag',
@@ -36,33 +34,50 @@ const buildSalesParams = (
     pageSize: String(pageSize),
   };
 
-  switch (filters.searchBy) {
-    case 'uprn':
-      if (filters.uprn) params.uprn = filters.uprn;
-      break;
-    case 'taskId':
-      if (filters.taskId) params.taskId = filters.taskId;
-      break;
-    case 'postcode':
-      if (filters.postcode) params.postcode = filters.postcode;
-      break;
-    case 'address':
-      if (filters.buildingNameNumber) params.buildingName = filters.buildingNameNumber;
-      if (filters.street) params.street = filters.street;
-      if (filters.townCity) params.town = filters.townCity;
-      if (filters.postcode) params.postcode = filters.postcode;
-      break;
-    case 'manualCheck':
-      if (filters.manualCheck && filters.manualCheck !== 'all') params.manualCheck = filters.manualCheck;
-      break;
-    case 'taskStatus':
-      if (filters.taskStatus) params.taskStatus = filters.taskStatus;
-      break;
-    case 'source':
-      if (filters.source) params.source = filters.source;
-      break;
-    default:
-      break;
+  if (filters.taskId) params.taskId = filters.taskId;
+  if (filters.uprn) params.uprn = filters.uprn;
+  if (filters.address) params.address = filters.address;
+  if (filters.postcode) params.postcode = filters.postcode;
+  if (filters.billingAuthority?.length) params.billingAuthority = filters.billingAuthority.join(',');
+  if (filters.transactionDate) {
+    if (filters.transactionDate.from) params.transactionDateFrom = filters.transactionDate.from;
+    if (filters.transactionDate.to) params.transactionDateTo = filters.transactionDate.to;
+  }
+  if (filters.salePrice) {
+    params.salePriceMode = filters.salePrice.mode;
+    if (filters.salePrice.min !== undefined) params.salePriceMin = String(filters.salePrice.min);
+    if (filters.salePrice.max !== undefined) params.salePriceMax = String(filters.salePrice.max);
+  }
+  if (filters.ratio) {
+    params.ratioMode = filters.ratio.mode;
+    if (filters.ratio.min !== undefined) params.ratioMin = String(filters.ratio.min);
+    if (filters.ratio.max !== undefined) params.ratioMax = String(filters.ratio.max);
+  }
+  if (filters.dwellingType?.length) params.dwellingType = filters.dwellingType.join(',');
+  if (filters.flaggedForReview) params.flaggedForReview = filters.flaggedForReview;
+  if (filters.reviewFlags?.length) params.reviewFlags = filters.reviewFlags.join(',');
+  if (filters.outlierKeySale?.length) params.outlierKeySale = filters.outlierKeySale.join(',');
+  if (filters.outlierRatio) {
+    params.outlierRatioMode = filters.outlierRatio.mode;
+    if (filters.outlierRatio.min !== undefined) params.outlierRatioMin = String(filters.outlierRatio.min);
+    if (filters.outlierRatio.max !== undefined) params.outlierRatioMax = String(filters.outlierRatio.max);
+  }
+  if (filters.overallFlag?.length) params.overallFlag = filters.overallFlag.join(',');
+  if (filters.summaryFlag) params.summaryFlag = filters.summaryFlag;
+  if (filters.taskStatus?.length) params.taskStatus = filters.taskStatus.join(',');
+  if (filters.assignedTo) params.assignedTo = filters.assignedTo;
+  if (filters.assignedDate) {
+    if (filters.assignedDate.from) params.assignedDateFrom = filters.assignedDate.from;
+    if (filters.assignedDate.to) params.assignedDateTo = filters.assignedDate.to;
+  }
+  if (filters.qcAssignedTo) params.qcAssignedTo = filters.qcAssignedTo;
+  if (filters.qcAssignedDate) {
+    if (filters.qcAssignedDate.from) params.qcAssignedDateFrom = filters.qcAssignedDate.from;
+    if (filters.qcAssignedDate.to) params.qcAssignedDateTo = filters.qcAssignedDate.to;
+  }
+  if (filters.completedDate) {
+    if (filters.completedDate.from) params.completedDateFrom = filters.completedDate.from;
+    if (filters.completedDate.to) params.completedDateTo = filters.completedDate.to;
   }
 
   return params;
@@ -73,30 +88,140 @@ export const TABLE_CONFIGS: Record<TableKey, TableConfig> = {
   sales: {
     lookupFields: salesLookupFields,
     buildApiParams: buildSalesParams,
-    searchByOptions: ['address', 'uprn', 'taskId', 'manualCheck', 'taskStatus', 'source', 'postcode'],
+    searchByOptions: [
+      'taskId',
+      'uprn',
+      'address',
+      'postcode',
+      'billingAuthority',
+      'transactionDate',
+      'salePrice',
+      'ratio',
+      'dwellingType',
+      'flaggedForReview',
+      'reviewFlags',
+      'outlierKeySale',
+      'outlierRatio',
+      'overallFlag',
+      'summaryFlag',
+      'taskStatus',
+      'assignedTo',
+      'assignedDate',
+      'qcAssignedTo',
+      'qcAssignedDate',
+      'completedDate',
+    ],
   },
   allsales: {
     lookupFields: salesLookupFields,
     buildApiParams: buildSalesParams,
-    searchByOptions: ['address', 'uprn', 'taskId', 'manualCheck', 'taskStatus', 'source', 'postcode'],
+    searchByOptions: [
+      'taskId',
+      'uprn',
+      'address',
+      'postcode',
+      'billingAuthority',
+      'transactionDate',
+      'salePrice',
+      'ratio',
+      'dwellingType',
+      'flaggedForReview',
+      'reviewFlags',
+      'outlierKeySale',
+      'outlierRatio',
+      'overallFlag',
+      'summaryFlag',
+      'taskStatus',
+      'assignedTo',
+      'assignedDate',
+      'qcAssignedTo',
+      'qcAssignedDate',
+      'completedDate',
+    ],
   },
   // My Assignment
   myassignment: {
     lookupFields: new Set<string>([...salesLookupFields]),
     buildApiParams: buildSalesParams,
-    searchByOptions: ['address', 'uprn', 'taskId', 'manualCheck', 'taskStatus', 'source', 'postcode'],
+    searchByOptions: [
+      'taskId',
+      'uprn',
+      'address',
+      'postcode',
+      'billingAuthority',
+      'transactionDate',
+      'salePrice',
+      'ratio',
+      'dwellingType',
+      'flaggedForReview',
+      'reviewFlags',
+      'outlierKeySale',
+      'outlierRatio',
+      'overallFlag',
+      'summaryFlag',
+      'taskStatus',
+      'assignedTo',
+      'assignedDate',
+      'qcAssignedTo',
+      'qcAssignedDate',
+      'completedDate',
+    ],
   },
   // Manager dashboard
   manager: {
     lookupFields: new Set<string>([...salesLookupFields]),
     buildApiParams: buildSalesParams,
-    searchByOptions: ['address', 'uprn', 'taskId', 'manualCheck', 'taskStatus', 'source', 'postcode'],
+    searchByOptions: [
+      'taskId',
+      'uprn',
+      'address',
+      'postcode',
+      'billingAuthority',
+      'transactionDate',
+      'salePrice',
+      'ratio',
+      'dwellingType',
+      'flaggedForReview',
+      'reviewFlags',
+      'outlierKeySale',
+      'outlierRatio',
+      'overallFlag',
+      'summaryFlag',
+      'taskStatus',
+      'assignedTo',
+      'assignedDate',
+      'qcAssignedTo',
+      'qcAssignedDate',
+      'completedDate',
+    ],
   },
   // QA dashboard
   qa: {
     lookupFields: new Set<string>([...salesLookupFields]),
     buildApiParams: buildSalesParams,
-    searchByOptions: ['address', 'uprn', 'taskId', 'manualCheck', 'taskStatus', 'source', 'postcode'],
+    searchByOptions: [
+      'taskId',
+      'uprn',
+      'address',
+      'postcode',
+      'billingAuthority',
+      'transactionDate',
+      'salePrice',
+      'ratio',
+      'dwellingType',
+      'flaggedForReview',
+      'reviewFlags',
+      'outlierKeySale',
+      'outlierRatio',
+      'overallFlag',
+      'summaryFlag',
+      'taskStatus',
+      'assignedTo',
+      'assignedDate',
+      'qcAssignedTo',
+      'qcAssignedDate',
+      'completedDate',
+    ],
   },
    // Statutory Spatial Unit POC
   ssu: {
