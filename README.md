@@ -133,18 +133,45 @@ This creates or updates an unmanaged, temporary solution in the environment for 
 
 1. Create a solution workspace (once):
    - `mkdir solution && cd solution`
-   - `pac solution init --publisher-name "Contoso" --publisher-prefix cts`
-2. Add the PCF project reference (from repo root use the correct relative path):
-   - `pac solution add-reference --path ..\DetailsListVOA`
-3. Build the control and pack the solution zip:
-   - In repo root: `npm ci && npm run build`
-   - In `solution/`: `pac solution pack --zipFile ..\bin\DetailsListVOA_unmanaged.zip --packageType Unmanaged`
-   - Optionally also create managed: `pac solution pack --zipFile ..\bin\DetailsListVOA_managed.zip --packageType Managed`
+   - `pac solution init --publisher-name "dsync" --publisher-prefix svt`
+2. Add the PCF project reference (point to the `.pcfproj` file):
+   - `pac solution add-reference --path ..\\DetailsListVOA.pcfproj`
+   - Note: In this repo, the `.pcfproj` is at the repo root, not inside `DetailsListVOA`. If your project structure differs, point `--path` to the folder or `.pcfproj` that contains your PCF project.
+3. Build the control and create solution zips:
+   - In repo root (clean then build):
+     - `npm ci`
+     - `npm run rebuild`  (or `npm run clean && npm run build`)
+   - Build the Dataverse solution project via MSBuild:
+     - From `solution/` run one of (use the exact file name):
+       - `msbuild solution.cdsproj /t:Restore,Build /p:Configuration=Release`
+       - or `dotnet msbuild solution.cdsproj /t:Restore,Build /p:Configuration=Release`
+     - Outputs are written under `solution\bin\<Configuration>` and typically include both `*_unmanaged.zip` and `*_managed.zip`.
+   - (Optional) Copy to a stable name/location:
+     - Ensure folder: `mkdir .\bin`
+     - Copy unmanaged: `copy solution\bin\**\*_unmanaged.zip .\bin\DetailsListVOA_unmanaged.zip`
+     - Copy managed: `copy solution\bin\**\*_managed.zip .\bin\DetailsListVOA_managed.zip`
 4. Import into your target environment:
    - `pac auth create --url https://<your-org>.crm.dynamics.com`
-   - `pac solution import --path ..\bin\DetailsListVOA_unmanaged.zip`
+   - From repo root (after copy): `pac solution import --path .\bin\DetailsListVOA_unmanaged.zip`
+   - Or import directly from `solution\bin\<Configuration>\*_unmanaged.zip`
 
 After import, the control appears in maker under code components and can be added to forms/canvas apps.
+
+#### Packing Notes
+
+- If MSBuild is not available, pack using Power Platform CLI SolutionPackager from the solution `src` folder:
+  - From `solution/`:
+    - `mkdir ..\\bin` (no-op if it exists)
+    - `Remove-Item ..\\bin\\DetailsListVOA_*.zip -ErrorAction SilentlyContinue`
+    - Unmanaged: `pac solution pack --folder src --zipFile ..\\bin\\DetailsListVOA_unmanaged.zip --packageType Unmanaged`
+    - Managed: `pac solution pack --folder src --zipFile ..\\bin\\DetailsListVOA_managed.zip --packageType Managed`
+  - Then import from `.\\bin\\DetailsListVOA_unmanaged.zip` (or managed).
+  
+- Alternatively, use PAC to build and create packages without MSBuild:
+  - From `solution/`:
+    - Build: `pac solution build --configuration Release`
+    - Unmanaged: `pac solution create-package --path solution.cdsproj --packageType Unmanaged --configuration Release --zipFile ..\\bin\\DetailsListVOA_unmanaged.zip`
+    - Managed: `pac solution create-package --path solution.cdsproj --packageType Managed --configuration Release --zipFile ..\\bin\\DetailsListVOA_managed.zip`
 
 ### Configure In App
 
@@ -162,8 +189,33 @@ Set the following properties in the app/form where the control is used:
 - `npm run build` — build production bundle under `out/controls`.
 - `npm run clean` / `npm run rebuild` — clean or full rebuild.
 
+### One-Command PowerShell Automation
+
+Use the helper script to build, pack, and optionally import. Choose one of these invocation styles:
+
+- From PowerShell (recommended):
+  - Unmanaged: `& .\\scripts\\pcf-pack.ps1`
+  - Managed: `& .\\scripts\\pcf-pack.ps1 -Managed`
+  - Import after pack: `& .\\scripts\\pcf-pack.ps1 -EnvUrl https://<your-org>.crm.dynamics.com`
+  - If script execution is restricted: `Set-ExecutionPolicy -Scope Process Bypass; & .\\scripts\\pcf-pack.ps1`
+
+- From Command Prompt (cmd):
+  - Unmanaged: `.\\scripts\\pcf-pack.cmd`
+  - Managed: `.\\scripts\\pcf-pack.cmd -Managed`
+  - Import after pack: `.\\scripts\\pcf-pack.cmd -EnvUrl https://<your-org>.crm.dynamics.com`
+
+- From any shell with PowerShell 7:
+  - `pwsh -NoProfile -ExecutionPolicy Bypass -File .\\scripts\\pcf-pack.ps1 [args]`
+
+Notes:
+- First run will create a `solution/` folder (if missing) and initialize it with publisher `dsync` / prefix `svt`. Override with `-PublisherName` and `-PublisherPrefix`.
+- The script adds the project reference to `DetailsListVOA.pcfproj` if not already present, cleans previous zips, and writes outputs to `bin/`.
+- By default, the script uses SolutionPackager (pack from `solution/src`). Pass `-UsePacBuild` to use `pac solution build` + `pac solution create-package` instead. Add `-Managed` to also create the managed zip.
+- To silence `npm warn Unknown user config "python"` or `"unsafe-perm"`, pass `-FixNpmPythonWarn` and the script will remove these keys from your npm user/global config before running `npm ci`.
+
 ### Troubleshooting
 
 - If the control is not visible after `pac pcf push`, clear app designer cache or open a new session.
 - If calls to your API fail, verify CORS and that the manifest `<external-service-usage>` domain matches the actual host.
 - If using `customApiName`, ensure the Custom API exists, user has privileges, and it returns the expected payload shape.
+- If you see `powershell.ps1 : A parameter cannot be found that matches parameter name 'ExecutionPolicy'`, a local script named `powershell.ps1` is shadowing the executable. Use `powershell.exe`/`pwsh` explicitly or invoke the script from PowerShell with `& .\\scripts\\pcf-pack.ps1`, or run `.\\scripts\\pcf-pack.cmd` from cmd.
