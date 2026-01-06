@@ -241,7 +241,7 @@ export const TABLE_CONFIGS: Record<TableKey, TableConfig> = {
 };
 
 function getConfig(table?: string): TableConfig {
-  const key = (table?.toLowerCase?.() as TableKey) || 'sales';
+  const key = (table?.toLowerCase?.() as TableKey) ?? 'sales';
   return (TABLE_CONFIGS as Record<string, TableConfig>)[key] ?? TABLE_CONFIGS.sales;
 }
 

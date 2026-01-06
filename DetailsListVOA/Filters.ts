@@ -94,9 +94,11 @@ export const sanitizeFilters = (filters: GridFilterState): GridFilterState => {
   }
 
   if (filters.transactionDate) {
+    const from = filters.transactionDate.from?.trim();
+    const to = filters.transactionDate.to?.trim();
     sanitized.transactionDate = {
-      from: filters.transactionDate.from?.trim() || undefined,
-      to: filters.transactionDate.to?.trim() || undefined,
+      from: from && from.length > 0 ? from : undefined,
+      to: to && to.length > 0 ? to : undefined,
     };
   }
 
@@ -158,7 +160,10 @@ export const sanitizeFilters = (filters: GridFilterState): GridFilterState => {
   }
 
   const assignedDate = filters.assignedDate
-    ? { from: filters.assignedDate.from?.trim() || undefined, to: filters.assignedDate.to?.trim() || undefined }
+    ? {
+        from: filters.assignedDate.from?.trim() ?? undefined,
+        to: filters.assignedDate.to?.trim() ?? undefined,
+      }
     : undefined;
   if (assignedDate && (assignedDate.from || assignedDate.to)) sanitized.assignedDate = assignedDate;
 
@@ -168,12 +173,18 @@ export const sanitizeFilters = (filters: GridFilterState): GridFilterState => {
   }
 
   const qcAssignedDate = filters.qcAssignedDate
-    ? { from: filters.qcAssignedDate.from?.trim() || undefined, to: filters.qcAssignedDate.to?.trim() || undefined }
+    ? {
+        from: filters.qcAssignedDate.from?.trim() ?? undefined,
+        to: filters.qcAssignedDate.to?.trim() ?? undefined,
+      }
     : undefined;
   if (qcAssignedDate && (qcAssignedDate.from || qcAssignedDate.to)) sanitized.qcAssignedDate = qcAssignedDate;
 
   const completedDate = filters.completedDate
-    ? { from: filters.completedDate.from?.trim() || undefined, to: filters.completedDate.to?.trim() || undefined }
+    ? {
+        from: filters.completedDate.from?.trim() ?? undefined,
+        to: filters.completedDate.to?.trim() ?? undefined,
+      }
     : undefined;
   if (completedDate && (completedDate.from || completedDate.to)) sanitized.completedDate = completedDate;
 
