@@ -31,6 +31,9 @@ import {
   Spinner,
   SpinnerSize,
   Link,
+  DatePicker,
+  DayOfWeek,
+  IDatePickerStrings,
 } from '@fluentui/react';
 import * as React from 'react';
 import { NoFields } from '../DetailsListVOA/grid/NoFields';
@@ -38,7 +41,7 @@ import { RecordsColumns } from '../DetailsListVOA/config/ManifestConstants';
 import { IGridColumn, ColumnConfig } from './Component.types';
 import { GridCell } from '../DetailsListVOA/grid/GridCell';
 import { ClassNames } from '../DetailsListVOA/grid/Grid.styles';
-import { GridFilterState, createDefaultGridFilters, sanitizeFilters, SearchByOption } from './Filters';
+import { GridFilterState, NumericFilter, NumericFilterMode, createDefaultGridFilters, sanitizeFilters, SearchByOption } from './Filters';
 import { getSearchByOptionsFor, isLookupFieldFor } from '../DetailsListVOA/config/TableConfigs';
 
 type DataSet = ComponentFramework.PropertyHelper.DataSetApi.EntityRecord & IObjectWithKey;
@@ -82,6 +85,7 @@ export interface GridProps {
   onLoadFilterOptions?: (field: string, query: string) => Promise<string[]>;
   onColumnFiltersChange?: (filters: Record<string, string | string[]>) => void;
   allowColumnReorder?: boolean;
+  columnFilters?: Record<string, string | string[]>;
 }
 
 const defaultTheme = createTheme({
@@ -112,7 +116,8 @@ function useTheme(themeJSON?: string | IPartialTheme) {
 
 export function getRecordKey(record: ComponentFramework.PropertyHelper.DataSetApi.EntityRecord): string {
   const customKey = record.getValue(RecordsColumns.RecordKey);
-  return typeof customKey === 'string' ? customKey : record.getRecordId();
+  const trimmed = typeof customKey === 'string' ? customKey.trim() : '';
+  return trimmed !== '' ? trimmed : record.getRecordId();
 }
 
 export const Grid = React.memo((props: GridProps) => {
@@ -153,13 +158,14 @@ export const Grid = React.memo((props: GridProps) => {
     showResults,
     onLoadFilterOptions,
     onColumnFiltersChange,
+    columnFilters,
   } = props;
 
   const theme = useTheme(themeJSON);
 
   const [columns, setColumns] = React.useState<IGridColumn[]>([]);
   const [isComponentLoading, setIsLoading] = React.useState(false);
-  const [columnFilters, setColumnFilters] = React.useState<Record<string, string | string[]>>({});
+  const [columnFiltersState, setColumnFilters] = React.useState<Record<string, string | string[]>>(columnFilters ?? {});
   const [menuState, setMenuState] = React.useState<{
     target: HTMLElement;
     column: IGridColumn;
@@ -172,6 +178,82 @@ export const Grid = React.memo((props: GridProps) => {
   const liveFilterTimer = React.useRef<number | undefined>(undefined);
   const [filters, setFilters] = React.useState<GridFilterState>(searchFilters);
 
+  React.useEffect(() => {
+    if (columnFilters) {
+      setColumnFilters(columnFilters);
+    }
+  }, [columnFilters]);
+
+  const dateStrings: IDatePickerStrings = React.useMemo(
+    () => ({
+      months: [
+        'January',
+        'February',
+        'March',
+        'April',
+        'May',
+        'June',
+        'July',
+        'August',
+        'September',
+        'October',
+        'November',
+        'December',
+      ],
+      shortMonths: ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'],
+      days: ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'],
+      shortDays: ['S', 'M', 'T', 'W', 'T', 'F', 'S'],
+      goToToday: 'Go to today',
+      prevMonthAriaLabel: 'Go to previous month',
+      nextMonthAriaLabel: 'Go to next month',
+      prevYearAriaLabel: 'Go to previous year',
+      nextYearAriaLabel: 'Go to next year',
+      prevYearRangeAriaLabel: 'Go to previous year range',
+      nextYearRangeAriaLabel: 'Go to next year range',
+      closeButtonAriaLabel: 'Close date picker',
+      isRequiredErrorMessage: 'This field is required.',
+      invalidInputErrorMessage: 'Invalid date format.',
+    }),
+    [],
+  );
+
+  const toISODateString = React.useCallback((date?: Date | null): string | undefined => {
+    if (!date) return undefined;
+    const year = date.getFullYear();
+    const month = `${date.getMonth() + 1}`.padStart(2, '0');
+    const day = `${date.getDate()}`.padStart(2, '0');
+    return `${year}-${month}-${day}`;
+  }, []);
+
+  const parseISODate = React.useCallback((value?: string): Date | undefined => {
+    if (!value) return undefined;
+    const [y, m, d] = value.split('-').map((v) => Number(v));
+    if (!y || !m || !d) return undefined;
+    return new Date(y, m - 1, d);
+  }, []);
+
+  const formatDisplayDate = React.useCallback((date?: Date | null): string => {
+    if (!date) return '';
+    const day = `${date.getDate()}`.padStart(2, '0');
+    const month = `${date.getMonth() + 1}`.padStart(2, '0');
+    const year = date.getFullYear();
+    return `${day}/${month}/${year}`;
+  }, []);
+
+  const getLengthErrors = React.useCallback(
+    (fs: GridFilterState) => {
+      const address = (fs.address ?? '').trim();
+      const postcode = (fs.postcode ?? '').trim();
+      const summary = (fs.summaryFlag ?? '').trim();
+      return {
+        address: fs.searchBy === 'address' && address.length > 0 && address.length < 3 ? 'Enter at least 3 characters' : undefined,
+        postcode: fs.searchBy === 'postcode' && postcode.length > 0 && postcode.length < 2 ? 'Enter at least 2 characters' : undefined,
+        summaryFlag: fs.searchBy === 'summaryFlag' && summary.length > 0 && summary.length < 3 ? 'Enter at least 3 characters' : undefined,
+      };
+    },
+    [],
+  );
+
   // Debounced search when typing in non-UPRN text fields
   const searchTimer = React.useRef<number | undefined>(undefined);
   const scheduleSearch = React.useCallback(() => {
@@ -179,6 +261,10 @@ export const Grid = React.memo((props: GridProps) => {
       window.clearTimeout(searchTimer.current);
     }
     searchTimer.current = window.setTimeout(() => {
+      const lengthErrors = getLengthErrors(filters);
+      if (lengthErrors.address || lengthErrors.postcode || lengthErrors.summaryFlag) {
+        return;
+      }
       const sanitized = sanitizeFilters(filters);
       if (
         sanitized.searchBy === 'uprn' &&
@@ -190,7 +276,7 @@ export const Grid = React.memo((props: GridProps) => {
       setFilters(sanitized);
       onSearch(sanitized);
     }, 350);
-  }, [filters, onSearch]);
+  }, [filters, getLengthErrors, onSearch]);
 
   React.useEffect(() => () => {
     if (searchTimer.current) {
@@ -255,19 +341,25 @@ export const Grid = React.memo((props: GridProps) => {
     return keys.map((k) => ({ key: k, text: toLabel(k) }));
   }, [tableKey]);
 
+  const lengthErrors = React.useMemo(() => getLengthErrors(filters), [filters, getLengthErrors]);
+  const addressError = lengthErrors.address;
+  const postcodeError = lengthErrors.postcode;
+  const summaryFlagError = lengthErrors.summaryFlag;
+
   const onFieldEnter = React.useCallback(
     (ev: React.KeyboardEvent<HTMLElement>) => {
       if (ev.key === 'Enter') {
         ev.preventDefault();
         const sanitized = sanitizeFilters(filters);
         const uprnInvalid = sanitized.searchBy === 'uprn' && !!sanitized.uprn && (sanitized.uprn.length < 8 || sanitized.uprn.length > 10);
-        if (!uprnInvalid) {
-          setFilters(sanitized);
-          onSearch(sanitized);
+        if (uprnInvalid || addressError || postcodeError || summaryFlagError) {
+          return;
         }
+        setFilters(sanitized);
+        onSearch(sanitized);
       }
     },
-    [filters, onSearch],
+    [filters, onSearch, addressError, postcodeError, summaryFlagError],
   );
 
   const updateFilters = React.useCallback(
@@ -322,16 +414,19 @@ export const Grid = React.memo((props: GridProps) => {
     [updateFilters],
   );
 
+  type NumericFilterKey = 'salePrice' | 'ratio' | 'outlierRatio';
+
   const updateNumericFilter = React.useCallback(
-    (key: 'salePrice' | 'ratio' | 'outlierRatio', part: 'mode' | 'min' | 'max', value: string | number) => {
+    (key: NumericFilterKey, part: 'mode' | 'min' | 'max', value: string) => {
       setFilters((prev) => {
-        const current = prev[key] ?? { mode: '>=' as const };
-        const updated = { ...current } as typeof current;
+        const current: NumericFilter = prev[key] ?? { mode: '>=' };
+        const updated: NumericFilter = { ...current };
         if (part === 'mode') {
-          updated.mode = value as any;
+          const nextMode: NumericFilterMode = value === '<=' || value === 'between' ? value : '>=';
+          updated.mode = nextMode;
         } else {
-          const num = value === '' ? undefined : Number(value);
-          updated[part] = Number.isNaN(num as number) ? undefined : (num as number);
+          const parsed = value === '' ? undefined : Number(value);
+          updated[part] = typeof parsed === 'number' && !Number.isNaN(parsed) ? parsed : undefined;
         }
         return { ...prev, [key]: updated };
       });
@@ -339,14 +434,17 @@ export const Grid = React.memo((props: GridProps) => {
     [],
   );
 
+  const isNumericFilterKey = (key: SearchByOption): key is NumericFilterKey =>
+    key === 'salePrice' || key === 'ratio' || key === 'outlierRatio';
+
   const updateDateRange = React.useCallback(
-    (key: 'transactionDate' | 'assignedDate' | 'qcAssignedDate' | 'completedDate', part: 'from' | 'to', value?: string) => {
+    (key: 'transactionDate' | 'assignedDate' | 'qcAssignedDate' | 'completedDate', part: 'from' | 'to', value?: Date | null) => {
       setFilters((prev) => {
         const existing = prev[key] ?? {};
-        return { ...prev, [key]: { ...existing, [part]: value ?? undefined } };
+        return { ...prev, [key]: { ...existing, [part]: toISODateString(value) } };
       });
     },
-    [],
+    [toISODateString],
   );
 
   const updateMultiSelect = React.useCallback(
@@ -393,16 +491,22 @@ export const Grid = React.memo((props: GridProps) => {
     return 'UPRN must be 8 to 10 digits';
   }, [filters.searchBy, filters.uprn]);
 
-  const isSearchDisabled = React.useMemo(() => !!uprnError, [uprnError]);
+  const isSearchDisabled = React.useMemo(
+    () => !!uprnError || !!addressError || !!postcodeError || !!summaryFlagError,
+    [uprnError, addressError, postcodeError, summaryFlagError],
+  );
 
   const handleSearch = React.useCallback(() => {
+    if (uprnError || addressError || postcodeError || summaryFlagError) {
+      return;
+    }
     const sanitized = sanitizeFilters(filters);
     if (sanitized.searchBy === 'uprn' && sanitized.uprn && (sanitized.uprn.length < 8 || sanitized.uprn.length > 10)) {
       return;
     }
     setFilters(sanitized);
     onSearch(sanitized);
-  }, [filters, onSearch]);
+  }, [addressError, filters, onSearch, postcodeError, summaryFlagError, uprnError]);
 
   const handleClear = React.useCallback(() => {
     const defaults = createDefaultGridFilters();
@@ -541,12 +645,6 @@ export const Grid = React.memo((props: GridProps) => {
   const isTextOnlyField = React.useCallback((field: string | undefined): boolean => {
     if (!field) return false;
     const f = field.replace(/[^a-z0-9]/gi, '').toLowerCase();
-    // For the SSU POC, show dropdowns only for lookup fields (postcode, street, town, bacode)
-    // and force all remaining fields to be text-only (no suggestions dropdown)
-    if (tableKey === 'ssu') {
-      return !isLookupField(f);
-    }
-    // Default behavior for other tables
     return (
       f === 'saleid' ||
       f === 'taskid' ||
@@ -557,23 +655,23 @@ export const Grid = React.memo((props: GridProps) => {
       f === 'marketvalue' ||
       f === 'ratio'
     );
-  }, [tableKey, isLookupField]);
+  }, [isLookupField]);
 
   // Derive icons each render to reflect current sort/filter state
   const columnsWithIcons = React.useMemo<IGridColumn[]>(() => {
     return columns.map((c) => {
       const field = c.fieldName ?? c.key;
-      const activeFilter = !!columnFilters[(field ?? '').toString()];
+      const activeFilter = !!columnFiltersState[(field ?? '').toString()];
       const sort = sorting?.find((s) => s.name === field);
       const sortIcon = sort ? (Number(sort.sortDirection) === 1 ? 'SortDown' : 'SortUp') : undefined;
       const iconName = sortIcon ?? (activeFilter ? 'Filter' : undefined);
       return { ...c, iconName } as IGridColumn;
     });
-  }, [columns, columnFilters, sorting]);
+  }, [columns, columnFiltersState, sorting]);
 
   const filteredItems = React.useMemo(() => {
     const t0 = performance.now();
-    const filterEntries = Object.entries(columnFilters).filter(([, value]) =>
+    const filterEntries = Object.entries(columnFiltersState).filter(([, value]) =>
       Array.isArray(value) ? value.length > 0 : value.trim() !== '',
     );
     if (filterEntries.length === 0) {
@@ -608,7 +706,7 @@ export const Grid = React.memo((props: GridProps) => {
     const t1 = performance.now();
     console.log('[Grid Perf] Client filteredItems (ms):', Math.round(t1 - t0), 'items:', items.length, 'filters:', filterEntries.length, 'result:', out.length);
     return out;
-  }, [columnFilters, getFilterableText, items]);
+  }, [columnFiltersState, getFilterableText, items]);
 
   const clearAllColumnFilters = React.useCallback(() => {
     setColumnFilters(() => {
@@ -706,7 +804,7 @@ export const Grid = React.memo((props: GridProps) => {
         return;
       }
       const fieldName = gridCol.fieldName ?? gridCol.key;
-      const existing = columnFilters[fieldName];
+      const existing = columnFiltersState[fieldName];
       if (Array.isArray(existing)) {
         setMenuFilterValue(existing);
         setMenuFilterText('');
@@ -718,7 +816,7 @@ export const Grid = React.memo((props: GridProps) => {
       setMenuOptionsLoading(false);
       setMenuState({ target, column: gridCol });
     },
-    [columnFilters],
+    [columnFiltersState],
   );
 
   const onColumnHeaderClick = React.useCallback(
@@ -1015,12 +1113,12 @@ export const Grid = React.memo((props: GridProps) => {
               )}
               {filters.searchBy === 'address' && (
                 <Stack.Item styles={{ root: { minWidth: 260 } }}>
-                  <TextField label="Address" value={filters.address ?? ''} onChange={onAddressChange} />
+                  <TextField label="Address" value={filters.address ?? ''} onChange={onAddressChange} errorMessage={addressError} />
                 </Stack.Item>
               )}
               {filters.searchBy === 'postcode' && (
                 <Stack.Item styles={{ root: { minWidth: 160 } }}>
-                  <TextField label="Post code" value={filters.postcode ?? ''} onChange={onPostcodeChange} />
+                  <TextField label="Post code" value={filters.postcode ?? ''} onChange={onPostcodeChange} errorMessage={postcodeError} />
                   {showPostcodeHint && (
                     <Text variant="small" styles={{ root: { marginTop: 4 } }}>
                       Partial postcodes return all matching entries.
@@ -1043,27 +1141,32 @@ export const Grid = React.memo((props: GridProps) => {
               {filters.searchBy === 'transactionDate' && (
                 <Stack horizontal tokens={{ childrenGap: 8 }} wrap>
                   <Stack.Item styles={{ root: { minWidth: 160 } }}>
-                    <TextField
+                    <DatePicker
                       label="Start date"
-                      type="date"
-                      value={filters.transactionDate?.from ?? ''}
-                      onChange={(_, v) => updateDateRange('transactionDate', 'from', v)}
+                      firstDayOfWeek={DayOfWeek.Monday}
+                      strings={dateStrings}
+                      value={parseISODate(filters.transactionDate?.from)}
+                      formatDate={formatDisplayDate}
+                      onSelectDate={(d) => updateDateRange('transactionDate', 'from', d)}
                     />
                   </Stack.Item>
                   <Stack.Item styles={{ root: { minWidth: 160 } }}>
-                    <TextField
+                    <DatePicker
                       label="End date"
-                      type="date"
-                      value={filters.transactionDate?.to ?? ''}
-                      onChange={(_, v) => updateDateRange('transactionDate', 'to', v)}
+                      firstDayOfWeek={DayOfWeek.Monday}
+                      strings={dateStrings}
+                      value={parseISODate(filters.transactionDate?.to)}
+                      formatDate={formatDisplayDate}
+                      onSelectDate={(d) => updateDateRange('transactionDate', 'to', d)}
                     />
                   </Stack.Item>
                 </Stack>
               )}
-              {(filters.searchBy === 'salePrice' || filters.searchBy === 'ratio' || filters.searchBy === 'outlierRatio') && (
+              {isNumericFilterKey(filters.searchBy) && (
                 <Stack horizontal wrap tokens={{ childrenGap: 8 }}>
                   {(() => {
-                    const numericFilter = (filters[filters.searchBy] as any) ?? { mode: '>=' };
+                    const numericKey = filters.searchBy;
+                    const numericFilter = filters[numericKey] ?? { mode: '>=' };
                     const mode = numericFilter.mode ?? '>=';
                     const minValue = mode === '<=' ? numericFilter.max : numericFilter.min;
                     const maxValue = numericFilter.max;
@@ -1078,7 +1181,13 @@ export const Grid = React.memo((props: GridProps) => {
                             { key: 'between', text: 'Between' },
                           ]}
                           selectedKey={mode}
-                          onChange={(_, o) => updateNumericFilter(filters.searchBy as any, 'mode', String(o?.key))}
+                          onChange={(_, o) =>
+                            updateNumericFilter(
+                              numericKey,
+                              'mode',
+                              typeof o?.key === 'string' ? o.key : mode,
+                            )
+                          }
                         />
                       </Stack.Item>
                       <Stack.Item styles={{ root: { minWidth: 140 } }}>
@@ -1086,7 +1195,7 @@ export const Grid = React.memo((props: GridProps) => {
                           label={mode === '<=' ? 'Max' : 'Min'}
                           type="number"
                           value={String(minValue ?? '')}
-                          onChange={(_, v) => updateNumericFilter(filters.searchBy as any, mode === '<=' ? 'max' : 'min', v ?? '')}
+                          onChange={(_, v) => updateNumericFilter(numericKey, mode === '<=' ? 'max' : 'min', v ?? '')}
                         />
                       </Stack.Item>
                       {mode === 'between' && (
@@ -1095,7 +1204,7 @@ export const Grid = React.memo((props: GridProps) => {
                             label="Max"
                             type="number"
                             value={String(maxValue ?? '')}
-                            onChange={(_, v) => updateNumericFilter(filters.searchBy as any, 'max', v ?? '')}
+                            onChange={(_, v) => updateNumericFilter(numericKey, 'max', v ?? '')}
                           />
                         </Stack.Item>
                       )}
@@ -1214,7 +1323,7 @@ export const Grid = React.memo((props: GridProps) => {
               )}
               {filters.searchBy === 'summaryFlag' && (
                 <Stack.Item styles={{ root: { minWidth: 200 } }}>
-                  <TextField label="Summary flag" value={filters.summaryFlag ?? ''} onChange={onSummaryFlagChange} />
+                  <TextField label="Summary flag" value={filters.summaryFlag ?? ''} onChange={onSummaryFlagChange} errorMessage={summaryFlagError} />
                 </Stack.Item>
               )}
               {filters.searchBy === 'taskStatus' && (
@@ -1248,19 +1357,23 @@ export const Grid = React.memo((props: GridProps) => {
               {filters.searchBy === 'assignedDate' && (
                 <Stack horizontal tokens={{ childrenGap: 8 }} wrap>
                   <Stack.Item styles={{ root: { minWidth: 160 } }}>
-                    <TextField
+                    <DatePicker
                       label="Assigned start"
-                      type="date"
-                      value={filters.assignedDate?.from ?? ''}
-                      onChange={(_, v) => updateDateRange('assignedDate', 'from', v)}
+                      firstDayOfWeek={DayOfWeek.Monday}
+                      strings={dateStrings}
+                      value={parseISODate(filters.assignedDate?.from)}
+                      formatDate={formatDisplayDate}
+                      onSelectDate={(d) => updateDateRange('assignedDate', 'from', d)}
                     />
                   </Stack.Item>
                   <Stack.Item styles={{ root: { minWidth: 160 } }}>
-                    <TextField
+                    <DatePicker
                       label="Assigned end"
-                      type="date"
-                      value={filters.assignedDate?.to ?? ''}
-                      onChange={(_, v) => updateDateRange('assignedDate', 'to', v)}
+                      firstDayOfWeek={DayOfWeek.Monday}
+                      strings={dateStrings}
+                      value={parseISODate(filters.assignedDate?.to)}
+                      formatDate={formatDisplayDate}
+                      onSelectDate={(d) => updateDateRange('assignedDate', 'to', d)}
                     />
                   </Stack.Item>
                 </Stack>
@@ -1278,19 +1391,23 @@ export const Grid = React.memo((props: GridProps) => {
               {filters.searchBy === 'qcAssignedDate' && (
                 <Stack horizontal tokens={{ childrenGap: 8 }} wrap>
                   <Stack.Item styles={{ root: { minWidth: 160 } }}>
-                    <TextField
+                    <DatePicker
                       label="QC Assigned start"
-                      type="date"
-                      value={filters.qcAssignedDate?.from ?? ''}
-                      onChange={(_, v) => updateDateRange('qcAssignedDate', 'from', v)}
+                      firstDayOfWeek={DayOfWeek.Monday}
+                      strings={dateStrings}
+                      value={parseISODate(filters.qcAssignedDate?.from)}
+                      formatDate={formatDisplayDate}
+                      onSelectDate={(d) => updateDateRange('qcAssignedDate', 'from', d)}
                     />
                   </Stack.Item>
                   <Stack.Item styles={{ root: { minWidth: 160 } }}>
-                    <TextField
+                    <DatePicker
                       label="QC Assigned end"
-                      type="date"
-                      value={filters.qcAssignedDate?.to ?? ''}
-                      onChange={(_, v) => updateDateRange('qcAssignedDate', 'to', v)}
+                      firstDayOfWeek={DayOfWeek.Monday}
+                      strings={dateStrings}
+                      value={parseISODate(filters.qcAssignedDate?.to)}
+                      formatDate={formatDisplayDate}
+                      onSelectDate={(d) => updateDateRange('qcAssignedDate', 'to', d)}
                     />
                   </Stack.Item>
                 </Stack>
@@ -1298,19 +1415,23 @@ export const Grid = React.memo((props: GridProps) => {
               {filters.searchBy === 'completedDate' && (
                 <Stack horizontal tokens={{ childrenGap: 8 }} wrap>
                   <Stack.Item styles={{ root: { minWidth: 160 } }}>
-                    <TextField
+                    <DatePicker
                       label="Completed start"
-                      type="date"
-                      value={filters.completedDate?.from ?? ''}
-                      onChange={(_, v) => updateDateRange('completedDate', 'from', v)}
+                      firstDayOfWeek={DayOfWeek.Monday}
+                      strings={dateStrings}
+                      value={parseISODate(filters.completedDate?.from)}
+                      formatDate={formatDisplayDate}
+                      onSelectDate={(d) => updateDateRange('completedDate', 'from', d)}
                     />
                   </Stack.Item>
                   <Stack.Item styles={{ root: { minWidth: 160 } }}>
-                    <TextField
+                    <DatePicker
                       label="Completed end"
-                      type="date"
-                      value={filters.completedDate?.to ?? ''}
-                      onChange={(_, v) => updateDateRange('completedDate', 'to', v)}
+                      firstDayOfWeek={DayOfWeek.Monday}
+                      strings={dateStrings}
+                      value={parseISODate(filters.completedDate?.to)}
+                      formatDate={formatDisplayDate}
+                      onSelectDate={(d) => updateDateRange('completedDate', 'to', d)}
                     />
                   </Stack.Item>
                 </Stack>
@@ -1342,13 +1463,13 @@ export const Grid = React.memo((props: GridProps) => {
             <Text variant="medium" styles={{ root: { fontWeight: 600 } }}>
               {selectedCount} selected of {typeof taskCount === 'number' ? taskCount : filteredItems.length}
             </Text>
-            <DefaultButton
-              text="Clear filters"
-              iconProps={{ iconName: 'ClearFilter' }}
-              onClick={() => clearAllColumnFilters()}
-              disabled={Object.keys(columnFilters).length === 0}
-              styles={{ root: { height: 28 } }}
-            />
+              <DefaultButton
+                text="Clear filters"
+                iconProps={{ iconName: 'ClearFilter' }}
+                onClick={() => clearAllColumnFilters()}
+                disabled={Object.keys(columnFiltersState).length === 0}
+                styles={{ root: { height: 28 } }}
+              />
           </Stack>
         )}
         {showResults && (

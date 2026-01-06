@@ -56,8 +56,8 @@ export class DetailsListVOA implements ComponentFramework.ReactControl<IInputs, 
             this._saleDetails = '';
             this._notifyOutputChanged();
           },
-        })
-       // React.createElement(StatutorySpatialUnitBrowser, null),
+        }),
+        //React.createElement(StatutorySpatialUnitBrowser, null)
       ),
     );
   }

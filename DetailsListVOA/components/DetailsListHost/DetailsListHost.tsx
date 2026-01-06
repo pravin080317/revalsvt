@@ -20,7 +20,7 @@ export interface DetailsListHostProps {
   onSelectionChange?: (args: { taskId?: string; saleId?: string; selectedTaskIds?: string[]; selectedSaleIds?: string[] }) => void;
   // When provided, the host renders these items instead of loading via APIM.
   externalItems?: unknown[];
-  // Bubble header filter Apply back to parent (used by SSU POC to call API with extra params)
+  // Bubble header filter Apply back to parent (used by external item scenarios to call API with extra params)
   onColumnFiltersApply?: (filters: Record<string, string | string[]>) => void;
 }
 
@@ -36,10 +36,6 @@ export const DetailsListHost: React.FC<DetailsListHostProps> = ({ context, onRow
     tableKey = raw?.trim()?.toLowerCase() ?? 'sales';
   } catch {
     tableKey = 'sales';
-  }
-  // For externalItems (SSU POC), force the SSU table profile so filters behave as requested
-  if (externalItems !== undefined) {
-    tableKey = 'ssu';
   }
 
   // Column display names and configs
@@ -61,8 +57,7 @@ export const DetailsListHost: React.FC<DetailsListHostProps> = ({ context, onRow
   React.useEffect(() => {
     const raw = (context.parameters as unknown as Record<string, { raw?: string }>).columnConfig?.raw?.trim() ?? '[]';
     try {
-      // When external items are supplied, use the SSU POC column profile by default
-      const profileKey = (externalItems !== undefined ? 'ssu' : (context.parameters as unknown as Record<string, { raw?: string }>).columnConfigProfile?.raw)?.trim()?.toLowerCase();
+      const profileKey = (context.parameters as unknown as Record<string, { raw?: string }>).columnConfigProfile?.raw?.trim()?.toLowerCase();
       const fromProfile = getProfileConfigs(profileKey);
       const fromJson = JSON.parse(raw) as ColumnConfig[];
       const merged = [...fromProfile, ...fromJson];
@@ -95,10 +90,15 @@ export const DetailsListHost: React.FC<DetailsListHostProps> = ({ context, onRow
   const [currentPage, setCurrentPage] = React.useState(0);
   const [headerFilters, setHeaderFilters] = React.useState<Record<string, string | string[]>>({});
   const lastAppliedFiltersRef = React.useRef<Record<string, string | string[]>>({});
-  const [clientSort, setClientSort] = React.useState<{ name: string; sortDirection: number } | undefined>(
-    tableKey === 'ssu' ? { name: 'addressstring', sortDirection: 0 } : { name: 'saleid', sortDirection: 0 },
-  );
-  const [searchFilters, setSearchFilters] = React.useState<GridFilterState>({ ...createDefaultGridFilters(), searchBy: 'taskStatus', taskStatus: 'New' });
+  const [clientSort, setClientSort] = React.useState<{ name: string; sortDirection: number } | undefined>({
+    name: 'taskid',
+    sortDirection: 0,
+  });
+  const [searchFilters, setSearchFilters] = React.useState<GridFilterState>({
+    ...createDefaultGridFilters(),
+    searchBy: 'taskStatus',
+    taskStatus: ['New'],
+  });
   const [apimItems, setApimItems] = React.useState<unknown[]>([]);
   const [totalCount, setTotalCount] = React.useState(0);
   const [serverDriven, setServerDriven] = React.useState(false);

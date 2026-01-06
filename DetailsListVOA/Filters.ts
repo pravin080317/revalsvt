@@ -3,6 +3,10 @@ export type SearchByOption =
   | 'uprn'
   | 'address'
   | 'postcode'
+  | 'manualCheck'
+  | 'street'
+  | 'town'
+  | 'source'
   | 'billingAuthority'
   | 'transactionDate'
   | 'salePrice'
@@ -20,6 +24,8 @@ export type SearchByOption =
   | 'qcAssignedTo'
   | 'qcAssignedDate'
   | 'completedDate';
+
+export type ManualCheckFilter = 'all' | 'yes' | 'no';
 
 export type NumericFilterMode = '>=' | '<=' | 'between';
 
@@ -39,8 +45,12 @@ export interface GridFilterState {
   uprn?: string;
   taskId?: string;
   address?: string;
+  buildingNameNumber?: string;
+  street?: string;
+  townCity?: string;
   postcode?: string;
   billingAuthority?: string[];
+  manualCheck?: ManualCheckFilter;
   transactionDate?: DateRangeFilter;
   salePrice?: NumericFilter;
   ratio?: NumericFilter;
@@ -57,6 +67,8 @@ export interface GridFilterState {
   qcAssignedTo?: string;
   qcAssignedDate?: DateRangeFilter;
   completedDate?: DateRangeFilter;
+  source?: string;
+  bacode?: string;
 }
 
 export const createDefaultGridFilters = (): GridFilterState => ({
@@ -80,13 +92,30 @@ export const sanitizeFilters = (filters: GridFilterState): GridFilterState => {
 
   if (filters.postcode) {
     const trimmed = filters.postcode.trim().toUpperCase();
-    sanitized.postcode = trimmed.length > 0 ? trimmed : undefined;
+    sanitized.postcode = trimmed.length >= 2 ? trimmed : undefined;
   }
 
   if (filters.address) {
     const trimmed = filters.address.trim();
-    sanitized.address = trimmed.length > 0 ? trimmed : undefined;
+    sanitized.address = trimmed.length >= 3 ? trimmed : undefined;
   }
+
+  if (filters.buildingNameNumber) {
+    const trimmed = filters.buildingNameNumber.trim();
+    sanitized.buildingNameNumber = trimmed.length > 0 ? trimmed : undefined;
+  }
+
+  if (filters.street) {
+    const trimmed = filters.street.trim();
+    sanitized.street = trimmed.length > 0 ? trimmed : undefined;
+  }
+
+  if (filters.townCity) {
+    const trimmed = filters.townCity.trim();
+    sanitized.townCity = trimmed.length > 0 ? trimmed : undefined;
+  }
+
+  if (filters.manualCheck) sanitized.manualCheck = filters.manualCheck;
 
   if (filters.billingAuthority?.length) {
     const trimmed = filters.billingAuthority.map((b) => b.trim()).filter((b) => b.length > 0);
@@ -148,7 +177,12 @@ export const sanitizeFilters = (filters: GridFilterState): GridFilterState => {
 
   if (filters.summaryFlag) {
     const trimmed = filters.summaryFlag.trim();
-    sanitized.summaryFlag = trimmed.length > 0 ? trimmed : undefined;
+    sanitized.summaryFlag = trimmed.length >= 3 ? trimmed : undefined;
+  }
+
+  if (filters.source) {
+    const trimmed = filters.source.trim();
+    sanitized.source = trimmed.length > 0 ? trimmed : undefined;
   }
 
   const taskStatus = sanitizeMulti(filters.taskStatus);
@@ -187,6 +221,11 @@ export const sanitizeFilters = (filters: GridFilterState): GridFilterState => {
       }
     : undefined;
   if (completedDate && (completedDate.from || completedDate.to)) sanitized.completedDate = completedDate;
+
+  if (filters.bacode) {
+    const trimmed = filters.bacode.trim();
+    sanitized.bacode = trimmed.length > 0 ? trimmed : undefined;
+  }
 
   return sanitized;
 };

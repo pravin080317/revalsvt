@@ -115,7 +115,8 @@ function useTheme(themeJSON?: string | IPartialTheme) {
 
 export function getRecordKey(record: ComponentFramework.PropertyHelper.DataSetApi.EntityRecord): string {
   const customKey = record.getValue(RecordsColumns.RecordKey);
-  return typeof customKey === 'string' ? customKey : record.getRecordId();
+  const trimmed = typeof customKey === 'string' ? customKey.trim() : '';
+  return trimmed !== '' ? trimmed : record.getRecordId();
 }
 
 export const Grid = React.memo((props: GridProps) => {
@@ -521,12 +522,6 @@ export const Grid = React.memo((props: GridProps) => {
   const isTextOnlyField = React.useCallback((field: string | undefined): boolean => {
     if (!field) return false;
     const f = field.replace(/[^a-z0-9]/gi, '').toLowerCase();
-    // For the SSU POC, show dropdowns only for lookup fields (postcode, street, town, bacode)
-    // and force all remaining fields to be text-only (no suggestions dropdown)
-    if (tableKey === 'ssu') {
-      return !isLookupField(f);
-    }
-    // Default behavior for other tables
     return (
       f === 'saleid' ||
       f === 'taskid' ||
@@ -537,7 +532,7 @@ export const Grid = React.memo((props: GridProps) => {
       f === 'marketvalue' ||
       f === 'ratio'
     );
-  }, [tableKey, isLookupField]);
+  }, [isLookupField]);
 
   // Derive icons each render to reflect current sort/filter state
   const columnsWithIcons = React.useMemo<IGridColumn[]>(() => {
