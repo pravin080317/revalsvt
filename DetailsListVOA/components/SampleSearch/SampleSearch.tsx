@@ -99,7 +99,7 @@ function buildRecords(): { records: Record<string, EntityRecord>; ids: string[] 
 }
 
 export function SampleSearch(props: { pageSize?: number } = {}): JSX.Element {
-  const [searchBy, setSearchBy] = React.useState<string>('address');
+  const [searchBy, setSearchBy] = React.useState<string>('taskId');
   const [loaded, setLoaded] = React.useState(false);
   const [datasetColumns] = React.useState(buildDatasetColumns());
   const [data, setData] = React.useState(() => ({ records: {} as Record<string, EntityRecord>, ids: [] as string[] }));
@@ -121,10 +121,10 @@ export function SampleSearch(props: { pageSize?: number } = {}): JSX.Element {
   }, []);
 
   const searchOptions: IDropdownOption[] = [
-    { key: 'address', text: 'Address' },
+    { key: 'taskId', text: 'Task ID' },
     { key: 'uprn', text: 'UPRN' },
-    { key: 'taskId', text: 'Task' },
-    { key: 'manualCheck', text: 'Manual Check' },
+    { key: 'address', text: 'Address' },
+    { key: 'postcode', text: 'Postcode' },
   ];
 
   const handleSearch = React.useCallback(() => {
@@ -133,7 +133,7 @@ export function SampleSearch(props: { pageSize?: number } = {}): JSX.Element {
     const ids = mapped.ids.filter((id) => {
       const rec = mapped.records[id] as Record<string, unknown>;
       // Top search filters
-      const r = rec as { uprn?: unknown; taskid?: unknown; flaggedforreview?: unknown; address?: unknown; postcode?: unknown };
+      const r = rec as { uprn?: unknown; taskid?: unknown; address?: unknown; postcode?: unknown };
       const by = searchBy;
       let topOk = true;
       if (by === 'uprn') {
@@ -144,24 +144,18 @@ export function SampleSearch(props: { pageSize?: number } = {}): JSX.Element {
         const val = toText(r.taskid).toLowerCase();
         const q = (filters.taskId ?? '').toLowerCase();
         topOk = q === '' ? true : val.includes(q);
-      } else if (by === 'manualCheck') {
-        const pref = filters.manualCheck ?? 'all';
-        if (pref === 'all') topOk = true; else {
-          const flag = toText(r.flaggedforreview).toLowerCase();
-          topOk = pref === 'yes' ? flag === 'yes' || flag === 'true' : flag === 'no' || flag === 'false';
-        }
       } else if (by === 'address') {
         const addr = toText(r.address).toLowerCase();
         const pc = toText(r.postcode).toLowerCase();
-        const qB = (filters.buildingNameNumber ?? '').toLowerCase();
-        const qS = (filters.street ?? '').toLowerCase();
-        const qT = (filters.townCity ?? '').toLowerCase();
+        const qAddr = (filters.address ?? '').toLowerCase();
         const qP = (filters.postcode ?? '').toLowerCase();
-        const bOk = qB ? addr.includes(qB) : true;
-        const sOk = qS ? addr.includes(qS) : true;
-        const tOk = qT ? addr.includes(qT) : true;
-        const pOk = qP ? pc.includes(qP) : true;
-        topOk = bOk && sOk && tOk && pOk;
+        const addrOk = qAddr ? addr.includes(qAddr) : true;
+        const pcOk = qP ? pc.startsWith(qP) || addr.includes(qP) : true;
+        topOk = addrOk && pcOk;
+      } else if (by === 'postcode') {
+        const pc = toText(r.postcode).toLowerCase();
+        const q = (filters.postcode ?? '').toLowerCase();
+        topOk = q.length === 0 || pc.startsWith(q);
       }
       if (!topOk) return false;
       // Header filters
@@ -239,27 +233,31 @@ export function SampleSearch(props: { pageSize?: number } = {}): JSX.Element {
     },
   };
 
-  return (
-    <Stack tokens={{ childrenGap: 16 }} styles={{ root: { marginBottom: 8 } }}>
-      <Stack horizontal tokens={{ childrenGap: 16 }} verticalAlign="end" styles={{ root: { alignItems: 'flex-end' } }}>
-        <Dropdown label="Search by" options={searchOptions} selectedKey={searchBy} onChange={(_, o) => setSearchBy((o?.key as string) ?? 'address')} styles={{ dropdown: { width: 220 } }} />
-        {searchBy === 'address' && (
-          <Stack horizontal wrap verticalAlign="end" tokens={{ childrenGap: 12 }} styles={{ root: { rowGap: 8 } }}>
-            <TextField label="Building name/number" value={filters.buildingNameNumber ?? ''} onChange={(_, v) => updateFilters('buildingNameNumber', v ?? '')} />
-            <TextField label="Street" value={filters.street ?? ''} onChange={(_, v) => updateFilters('street', v ?? '')} />
-            <TextField label="Town or city" value={filters.townCity ?? ''} onChange={(_, v) => updateFilters('townCity', v ?? '')} />
+    return (
+      <Stack tokens={{ childrenGap: 16 }} styles={{ root: { marginBottom: 8 } }}>
+        <Stack horizontal tokens={{ childrenGap: 16 }} verticalAlign="end" styles={{ root: { alignItems: 'flex-end' } }}>
+          <Dropdown
+            label="Search by"
+            options={searchOptions}
+            selectedKey={searchBy}
+            onChange={(_, o) => setSearchBy((o?.key as string) ?? 'taskId')}
+            styles={{ dropdown: { width: 220 } }}
+          />
+          {searchBy === 'address' && (
+            <Stack horizontal wrap verticalAlign="end" tokens={{ childrenGap: 12 }} styles={{ root: { rowGap: 8 } }}>
+              <TextField label="Address" value={filters.address ?? ''} onChange={(_, v) => updateFilters('address', v ?? '')} />
+              <TextField label="Postcode" value={filters.postcode ?? ''} onChange={(_, v) => updateFilters('postcode', (v ?? '').toUpperCase())} />
+            </Stack>
+          )}
+          {searchBy === 'uprn' && (
+            <TextField label="UPRN" value={filters.uprn ?? ''} onChange={(_, v) => updateFilters('uprn', (v ?? '').replace(/\D/g, ''))} />
+          )}
+          {searchBy === 'taskId' && (
+            <TextField label="Task ID" value={filters.taskId ?? ''} onChange={(_, v) => updateFilters('taskId', v ?? '')} />
+          )}
+          {searchBy === 'postcode' && (
             <TextField label="Postcode" value={filters.postcode ?? ''} onChange={(_, v) => updateFilters('postcode', (v ?? '').toUpperCase())} />
-          </Stack>
-        )}
-        {searchBy === 'uprn' && (
-          <TextField label="UPRN" value={filters.uprn ?? ''} onChange={(_, v) => updateFilters('uprn', (v ?? '').replace(/\D/g, ''))} />
-        )}
-        {searchBy === 'taskId' && (
-          <TextField label="Task ID" value={filters.taskId ?? ''} onChange={(_, v) => updateFilters('taskId', v ?? '')} />
-        )}
-        {searchBy === 'manualCheck' && (
-          <Dropdown label="Manual check" options={[{ key: 'all', text: 'All' }, { key: 'yes', text: 'Yes' }, { key: 'no', text: 'No' }]} selectedKey={filters.manualCheck ?? 'all'} onChange={(_, o) => updateFilters('manualCheck', (o?.key as 'all' | 'yes' | 'no') ?? 'all')} styles={{ dropdown: { width: 180 } }} />
-        )}
+          )}
         <PrimaryButton text="Search" onClick={handleSearch} />
         <PrimaryButton text="Clear all" onClick={handleClear} />
       </Stack>

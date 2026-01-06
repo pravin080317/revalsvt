@@ -38,7 +38,7 @@ import { RecordsColumns } from '../DetailsListVOA/config/ManifestConstants';
 import { IGridColumn, ColumnConfig } from './Component.types';
 import { GridCell } from '../DetailsListVOA/grid/GridCell';
 import { ClassNames } from '../DetailsListVOA/grid/Grid.styles';
-import { GridFilterState, createDefaultGridFilters, sanitizeFilters, SearchByOption, ManualCheckFilter } from './Filters';
+import { GridFilterState, createDefaultGridFilters, sanitizeFilters, SearchByOption } from './Filters';
 import { getSearchByOptionsFor, isLookupFieldFor } from '../DetailsListVOA/config/TableConfigs';
 
 type DataSet = ComponentFramework.PropertyHelper.DataSetApi.EntityRecord & IObjectWithKey;
@@ -209,36 +209,51 @@ export const Grid = React.memo((props: GridProps) => {
         case 'uprn':
           return 'UPRN';
         case 'taskId':
-          return 'Task';
-        case 'manualCheck':
-          return 'Manual Check';
+          return 'Task ID';
         case 'address':
           return 'Address';
         case 'postcode':
           return 'Postcode';
-        case 'street':
-          return 'Street';
-        case 'town':
-          return 'Town/City';
+        case 'billingAuthority':
+          return 'Billing Authority';
+        case 'transactionDate':
+          return 'Transaction Date';
+        case 'salePrice':
+          return 'Sale Price';
+        case 'ratio':
+          return 'Ratio';
+        case 'dwellingType':
+          return 'Dwelling Type';
+        case 'flaggedForReview':
+          return 'Flagged for review';
+        case 'reviewFlags':
+          return 'Review Flags';
+        case 'outlierKeySale':
+          return 'Outlier / Key sale';
+        case 'outlierRatio':
+          return 'Outlier Ratio';
+        case 'overallFlag':
+          return 'Overall flag';
+        case 'summaryFlag':
+          return 'Summary flag';
         case 'taskStatus':
-          return 'Task Status';
-        case 'source':
-          return 'Source';
+          return 'Task status';
+        case 'assignedTo':
+          return 'Assigned to';
+        case 'assignedDate':
+          return 'Assigned date';
+        case 'qcAssignedTo':
+          return 'QC Assigned to';
+        case 'qcAssignedDate':
+          return 'QC Assigned date';
+        case 'completedDate':
+          return 'Completed date';
         default:
           return k.charAt(0).toUpperCase() + k.slice(1);
       }
     };
     return keys.map((k) => ({ key: k, text: toLabel(k) }));
   }, [tableKey]);
-
-  const manualCheckOptions = React.useMemo<IDropdownOption[]>(
-    () => [
-      { key: 'all', text: 'All' },
-      { key: 'yes', text: 'Yes' },
-      { key: 'no', text: 'No' },
-    ],
-    [],
-  );
 
   const onFieldEnter = React.useCallback(
     (ev: React.KeyboardEvent<HTMLElement>) => {
@@ -262,8 +277,6 @@ export const Grid = React.memo((props: GridProps) => {
     [],
   );
 
-  // No ref needed; use TextField inputProps to set native attributes
-
   const onSearchByChange = React.useCallback(
     (_: React.FormEvent<HTMLDivElement>, option?: IDropdownOption) => {
       if (!option) {
@@ -273,20 +286,9 @@ export const Grid = React.memo((props: GridProps) => {
       setFilters((prev) => ({
         ...prev,
         searchBy: selected,
-        manualCheck: prev.manualCheck ?? 'all',
       }));
     },
     [],
-  );
-
-  const onManualCheckChange = React.useCallback(
-    (_: React.FormEvent<HTMLDivElement>, option?: IDropdownOption) => {
-      if (!option) {
-        return;
-      }
-      updateFilters('manualCheck', option.key as ManualCheckFilter);
-    },
-    [updateFilters],
   );
 
   const onUprnChange = React.useCallback(
@@ -305,30 +307,6 @@ export const Grid = React.memo((props: GridProps) => {
     [updateFilters, scheduleSearch],
   );
 
-  const onBuildingNameChange = React.useCallback(
-    (_: React.FormEvent<HTMLInputElement | HTMLTextAreaElement>, value?: string) => {
-      updateFilters('buildingNameNumber', value ?? '');
-      scheduleSearch();
-    },
-    [updateFilters, scheduleSearch],
-  );
-
-  const onStreetChange = React.useCallback(
-    (_: React.FormEvent<HTMLInputElement | HTMLTextAreaElement>, value?: string) => {
-      updateFilters('street', value ?? '');
-      scheduleSearch();
-    },
-    [updateFilters, scheduleSearch],
-  );
-
-  const onTownChange = React.useCallback(
-    (_: React.FormEvent<HTMLInputElement | HTMLTextAreaElement>, value?: string) => {
-      updateFilters('townCity', value ?? '');
-      scheduleSearch();
-    },
-    [updateFilters, scheduleSearch],
-  );
-
   const onPostcodeChange = React.useCallback(
     (_: React.FormEvent<HTMLInputElement | HTMLTextAreaElement>, value?: string) => {
       updateFilters('postcode', (value ?? '').toUpperCase());
@@ -337,18 +315,70 @@ export const Grid = React.memo((props: GridProps) => {
     [updateFilters, scheduleSearch],
   );
 
-  
-
-  const onTaskStatusFilterChange = React.useCallback(
-    (_: React.FormEvent<HTMLDivElement>, option?: IDropdownOption) => {
-      updateFilters('taskStatus', (option?.key as string) ?? '');
+  const onAddressChange = React.useCallback(
+    (_: React.FormEvent<HTMLInputElement | HTMLTextAreaElement>, value?: string) => {
+      updateFilters('address', value ?? '');
     },
     [updateFilters],
   );
 
-  const onSourceFilterChange = React.useCallback(
-    (_: React.FormEvent<HTMLDivElement>, option?: IDropdownOption) => {
-      updateFilters('source', (option?.key as string) ?? '');
+  const updateNumericFilter = React.useCallback(
+    (key: 'salePrice' | 'ratio' | 'outlierRatio', part: 'mode' | 'min' | 'max', value: string | number) => {
+      setFilters((prev) => {
+        const current = prev[key] ?? { mode: '>=' as const };
+        const updated = { ...current } as typeof current;
+        if (part === 'mode') {
+          updated.mode = value as any;
+        } else {
+          const num = value === '' ? undefined : Number(value);
+          updated[part] = Number.isNaN(num as number) ? undefined : (num as number);
+        }
+        return { ...prev, [key]: updated };
+      });
+    },
+    [],
+  );
+
+  const updateDateRange = React.useCallback(
+    (key: 'transactionDate' | 'assignedDate' | 'qcAssignedDate' | 'completedDate', part: 'from' | 'to', value?: string) => {
+      setFilters((prev) => {
+        const existing = prev[key] ?? {};
+        return { ...prev, [key]: { ...existing, [part]: value ?? undefined } };
+      });
+    },
+    [],
+  );
+
+  const updateMultiSelect = React.useCallback(
+    (key: keyof GridFilterState, option?: IDropdownOption, limit?: number) => {
+      if (!option) return;
+      setFilters((prev) => {
+        const current = (prev[key] as string[] | undefined) ?? [];
+        let next: string[] = [...current];
+        const optKey = String(option.key);
+        const exists = next.includes(optKey);
+        if (option.selected) {
+          if (!exists) next.push(optKey);
+        } else {
+          next = next.filter((v) => v !== optKey);
+        }
+        if (limit && next.length > limit) next = next.slice(next.length - limit);
+        return { ...prev, [key]: next };
+      });
+    },
+    [],
+  );
+
+  const updateSingleSelect = React.useCallback(
+    (key: keyof GridFilterState, option?: IDropdownOption) => {
+      setFilters((prev) => ({ ...prev, [key]: (option?.key as string) ?? undefined }));
+    },
+    [],
+  );
+
+  const onSummaryFlagChange = React.useCallback(
+    (_: React.FormEvent<HTMLInputElement | HTMLTextAreaElement>, value?: string) => {
+      updateFilters('summaryFlag', value ?? '');
     },
     [updateFilters],
   );
@@ -965,13 +995,17 @@ export const Grid = React.memo((props: GridProps) => {
                   styles={{ dropdown: { width: '100%' } }}
                 />
               </Stack.Item>
+              {filters.searchBy === 'taskId' && (
+                <Stack.Item styles={{ root: { minWidth: 200 } }}>
+                  <TextField label="Task ID (Sale ID)" value={filters.taskId ?? ''} onChange={onTaskIdChange} />
+                </Stack.Item>
+              )}
               {filters.searchBy === 'uprn' && (
                 <Stack.Item styles={{ root: { minWidth: 200 } }}>
                   <TextField
                     label="UPRN"
                     value={filters.uprn ?? ''}
                     onChange={onUprnChange}
-                    onKeyDown={onFieldEnter}
                     errorMessage={uprnError}
                     type="tel"
                     inputMode="numeric"
@@ -979,124 +1013,307 @@ export const Grid = React.memo((props: GridProps) => {
                   />
                 </Stack.Item>
               )}
-              {filters.searchBy === 'taskId' && (
-                <Stack.Item styles={{ root: { minWidth: 200 } }}>
-                  <TextField
-                    label="Task ID"
-                    value={filters.taskId ?? ''}
-                    onChange={onTaskIdChange}
-                    onKeyDown={onFieldEnter}
-                  />
-                </Stack.Item>
-              )}
-              {filters.searchBy === 'manualCheck' && (
-                <Stack.Item styles={{ root: { minWidth: 180 } }}>
-                  <Dropdown
-                    label="Manual check"
-                    options={manualCheckOptions}
-                    selectedKey={filters.manualCheck ?? 'all'}
-                    onChange={onManualCheckChange}
-                    styles={{ dropdown: { width: '100%' } }}
-                  />
-                </Stack.Item>
-              )}
               {filters.searchBy === 'address' && (
-                <>
-                  <Stack.Item styles={{ root: { minWidth: 200 } }}>
-                    <TextField
-                      label="Building name/number"
-                      value={filters.buildingNameNumber ?? ''}
-                      onChange={onBuildingNameChange}
-                      onKeyDown={onFieldEnter}
-                    />
-                  </Stack.Item>
-                  <Stack.Item styles={{ root: { minWidth: 200 } }}>
-                    <TextField
-                      label="Street"
-                      value={filters.street ?? ''}
-                      onChange={onStreetChange}
-                      onKeyDown={onFieldEnter}
-                    />
-                  </Stack.Item>
-                  <Stack.Item styles={{ root: { minWidth: 200 } }}>
-                    <TextField
-                      label="Town or city"
-                      value={filters.townCity ?? ''}
-                      onChange={onTownChange}
-                      onKeyDown={onFieldEnter}
-                    />
-                  </Stack.Item>
-                  <Stack.Item styles={{ root: { minWidth: 160 } }}>
-                    <TextField
-                      label="Postcode"
-                      value={filters.postcode ?? ''}
-                      onChange={onPostcodeChange}
-                      onKeyDown={onFieldEnter}
-                    />
-                    {showPostcodeHint && (
-                      <Text variant="small" styles={{ root: { marginTop: 4 } }}>
-                        Partial postcodes return all matching entries.
-                      </Text>
-                    )}
-                  </Stack.Item>
-                </>
-              )}
-              {filters.searchBy === 'street' && (
-                <Stack.Item styles={{ root: { minWidth: 200 } }}>
-                  <TextField
-                    label="Street"
-                    value={filters.street ?? ''}
-                    onChange={onStreetChange}
-                    onKeyDown={onFieldEnter}
-                  />
-                </Stack.Item>
-              )}
-              {filters.searchBy === 'town' && (
-                <Stack.Item styles={{ root: { minWidth: 200 } }}>
-                  <TextField
-                    label="Town or city"
-                    value={filters.townCity ?? ''}
-                    onChange={onTownChange}
-                    onKeyDown={onFieldEnter}
-                  />
-                </Stack.Item>
-              )}
-              {filters.searchBy === 'taskStatus' && (
-                <Stack.Item styles={{ root: { minWidth: 200 } }}>
-                  <Dropdown
-                    label="Task Status"
-                    options={getDistinctOptions(['taskstatus', 'taskStatus', 'status', 'statuscode'])}
-                    selectedKey={filters.taskStatus}
-                    onChange={onTaskStatusFilterChange}
-                    styles={{ dropdown: { width: '100%' } }}
-                  />
-                </Stack.Item>
-              )}
-              {filters.searchBy === 'source' && (
-                <Stack.Item styles={{ root: { minWidth: 200 } }}>
-                  <Dropdown
-                    label="Source"
-                    options={getDistinctOptions(['source', 'sale_source', 'salesource'])}
-                    selectedKey={filters.source}
-                    onChange={onSourceFilterChange}
-                    styles={{ dropdown: { width: '100%' } }}
-                  />
+                <Stack.Item styles={{ root: { minWidth: 260 } }}>
+                  <TextField label="Address" value={filters.address ?? ''} onChange={onAddressChange} />
                 </Stack.Item>
               )}
               {filters.searchBy === 'postcode' && (
                 <Stack.Item styles={{ root: { minWidth: 160 } }}>
-                  <TextField
-                    label="Postcode"
-                    value={filters.postcode ?? ''}
-                    onChange={onPostcodeChange}
-                    onKeyDown={onFieldEnter}
-                  />
+                  <TextField label="Post code" value={filters.postcode ?? ''} onChange={onPostcodeChange} />
                   {showPostcodeHint && (
                     <Text variant="small" styles={{ root: { marginTop: 4 } }}>
                       Partial postcodes return all matching entries.
                     </Text>
                   )}
                 </Stack.Item>
+              )}
+              {filters.searchBy === 'billingAuthority' && (
+                <Stack.Item styles={{ root: { minWidth: 220 } }}>
+                  <Dropdown
+                    label="Billing Authority"
+                    multiSelect
+                    options={getDistinctOptions(['billingauthority'])}
+                    selectedKeys={filters.billingAuthority ?? []}
+                    onChange={(_, opt) => updateMultiSelect('billingAuthority', opt, 3)}
+                    styles={{ dropdown: { width: '100%' } }}
+                  />
+                </Stack.Item>
+              )}
+              {filters.searchBy === 'transactionDate' && (
+                <Stack horizontal tokens={{ childrenGap: 8 }} wrap>
+                  <Stack.Item styles={{ root: { minWidth: 160 } }}>
+                    <TextField
+                      label="Start date"
+                      type="date"
+                      value={filters.transactionDate?.from ?? ''}
+                      onChange={(_, v) => updateDateRange('transactionDate', 'from', v)}
+                    />
+                  </Stack.Item>
+                  <Stack.Item styles={{ root: { minWidth: 160 } }}>
+                    <TextField
+                      label="End date"
+                      type="date"
+                      value={filters.transactionDate?.to ?? ''}
+                      onChange={(_, v) => updateDateRange('transactionDate', 'to', v)}
+                    />
+                  </Stack.Item>
+                </Stack>
+              )}
+              {(filters.searchBy === 'salePrice' || filters.searchBy === 'ratio' || filters.searchBy === 'outlierRatio') && (
+                <Stack horizontal wrap tokens={{ childrenGap: 8 }}>
+                  {(() => {
+                    const numericFilter = (filters[filters.searchBy] as any) ?? { mode: '>=' };
+                    const mode = numericFilter.mode ?? '>=';
+                    const minValue = mode === '<=' ? numericFilter.max : numericFilter.min;
+                    const maxValue = numericFilter.max;
+                    return (
+                      <>
+                      <Stack.Item styles={{ root: { minWidth: 140 } }}>
+                        <Dropdown
+                          label="Mode"
+                          options={[
+                            { key: '>=', text: '>=' },
+                            { key: '<=', text: '<=' },
+                            { key: 'between', text: 'Between' },
+                          ]}
+                          selectedKey={mode}
+                          onChange={(_, o) => updateNumericFilter(filters.searchBy as any, 'mode', String(o?.key))}
+                        />
+                      </Stack.Item>
+                      <Stack.Item styles={{ root: { minWidth: 140 } }}>
+                        <TextField
+                          label={mode === '<=' ? 'Max' : 'Min'}
+                          type="number"
+                          value={String(minValue ?? '')}
+                          onChange={(_, v) => updateNumericFilter(filters.searchBy as any, mode === '<=' ? 'max' : 'min', v ?? '')}
+                        />
+                      </Stack.Item>
+                      {mode === 'between' && (
+                        <Stack.Item styles={{ root: { minWidth: 140 } }}>
+                          <TextField
+                            label="Max"
+                            type="number"
+                            value={String(maxValue ?? '')}
+                            onChange={(_, v) => updateNumericFilter(filters.searchBy as any, 'max', v ?? '')}
+                          />
+                        </Stack.Item>
+                      )}
+                      </>
+                    );
+                  })()}
+                </Stack>
+              )}
+              {filters.searchBy === 'dwellingType' && (
+                <Stack.Item styles={{ root: { minWidth: 200 } }}>
+                  <Dropdown
+                    label="Dwelling Type"
+                    multiSelect
+                    options={[{ key: 'all', text: 'Select all' }, ...getDistinctOptions(['dwellingtype'])]}
+                    selectedKeys={filters.dwellingType ?? []}
+                    onChange={(_, opt) => {
+                      if (!opt) return;
+                      if (opt.key === 'all') {
+                        updateFilters('dwellingType', getDistinctOptions(['dwellingtype']).map((o) => String(o.key)));
+                        return;
+                      }
+                      updateMultiSelect('dwellingType', opt);
+                    }}
+                    styles={{ dropdown: { width: '100%' } }}
+                  />
+                </Stack.Item>
+              )}
+              {filters.searchBy === 'flaggedForReview' && (
+                <Stack.Item styles={{ root: { minWidth: 160 } }}>
+                  <Dropdown
+                    label="Flagged for review"
+                    options={[
+                      { key: 'yes', text: 'Yes' },
+                      { key: 'no', text: 'No' },
+                    ]}
+                    selectedKey={filters.flaggedForReview}
+                    onChange={(_, opt) => updateSingleSelect('flaggedForReview', opt)}
+                  />
+                </Stack.Item>
+              )}
+              {filters.searchBy === 'reviewFlags' && (
+                <Stack.Item styles={{ root: { minWidth: 200 } }}>
+                  <Dropdown
+                    label="Review Flags"
+                    multiSelect
+                    options={[{ key: 'all', text: 'Select all' }, ...getDistinctOptions(['reviewflags'])]}
+                    selectedKeys={filters.reviewFlags ?? []}
+                    onChange={(_, opt) => {
+                      if (!opt) return;
+                      if (opt.key === 'all') {
+                        updateFilters('reviewFlags', getDistinctOptions(['reviewflags']).map((o) => String(o.key)));
+                        return;
+                      }
+                      updateMultiSelect('reviewFlags', opt);
+                    }}
+                    styles={{ dropdown: { width: '100%' } }}
+                  />
+                </Stack.Item>
+              )}
+              {filters.searchBy === 'outlierKeySale' && (
+                <Stack.Item styles={{ root: { minWidth: 200 } }}>
+                  <Dropdown
+                    label="Outlier / Key sale"
+                    multiSelect
+                    options={[
+                      { key: 'all', text: 'Select all' },
+                      { key: 'Outlier', text: 'Outlier' },
+                      { key: 'Key sale', text: 'Key sale' },
+                    ]}
+                    selectedKeys={filters.outlierKeySale ?? []}
+                    onChange={(_, opt) => {
+                      if (!opt) return;
+                      if (opt.key === 'all') {
+                        updateFilters('outlierKeySale', ['Outlier', 'Key sale']);
+                        return;
+                      }
+                      updateMultiSelect('outlierKeySale', opt);
+                    }}
+                  />
+                </Stack.Item>
+              )}
+              {filters.searchBy === 'overallFlag' && (
+                <Stack.Item styles={{ root: { minWidth: 220 } }}>
+                  <Dropdown
+                    label="Overall flag"
+                    multiSelect
+                    options={[
+                      { key: 'all', text: 'Select all' },
+                      { key: 'Exclude', text: 'Exclude' },
+                      { key: 'Exclude potential false', text: 'Exclude potential false' },
+                      { key: 'Investigate can use', text: 'Investigate can use' },
+                      { key: 'Investigate do not use', text: 'Investigate do not use' },
+                      { key: 'No flag', text: 'No flag' },
+                      { key: 'Not fully HPI adjusted', text: 'Not fully HPI adjusted' },
+                      { key: 'Remove', text: 'Remove' },
+                    ]}
+                    selectedKeys={filters.overallFlag ?? []}
+                    onChange={(_, opt) => {
+                      if (!opt) return;
+                      if (opt.key === 'all') {
+                        updateFilters('overallFlag', [
+                          'Exclude',
+                          'Exclude potential false',
+                          'Investigate can use',
+                          'Investigate do not use',
+                          'No flag',
+                          'Not fully HPI adjusted',
+                          'Remove',
+                        ]);
+                        return;
+                      }
+                      updateMultiSelect('overallFlag', opt);
+                    }}
+                  />
+                </Stack.Item>
+              )}
+              {filters.searchBy === 'summaryFlag' && (
+                <Stack.Item styles={{ root: { minWidth: 200 } }}>
+                  <TextField label="Summary flag" value={filters.summaryFlag ?? ''} onChange={onSummaryFlagChange} />
+                </Stack.Item>
+              )}
+              {filters.searchBy === 'taskStatus' && (
+                <Stack.Item styles={{ root: { minWidth: 200 } }}>
+                  <Dropdown
+                    label="Task status"
+                    multiSelect
+                    options={[{ key: 'all', text: 'Select all' }, ...getDistinctOptions(['taskstatus', 'status', 'statuscode'])]}
+                    selectedKeys={filters.taskStatus ?? []}
+                    onChange={(_, opt) => {
+                      if (!opt) return;
+                      if (opt.key === 'all') {
+                        updateFilters('taskStatus', getDistinctOptions(['taskstatus', 'status', 'statuscode']).map((o) => String(o.key)));
+                        return;
+                      }
+                      updateMultiSelect('taskStatus', opt);
+                    }}
+                  />
+                </Stack.Item>
+              )}
+              {filters.searchBy === 'assignedTo' && (
+                <Stack.Item styles={{ root: { minWidth: 200 } }}>
+                  <Dropdown
+                    label="Assigned to"
+                    options={getDistinctOptions(['assignedto'])}
+                    selectedKey={filters.assignedTo}
+                    onChange={(_, opt) => updateSingleSelect('assignedTo', opt)}
+                  />
+                </Stack.Item>
+              )}
+              {filters.searchBy === 'assignedDate' && (
+                <Stack horizontal tokens={{ childrenGap: 8 }} wrap>
+                  <Stack.Item styles={{ root: { minWidth: 160 } }}>
+                    <TextField
+                      label="Assigned start"
+                      type="date"
+                      value={filters.assignedDate?.from ?? ''}
+                      onChange={(_, v) => updateDateRange('assignedDate', 'from', v)}
+                    />
+                  </Stack.Item>
+                  <Stack.Item styles={{ root: { minWidth: 160 } }}>
+                    <TextField
+                      label="Assigned end"
+                      type="date"
+                      value={filters.assignedDate?.to ?? ''}
+                      onChange={(_, v) => updateDateRange('assignedDate', 'to', v)}
+                    />
+                  </Stack.Item>
+                </Stack>
+              )}
+              {filters.searchBy === 'qcAssignedTo' && (
+                <Stack.Item styles={{ root: { minWidth: 200 } }}>
+                  <Dropdown
+                    label="QC Assigned to"
+                    options={getDistinctOptions(['qcassignedto'])}
+                    selectedKey={filters.qcAssignedTo}
+                    onChange={(_, opt) => updateSingleSelect('qcAssignedTo', opt)}
+                  />
+                </Stack.Item>
+              )}
+              {filters.searchBy === 'qcAssignedDate' && (
+                <Stack horizontal tokens={{ childrenGap: 8 }} wrap>
+                  <Stack.Item styles={{ root: { minWidth: 160 } }}>
+                    <TextField
+                      label="QC Assigned start"
+                      type="date"
+                      value={filters.qcAssignedDate?.from ?? ''}
+                      onChange={(_, v) => updateDateRange('qcAssignedDate', 'from', v)}
+                    />
+                  </Stack.Item>
+                  <Stack.Item styles={{ root: { minWidth: 160 } }}>
+                    <TextField
+                      label="QC Assigned end"
+                      type="date"
+                      value={filters.qcAssignedDate?.to ?? ''}
+                      onChange={(_, v) => updateDateRange('qcAssignedDate', 'to', v)}
+                    />
+                  </Stack.Item>
+                </Stack>
+              )}
+              {filters.searchBy === 'completedDate' && (
+                <Stack horizontal tokens={{ childrenGap: 8 }} wrap>
+                  <Stack.Item styles={{ root: { minWidth: 160 } }}>
+                    <TextField
+                      label="Completed start"
+                      type="date"
+                      value={filters.completedDate?.from ?? ''}
+                      onChange={(_, v) => updateDateRange('completedDate', 'from', v)}
+                    />
+                  </Stack.Item>
+                  <Stack.Item styles={{ root: { minWidth: 160 } }}>
+                    <TextField
+                      label="Completed end"
+                      type="date"
+                      value={filters.completedDate?.to ?? ''}
+                      onChange={(_, v) => updateDateRange('completedDate', 'to', v)}
+                    />
+                  </Stack.Item>
+                </Stack>
               )}
             </Stack>
           </Stack.Item>
