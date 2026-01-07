@@ -7,6 +7,13 @@ export interface IInputs {
     columnConfigProfile: ComponentFramework.PropertyTypes.StringProperty;
     apiBaseUrl: ComponentFramework.PropertyTypes.StringProperty;
     apimEndpoint: ComponentFramework.PropertyTypes.StringProperty;
+    searchBy: ComponentFramework.PropertyTypes.StringProperty;
+    billingAuthorities: ComponentFramework.PropertyTypes.StringProperty;
+    caseworkers: ComponentFramework.PropertyTypes.StringProperty;
+    workThat: ComponentFramework.PropertyTypes.StringProperty;
+    fromDate: ComponentFramework.PropertyTypes.StringProperty;
+    toDate: ComponentFramework.PropertyTypes.StringProperty;
+    searchTrigger: ComponentFramework.PropertyTypes.StringProperty;
     customApiName: ComponentFramework.PropertyTypes.StringProperty;
     tableKey: ComponentFramework.PropertyTypes.StringProperty;
 }
