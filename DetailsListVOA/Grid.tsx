@@ -41,10 +41,11 @@ import { RecordsColumns } from '../DetailsListVOA/config/ManifestConstants';
 import { IGridColumn, ColumnConfig } from './Component.types';
 import { GridCell } from '../DetailsListVOA/grid/GridCell';
 import { ClassNames } from '../DetailsListVOA/grid/Grid.styles';
-import { GridFilterState, NumericFilter, NumericFilterMode, createDefaultGridFilters, sanitizeFilters, SearchByOption } from './Filters';
-import { getSearchByOptionsFor, isLookupFieldFor } from '../DetailsListVOA/config/TableConfigs';
+import { GridFilterState, NumericFilter, NumericFilterMode, createDefaultGridFilters, sanitizeFilters, SearchByOption, DateRangeFilter } from './Filters';
+import { getSearchByOptionsFor, getColumnFilterConfigFor, isLookupFieldFor, ColumnFilterConfig } from '../DetailsListVOA/config/TableConfigs';
 
 type DataSet = ComponentFramework.PropertyHelper.DataSetApi.EntityRecord & IObjectWithKey;
+type ColumnFilterValue = string | string[] | NumericFilter | DateRangeFilter;
 
 export interface GridProps {
   // When false, hides the built-in top search panel
@@ -83,9 +84,9 @@ export interface GridProps {
   errorMessage?: string;
   showResults?: boolean;
   onLoadFilterOptions?: (field: string, query: string) => Promise<string[]>;
-  onColumnFiltersChange?: (filters: Record<string, string | string[]>) => void;
+  onColumnFiltersChange?: (filters: Record<string, ColumnFilterValue | string | string[]>) => void;
   allowColumnReorder?: boolean;
-  columnFilters?: Record<string, string | string[]>;
+  columnFilters?: Record<string, ColumnFilterValue>;
 }
 
 const defaultTheme = createTheme({
@@ -113,6 +114,175 @@ function useTheme(themeJSON?: string | IPartialTheme) {
     }
   }, [themeJSON]);
 }
+
+const getFilterField = <T = unknown>(state: GridFilterState, key: keyof GridFilterState): T | undefined =>
+  (state as unknown as Record<string, unknown>)[key as string] as T | undefined;
+const getColumnFilterField = <T extends ColumnFilterValue = ColumnFilterValue>(
+  state: Record<string, ColumnFilterValue>,
+  key: string,
+): T | undefined => (state as unknown as Record<string, ColumnFilterValue>)[key] as T | undefined;
+
+type SearchControlType = 'text' | 'numeric' | 'dateRange' | 'singleSelect' | 'multiSelect' | 'textContains' | 'textPrefix';
+
+interface SearchFieldConfig {
+  key: SearchByOption;
+  label: string;
+  control: SearchControlType;
+  stateKey: keyof GridFilterState;
+  minLength?: number;
+  placeholder?: string;
+  inputMode?: 'numeric';
+  transform?: (value?: string) => string;
+  optionFields?: string[];
+  options?: IDropdownOption[];
+  selectAll?: boolean;
+  selectAllValues?: string[];
+  multiLimit?: number;
+}
+
+const SEARCH_FIELD_CONFIGS: Record<SearchByOption, SearchFieldConfig> = {
+  manualCheck: {
+    key: 'manualCheck',
+    label: 'Manual check',
+    control: 'singleSelect',
+    stateKey: 'manualCheck',
+    options: [
+      { key: 'all', text: 'All' },
+      { key: 'yes', text: 'Yes' },
+      { key: 'no', text: 'No' },
+    ],
+  },
+  street: { key: 'street', label: 'Street', control: 'textContains', stateKey: 'street', minLength: 1 },
+  town: { key: 'town', label: 'Town/City', control: 'textContains', stateKey: 'townCity', minLength: 1 },
+  source: { key: 'source', label: 'Source', control: 'textContains', stateKey: 'source', minLength: 1 },
+  outlierKeySale: {
+    key: 'outlierKeySale',
+    label: 'Outlier / Key sale',
+    control: 'multiSelect',
+    stateKey: 'outlierKeySale',
+    options: [
+      { key: 'Outlier', text: 'Outlier' },
+      { key: 'Key sale', text: 'Key sale' },
+    ],
+    selectAll: true,
+    selectAllValues: ['Outlier', 'Key sale'],
+  },
+  saleId: { key: 'saleId', label: 'Sale ID', control: 'text', stateKey: 'saleId', placeholder: 'S-1000001' },
+  taskId: { key: 'taskId', label: 'Task ID', control: 'text', stateKey: 'taskId', placeholder: 'A-1000001 / M-1000001' },
+  uprn: {
+    key: 'uprn',
+    label: 'UPRN',
+    control: 'text',
+    stateKey: 'uprn',
+    inputMode: 'numeric',
+    transform: (v) => (v ?? '').replace(/\D/g, ''),
+  },
+  address: { key: 'address', label: 'Address', control: 'textContains', stateKey: 'address', minLength: 3 },
+  postcode: {
+    key: 'postcode',
+    label: 'Post code',
+    control: 'textPrefix',
+    stateKey: 'postcode',
+    minLength: 2,
+    transform: (v) => (v ?? '').toUpperCase(),
+  },
+  billingAuthority: {
+    key: 'billingAuthority',
+    label: 'Billing Authority',
+    control: 'multiSelect',
+    stateKey: 'billingAuthority',
+    optionFields: ['billingauthority'],
+    multiLimit: 3,
+  },
+  transactionDate: { key: 'transactionDate', label: 'Transaction Date', control: 'dateRange', stateKey: 'transactionDate' },
+  salePrice: { key: 'salePrice', label: 'Sale Price', control: 'numeric', stateKey: 'salePrice' },
+  ratio: { key: 'ratio', label: 'Ratio', control: 'numeric', stateKey: 'ratio' },
+  dwellingType: {
+    key: 'dwellingType',
+    label: 'Dwelling Type',
+    control: 'multiSelect',
+    stateKey: 'dwellingType',
+    optionFields: ['dwellingtype'],
+    selectAll: true,
+  },
+  flaggedForReview: {
+    key: 'flaggedForReview',
+    label: 'Flagged for review',
+    control: 'singleSelect',
+    stateKey: 'flaggedForReview',
+    options: [
+      { key: 'yes', text: 'Yes' },
+      { key: 'no', text: 'No' },
+    ],
+  },
+  reviewFlags: {
+    key: 'reviewFlags',
+    label: 'Review Flags',
+    control: 'multiSelect',
+    stateKey: 'reviewFlags',
+    optionFields: ['reviewflags'],
+    selectAll: true,
+  },
+  outlierRatio: { key: 'outlierRatio', label: 'Outlier Ratio', control: 'numeric', stateKey: 'outlierRatio' },
+  overallFlag: {
+    key: 'overallFlag',
+    label: 'Overall flag',
+    control: 'multiSelect',
+    stateKey: 'overallFlag',
+    options: [
+      { key: 'Exclude', text: 'Exclude' },
+      { key: 'Exclude potential false', text: 'Exclude potential false' },
+      { key: 'Investigate can use', text: 'Investigate can use' },
+      { key: 'Investigate do not use', text: 'Investigate do not use' },
+      { key: 'No flag', text: 'No flag' },
+      { key: 'Not fully HPI adjusted', text: 'Not fully HPI adjusted' },
+      { key: 'Remove', text: 'Remove' },
+    ],
+    selectAll: true,
+    selectAllValues: [
+      'Exclude',
+      'Exclude potential false',
+      'Investigate can use',
+      'Investigate do not use',
+      'No flag',
+      'Not fully HPI adjusted',
+      'Remove',
+    ],
+  },
+  summaryFlag: {
+    key: 'summaryFlag',
+    label: 'Summary flag',
+    control: 'textContains',
+    stateKey: 'summaryFlag',
+    minLength: 3,
+  },
+  taskStatus: {
+    key: 'taskStatus',
+    label: 'Task status',
+    control: 'multiSelect',
+    stateKey: 'taskStatus',
+    optionFields: ['taskstatus', 'status', 'statuscode'],
+    selectAll: true,
+  },
+  assignedTo: {
+    key: 'assignedTo',
+    label: 'Assigned to',
+    control: 'singleSelect',
+    stateKey: 'assignedTo',
+    optionFields: ['assignedto'],
+  },
+  assignedDate: { key: 'assignedDate', label: 'Assigned date', control: 'dateRange', stateKey: 'assignedDate' },
+  qcAssignedTo: {
+    key: 'qcAssignedTo',
+    label: 'QC Assigned to',
+    control: 'singleSelect',
+    stateKey: 'qcAssignedTo',
+    optionFields: ['qcassignedto'],
+  },
+  qcAssignedDate: { key: 'qcAssignedDate', label: 'QC Assigned date', control: 'dateRange', stateKey: 'qcAssignedDate' },
+  qcCompletedDate: { key: 'qcCompletedDate', label: 'QC Completed date', control: 'dateRange', stateKey: 'qcCompletedDate' },
+  completedDate: { key: 'completedDate', label: 'Completed date', control: 'dateRange', stateKey: 'completedDate' },
+};
 
 export function getRecordKey(record: ComponentFramework.PropertyHelper.DataSetApi.EntityRecord): string {
   const customKey = record.getValue(RecordsColumns.RecordKey);
@@ -165,16 +335,13 @@ export const Grid = React.memo((props: GridProps) => {
 
   const [columns, setColumns] = React.useState<IGridColumn[]>([]);
   const [isComponentLoading, setIsLoading] = React.useState(false);
-  const [columnFiltersState, setColumnFilters] = React.useState<Record<string, string | string[]>>(columnFilters ?? {});
+  const [columnFiltersState, setColumnFilters] = React.useState<Record<string, ColumnFilterValue>>(columnFilters ?? {});
   const [menuState, setMenuState] = React.useState<{
     target: HTMLElement;
     column: IGridColumn;
   }>();
-  const [menuFilterValue, setMenuFilterValue] = React.useState<string | string[]>('');
+  const [menuFilterValue, setMenuFilterValue] = React.useState<ColumnFilterValue>('');
   const [menuFilterText, setMenuFilterText] = React.useState('');
-  const [menuExtraOptions, setMenuExtraOptions] = React.useState<string[]>([]);
-  const [menuOptionsLoading, setMenuOptionsLoading] = React.useState(false);
-  const menuOptionsTimer = React.useRef<number | undefined>(undefined);
   const liveFilterTimer = React.useRef<number | undefined>(undefined);
   const [filters, setFilters] = React.useState<GridFilterState>(searchFilters);
 
@@ -242,6 +409,15 @@ export const Grid = React.memo((props: GridProps) => {
 
   const getLengthErrors = React.useCallback(
     (fs: GridFilterState) => {
+      const cfg = SEARCH_FIELD_CONFIGS[fs.searchBy];
+      let searchField: string | undefined;
+      if (cfg?.minLength && typeof cfg.stateKey === 'string') {
+        const val = getFilterField(fs, cfg.stateKey);
+        const text = typeof val === 'string' ? val.trim() : '';
+        if (text.length > 0 && text.length < cfg.minLength) {
+          searchField = `Enter at least ${cfg.minLength} characters`;
+        }
+      }
       const address = (fs.address ?? '').trim();
       const postcode = (fs.postcode ?? '').trim();
       const summary = (fs.summaryFlag ?? '').trim();
@@ -249,6 +425,7 @@ export const Grid = React.memo((props: GridProps) => {
         address: fs.searchBy === 'address' && address.length > 0 && address.length < 3 ? 'Enter at least 3 characters' : undefined,
         postcode: fs.searchBy === 'postcode' && postcode.length > 0 && postcode.length < 2 ? 'Enter at least 2 characters' : undefined,
         summaryFlag: fs.searchBy === 'summaryFlag' && summary.length > 0 && summary.length < 3 ? 'Enter at least 3 characters' : undefined,
+        searchField,
       };
     },
     [],
@@ -290,77 +467,18 @@ export const Grid = React.memo((props: GridProps) => {
 
   const searchByOptions = React.useMemo<IDropdownOption[]>(() => {
     const keys = getSearchByOptionsFor(tableKey);
-    const toLabel = (k: string): string => {
-      switch (k) {
-        case 'uprn':
-          return 'UPRN';
-        case 'taskId':
-          return 'Task ID';
-        case 'address':
-          return 'Address';
-        case 'postcode':
-          return 'Postcode';
-        case 'billingAuthority':
-          return 'Billing Authority';
-        case 'transactionDate':
-          return 'Transaction Date';
-        case 'salePrice':
-          return 'Sale Price';
-        case 'ratio':
-          return 'Ratio';
-        case 'dwellingType':
-          return 'Dwelling Type';
-        case 'flaggedForReview':
-          return 'Flagged for review';
-        case 'reviewFlags':
-          return 'Review Flags';
-        case 'outlierKeySale':
-          return 'Outlier / Key sale';
-        case 'outlierRatio':
-          return 'Outlier Ratio';
-        case 'overallFlag':
-          return 'Overall flag';
-        case 'summaryFlag':
-          return 'Summary flag';
-        case 'taskStatus':
-          return 'Task status';
-        case 'assignedTo':
-          return 'Assigned to';
-        case 'assignedDate':
-          return 'Assigned date';
-        case 'qcAssignedTo':
-          return 'QC Assigned to';
-        case 'qcAssignedDate':
-          return 'QC Assigned date';
-        case 'completedDate':
-          return 'Completed date';
-        default:
-          return k.charAt(0).toUpperCase() + k.slice(1);
-      }
-    };
-    return keys.map((k) => ({ key: k, text: toLabel(k) }));
+    return keys.map((k) => {
+      const cfg = SEARCH_FIELD_CONFIGS[k];
+      const label = cfg?.label ?? k.charAt(0).toUpperCase() + k.slice(1);
+      return { key: k, text: label };
+    });
   }, [tableKey]);
 
   const lengthErrors = React.useMemo(() => getLengthErrors(filters), [filters, getLengthErrors]);
   const addressError = lengthErrors.address;
   const postcodeError = lengthErrors.postcode;
   const summaryFlagError = lengthErrors.summaryFlag;
-
-  const onFieldEnter = React.useCallback(
-    (ev: React.KeyboardEvent<HTMLElement>) => {
-      if (ev.key === 'Enter') {
-        ev.preventDefault();
-        const sanitized = sanitizeFilters(filters);
-        const uprnInvalid = sanitized.searchBy === 'uprn' && !!sanitized.uprn && (sanitized.uprn.length < 8 || sanitized.uprn.length > 10);
-        if (uprnInvalid || addressError || postcodeError || summaryFlagError) {
-          return;
-        }
-        setFilters(sanitized);
-        onSearch(sanitized);
-      }
-    },
-    [filters, onSearch, addressError, postcodeError, summaryFlagError],
-  );
+  const searchFieldError = lengthErrors.searchField;
 
   const updateFilters = React.useCallback(
     (key: keyof GridFilterState, value: GridFilterState[keyof GridFilterState]) => {
@@ -381,37 +499,6 @@ export const Grid = React.memo((props: GridProps) => {
       }));
     },
     [],
-  );
-
-  const onUprnChange = React.useCallback(
-    (_: React.FormEvent<HTMLInputElement | HTMLTextAreaElement>, value?: string) => {
-      const digits = (value ?? '').replace(/\D/g, '');
-      updateFilters('uprn', digits);
-    },
-    [updateFilters],
-  );
-
-  const onTaskIdChange = React.useCallback(
-    (_: React.FormEvent<HTMLInputElement | HTMLTextAreaElement>, value?: string) => {
-      updateFilters('taskId', value ?? '');
-      scheduleSearch();
-    },
-    [updateFilters, scheduleSearch],
-  );
-
-  const onPostcodeChange = React.useCallback(
-    (_: React.FormEvent<HTMLInputElement | HTMLTextAreaElement>, value?: string) => {
-      updateFilters('postcode', (value ?? '').toUpperCase());
-      scheduleSearch();
-    },
-    [updateFilters, scheduleSearch],
-  );
-
-  const onAddressChange = React.useCallback(
-    (_: React.FormEvent<HTMLInputElement | HTMLTextAreaElement>, value?: string) => {
-      updateFilters('address', value ?? '');
-    },
-    [updateFilters],
   );
 
   type NumericFilterKey = 'salePrice' | 'ratio' | 'outlierRatio';
@@ -438,7 +525,7 @@ export const Grid = React.memo((props: GridProps) => {
     key === 'salePrice' || key === 'ratio' || key === 'outlierRatio';
 
   const updateDateRange = React.useCallback(
-    (key: 'transactionDate' | 'assignedDate' | 'qcAssignedDate' | 'completedDate', part: 'from' | 'to', value?: Date | null) => {
+    (key: 'transactionDate' | 'assignedDate' | 'qcAssignedDate' | 'qcCompletedDate' | 'completedDate', part: 'from' | 'to', value?: Date | null) => {
       setFilters((prev) => {
         const existing = prev[key] ?? {};
         return { ...prev, [key]: { ...existing, [part]: toISODateString(value) } };
@@ -474,13 +561,6 @@ export const Grid = React.memo((props: GridProps) => {
     [],
   );
 
-  const onSummaryFlagChange = React.useCallback(
-    (_: React.FormEvent<HTMLInputElement | HTMLTextAreaElement>, value?: string) => {
-      updateFilters('summaryFlag', value ?? '');
-    },
-    [updateFilters],
-  );
-
   const uprnError = React.useMemo(() => {
     if (filters.searchBy !== 'uprn' || !filters.uprn || filters.uprn.length === 0) {
       return undefined;
@@ -492,12 +572,12 @@ export const Grid = React.memo((props: GridProps) => {
   }, [filters.searchBy, filters.uprn]);
 
   const isSearchDisabled = React.useMemo(
-    () => !!uprnError || !!addressError || !!postcodeError || !!summaryFlagError,
-    [uprnError, addressError, postcodeError, summaryFlagError],
+    () => !!uprnError || !!addressError || !!postcodeError || !!summaryFlagError || !!searchFieldError,
+    [uprnError, addressError, postcodeError, summaryFlagError, searchFieldError],
   );
 
   const handleSearch = React.useCallback(() => {
-    if (uprnError || addressError || postcodeError || summaryFlagError) {
+    if (uprnError || addressError || postcodeError || summaryFlagError || searchFieldError) {
       return;
     }
     const sanitized = sanitizeFilters(filters);
@@ -506,7 +586,7 @@ export const Grid = React.memo((props: GridProps) => {
     }
     setFilters(sanitized);
     onSearch(sanitized);
-  }, [addressError, filters, onSearch, postcodeError, summaryFlagError, uprnError]);
+  }, [addressError, filters, onSearch, postcodeError, summaryFlagError, uprnError, searchFieldError]);
 
   const handleClear = React.useCallback(() => {
     const defaults = createDefaultGridFilters();
@@ -661,7 +741,7 @@ export const Grid = React.memo((props: GridProps) => {
   const columnsWithIcons = React.useMemo<IGridColumn[]>(() => {
     return columns.map((c) => {
       const field = c.fieldName ?? c.key;
-      const activeFilter = !!columnFiltersState[(field ?? '').toString()];
+      const activeFilter = columnFiltersState[(field ?? '').toString()] !== undefined;
       const sort = sorting?.find((s) => s.name === field);
       const sortIcon = sort ? (Number(sort.sortDirection) === 1 ? 'SortDown' : 'SortUp') : undefined;
       const iconName = sortIcon ?? (activeFilter ? 'Filter' : undefined);
@@ -671,9 +751,22 @@ export const Grid = React.memo((props: GridProps) => {
 
   const filteredItems = React.useMemo(() => {
     const t0 = performance.now();
-    const filterEntries = Object.entries(columnFiltersState).filter(([, value]) =>
-      Array.isArray(value) ? value.length > 0 : value.trim() !== '',
-    );
+    const filterEntries = Object.entries(columnFiltersState).filter(([, value]) => {
+      if (value === undefined) return false;
+      if (Array.isArray(value)) return value.length > 0;
+      if (typeof value === 'string') return value.trim() !== '';
+      if ((value as NumericFilter).mode !== undefined) {
+        const num = value as NumericFilter;
+        if (num.mode === 'between') return num.min !== undefined || num.max !== undefined;
+        if (num.mode === '>=') return num.min !== undefined;
+        if (num.mode === '<=') return num.max !== undefined;
+        return false;
+      }
+      if ((value as DateRangeFilter).from !== undefined || (value as DateRangeFilter).to !== undefined) {
+        return true;
+      }
+      return false;
+    });
     if (filterEntries.length === 0) {
       const t1 = performance.now();
       console.log('[Grid Perf] Client filteredItems (no filters) (ms):', Math.round(t1 - t0), 'items:', items.length);
@@ -682,7 +775,68 @@ export const Grid = React.memo((props: GridProps) => {
     const out = items.filter((item) => {
       const record = item as unknown as Record<string, unknown>;
       return filterEntries.every(([fieldName, filterValue]) => {
+        const cfg = getColumnFilterConfigFor(tableKey, fieldName);
         const raw = record[fieldName];
+        const textVal = getFilterableText(raw).trim();
+        if (cfg) {
+          switch (cfg.control) {
+            case 'textEq':
+              return typeof filterValue === 'string'
+                ? textVal.toLowerCase() === filterValue.trim().toLowerCase()
+                : true;
+            case 'textPrefix':
+              return typeof filterValue === 'string'
+                ? textVal.toLowerCase().startsWith(filterValue.trim().toLowerCase())
+                : true;
+            case 'textContains':
+              return typeof filterValue === 'string'
+                ? textVal.toLowerCase().includes(filterValue.trim().toLowerCase())
+                : true;
+            case 'singleSelect':
+              return typeof filterValue === 'string'
+                ? textVal.toLowerCase() === filterValue.trim().toLowerCase()
+                : true;
+            case 'multiSelect': {
+              const needles = Array.isArray(filterValue)
+                ? filterValue.map((v) => String(v).trim().toLowerCase())
+                : [];
+              if (needles.length === 0) return true;
+              if (Array.isArray(raw)) {
+                const hay = raw
+                  .map((v) => (typeof v === 'string' || typeof v === 'number' || typeof v === 'boolean' ? String(v).trim().toLowerCase() : ''))
+                  .filter((s) => s !== '');
+                return needles.some((n) => hay.includes(n));
+              }
+              return needles.some((n) => textVal.toLowerCase() === n);
+            }
+            case 'numeric': {
+              const numFilter = filterValue as NumericFilter;
+              const numericRaw = typeof raw === 'number' ? raw : Number(textVal);
+              if (Number.isNaN(numericRaw)) return false;
+              if (numFilter.mode === 'between') {
+                const minOk = numFilter.min !== undefined ? numericRaw >= numFilter.min : true;
+                const maxOk = numFilter.max !== undefined ? numericRaw <= numFilter.max : true;
+                return minOk && maxOk;
+              }
+              if (numFilter.mode === '>=') return numFilter.min !== undefined ? numericRaw >= numFilter.min : true;
+              if (numFilter.mode === '<=') return numFilter.max !== undefined ? numericRaw <= numFilter.max : true;
+              return true;
+            }
+            case 'dateRange': {
+              const dr = filterValue as DateRangeFilter;
+              const rawDate = textVal;
+              const rawTime = Date.parse(rawDate);
+              if (Number.isNaN(rawTime)) return false;
+              const fromTime = dr.from ? Date.parse(dr.from) : undefined;
+              const toTime = dr.to ? Date.parse(dr.to) : undefined;
+              if (fromTime !== undefined && rawTime < fromTime) return false;
+              if (toTime !== undefined && rawTime > toTime) return false;
+              return true;
+            }
+            default:
+              return true;
+          }
+        }
         if (Array.isArray(filterValue)) {
           const needles = filterValue.map((v) => String(v).trim().toLowerCase()).filter((v) => v !== '');
           if (needles.length === 0) return true;
@@ -692,28 +846,26 @@ export const Grid = React.memo((props: GridProps) => {
               .filter((s) => s !== '');
             return needles.some((n) => hay.includes(n));
           }
-          const text = getFilterableText(raw).trim().toLowerCase();
+          const text = textVal.toLowerCase();
           return needles.some((n) => text === n);
         }
-        const needle = filterValue.trim().toLowerCase();
+        const needle = typeof filterValue === 'string' ? filterValue.trim().toLowerCase() : '';
         if (Array.isArray(raw)) {
           return raw.some((v) => (typeof v === 'string' || typeof v === 'number' || typeof v === 'boolean') && String(v).toLowerCase().includes(needle));
         }
-        const text = getFilterableText(raw).trim().toLowerCase();
+        const text = textVal.toLowerCase();
         return text.includes(needle);
       });
     });
     const t1 = performance.now();
     console.log('[Grid Perf] Client filteredItems (ms):', Math.round(t1 - t0), 'items:', items.length, 'filters:', filterEntries.length, 'result:', out.length);
     return out;
-  }, [columnFiltersState, getFilterableText, items]);
+  }, [columnFiltersState, getFilterableText, items, tableKey]);
 
   const clearAllColumnFilters = React.useCallback(() => {
     setColumnFilters(() => {
-      const cleared: Record<string, string | string[]> = {};
-      if (onColumnFiltersChange) {
-        onColumnFiltersChange(cleared);
-      }
+      const cleared: Record<string, ColumnFilterValue> = {};
+      onColumnFiltersChange?.(cleared);
       return cleared;
     });
   }, [onColumnFiltersChange]);
@@ -752,13 +904,233 @@ export const Grid = React.memo((props: GridProps) => {
     [getFilterableText, records],
   );
 
+  const buildDropdownOptions = React.useCallback(
+    (cfg: SearchFieldConfig): IComboBoxOption[] => {
+      const deduped: IComboBoxOption[] = [];
+      const seen = new Set<string>();
+      const push = (opt?: IComboBoxOption) => {
+        if (!opt) return;
+        const key = String(opt.key);
+        if (seen.has(key)) return;
+        seen.add(key);
+        deduped.push(opt);
+      };
+      (cfg.options ?? []).forEach(push);
+      if (cfg.optionFields) {
+        getDistinctOptions(cfg.optionFields).forEach(push);
+      }
+      let combined = deduped;
+      if (cfg.selectAll) {
+        combined = [{ key: 'all', text: 'Select all' }, ...combined];
+      }
+      return combined;
+    },
+    [getDistinctOptions],
+  );
+
+  const renderSearchControl = React.useCallback(() => {
+    const cfg = SEARCH_FIELD_CONFIGS[filters.searchBy];
+    if (!cfg) return null;
+
+    const textError =
+      cfg.key === 'address'
+        ? addressError
+        : cfg.key === 'postcode'
+        ? postcodeError
+        : cfg.key === 'summaryFlag'
+        ? summaryFlagError
+        : cfg.key === 'uprn'
+        ? uprnError
+        : filters.searchBy === cfg.key
+        ? searchFieldError
+        : undefined;
+
+    if (cfg.control === 'text' || cfg.control === 'textContains' || cfg.control === 'textPrefix') {
+      const val = getFilterField(filters, cfg.stateKey);
+      const value = typeof val === 'string' ? val : '';
+      return (
+        <Stack.Item styles={{ root: { minWidth: cfg.control === 'textContains' ? 260 : 200 } }}>
+          <TextField
+            label={cfg.label}
+            value={value}
+            onChange={(_, v) => {
+              const next = cfg.transform ? cfg.transform(v) : v ?? '';
+              updateFilters(cfg.stateKey, next);
+              if (cfg.key === 'taskId' || cfg.key === 'postcode') {
+                scheduleSearch();
+              }
+            }}
+            errorMessage={textError}
+            inputMode={cfg.inputMode}
+          />
+          {cfg.key === 'postcode' && showPostcodeHint && (
+            <Text variant="small" styles={{ root: { marginTop: 4 } }}>
+              Partial postcodes return all matching entries.
+            </Text>
+          )}
+        </Stack.Item>
+      );
+    }
+
+    if (cfg.control === 'numeric') {
+      const numericKey = cfg.stateKey as NumericFilterKey;
+      const numericFilter = filters[numericKey] ?? { mode: '>=' };
+      const mode = numericFilter.mode ?? '>=';
+      const minValue = mode === '<=' ? numericFilter.max : numericFilter.min;
+      const maxValue = numericFilter.max;
+      return (
+        <Stack horizontal wrap tokens={{ childrenGap: 8 }}>
+          <Stack.Item styles={{ root: { minWidth: 140 } }}>
+            <Dropdown
+              label="Options"
+              options={[
+                { key: '>=', text: 'Greater than or equal to' },
+                { key: '<=', text: 'Less than or equal to' },
+                { key: 'between', text: 'Between' },
+              ]}
+              selectedKey={mode}
+              onChange={(_, o) =>
+                updateNumericFilter(numericKey, 'mode', typeof o?.key === 'string' ? o.key : mode)
+              }
+            />
+          </Stack.Item>
+          <Stack.Item styles={{ root: { minWidth: 140 } }}>
+            <TextField
+              label={mode === '<=' ? 'Max' : 'Min'}
+              type="number"
+              value={String(minValue ?? '')}
+              onChange={(_, v) => updateNumericFilter(numericKey, mode === '<=' ? 'max' : 'min', v ?? '')}
+            />
+          </Stack.Item>
+          {mode === 'between' && (
+            <Stack.Item styles={{ root: { minWidth: 140 } }}>
+              <TextField
+                label="Max"
+                type="number"
+                value={String(maxValue ?? '')}
+                onChange={(_, v) => updateNumericFilter(numericKey, 'max', v ?? '')}
+              />
+            </Stack.Item>
+          )}
+        </Stack>
+      );
+    }
+
+    if (cfg.control === 'dateRange') {
+      const dateVal = getFilterField<{ from?: string; to?: string }>(filters, cfg.stateKey);
+      const from = parseISODate(dateVal?.from);
+      const to = parseISODate(dateVal?.to);
+      return (
+        <Stack horizontal tokens={{ childrenGap: 8 }} wrap>
+          <Stack.Item styles={{ root: { minWidth: 160 } }}>
+            <DatePicker
+              label={`${cfg.label} start`}
+              firstDayOfWeek={DayOfWeek.Monday}
+              strings={dateStrings}
+              value={from}
+              formatDate={formatDisplayDate}
+              onSelectDate={(d) => updateDateRange(cfg.stateKey as 'transactionDate', 'from', d)}
+            />
+          </Stack.Item>
+          <Stack.Item styles={{ root: { minWidth: 160 } }}>
+            <DatePicker
+              label={`${cfg.label} end`}
+              firstDayOfWeek={DayOfWeek.Monday}
+              strings={dateStrings}
+              value={to}
+              formatDate={formatDisplayDate}
+              onSelectDate={(d) => updateDateRange(cfg.stateKey as 'transactionDate', 'to', d)}
+            />
+          </Stack.Item>
+        </Stack>
+      );
+    }
+
+    if (cfg.control === 'singleSelect') {
+      const options = buildDropdownOptions(cfg);
+      const selectedKey = getFilterField<string>(filters, cfg.stateKey);
+      return (
+        <Stack.Item styles={{ root: { minWidth: 200 } }}>
+          <ComboBox
+            label={cfg.label}
+            options={options}
+            selectedKey={selectedKey}
+            allowFreeform={false}
+            autoComplete="on"
+            onChange={(_, opt) => updateSingleSelect(cfg.stateKey, opt as IDropdownOption)}
+            styles={{
+              root: { width: '100%' },
+              callout: { minWidth: 240 },
+              optionsContainer: { minWidth: 200 },
+            }}
+          />
+        </Stack.Item>
+      );
+    }
+
+    if (cfg.control === 'multiSelect') {
+      const options = buildDropdownOptions(cfg);
+      const selected = getFilterField<string[]>(filters, cfg.stateKey);
+      return (
+        <Stack.Item styles={{ root: { minWidth: 200 } }}>
+          <ComboBox
+            label={cfg.label}
+            multiSelect
+            allowFreeform={false}
+            autoComplete="on"
+            options={options}
+            selectedKey={selected ?? []}
+            onChange={(_, opt) => {
+              if (!opt) return;
+              if (opt.key === 'all') {
+                const values =
+                  cfg.selectAllValues ??
+                  options
+                    .filter((o) => o.key !== 'all')
+                    .map((o) => String(o.key));
+                updateFilters(cfg.stateKey, cfg.multiLimit ? values.slice(Math.max(0, values.length - cfg.multiLimit)) : values);
+                return;
+              }
+              updateMultiSelect(cfg.stateKey, opt as IDropdownOption, cfg.multiLimit);
+            }}
+            styles={{
+              root: { width: '100%' },
+              callout: { minWidth: 240 },
+              optionsContainer: { minWidth: 200 },
+            }}
+          />
+        </Stack.Item>
+      );
+    }
+
+    return null;
+  }, [
+    filters,
+    addressError,
+    postcodeError,
+    summaryFlagError,
+    searchFieldError,
+    uprnError,
+    updateFilters,
+    scheduleSearch,
+    showPostcodeHint,
+    updateNumericFilter,
+    parseISODate,
+    dateStrings,
+    formatDisplayDate,
+    updateDateRange,
+    buildDropdownOptions,
+    updateSingleSelect,
+    updateMultiSelect,
+  ]);
+
   const scheduleLiveTextFilter = React.useCallback((fieldName: string, value: string) => {
     if (liveFilterTimer.current) {
       window.clearTimeout(liveFilterTimer.current);
     }
     liveFilterTimer.current = window.setTimeout(() => {
       setColumnFilters((prev) => {
-        const updated = { ...prev };
+        const updated: Record<string, ColumnFilterValue> = { ...prev };
         const trimmed = value.trim();
         if (trimmed === '') {
           delete updated[fieldName];
@@ -798,25 +1170,68 @@ export const Grid = React.memo((props: GridProps) => {
     [onSort, overlayOnSort],
   );
 
+  const buildColumnFilterOptions = React.useCallback(
+    (fieldName: string, cfg?: ColumnFilterConfig): IComboBoxOption[] => {
+    const seen = new Set<string>();
+      const opts: IComboBoxOption[] = [];
+      const push = (key: string, text?: string) => {
+        if (!key) return;
+        if (seen.has(key)) return;
+        seen.add(key);
+        opts.push({ key, text: text ?? key });
+      };
+      (cfg?.options ?? []).forEach((o) => push(o, o));
+      if (cfg?.optionFields) {
+        getDistinctOptions(cfg.optionFields).forEach((o) => push(String(o.key), o.text));
+      }
+      if (cfg?.selectAllValues) {
+        opts.unshift({ key: 'all', text: 'Select all' });
+      }
+      return opts;
+    },
+    [getDistinctOptions],
+  );
+
   const openMenuForColumn = React.useCallback(
     (gridCol: IGridColumn, target?: HTMLElement) => {
       if (!target) {
         return;
       }
-      const fieldName = gridCol.fieldName ?? gridCol.key;
+      const fieldName = (gridCol.fieldName ?? gridCol.key) ?? '';
+      const cfg = getColumnFilterConfigFor(tableKey, fieldName);
       const existing = columnFiltersState[fieldName];
-      if (Array.isArray(existing)) {
-        setMenuFilterValue(existing);
-        setMenuFilterText('');
+      let initialValue: ColumnFilterValue = '';
+      if (cfg) {
+        switch (cfg.control) {
+          case 'textEq':
+          case 'textPrefix':
+          case 'textContains':
+            initialValue = typeof existing === 'string' ? existing : '';
+            break;
+          case 'singleSelect':
+            initialValue = typeof existing === 'string' ? existing : '';
+            break;
+          case 'multiSelect':
+            initialValue = Array.isArray(existing) ? existing : [];
+            break;
+          case 'numeric':
+            initialValue = (existing as NumericFilter) ?? { mode: '>=' };
+            break;
+          case 'dateRange':
+            initialValue = (existing as DateRangeFilter) ?? {};
+            break;
+          default:
+            initialValue = typeof existing === 'string' ? existing : '';
+            break;
+        }
       } else {
-        setMenuFilterValue(existing ?? '');
-        setMenuFilterText(typeof existing === 'string' ? existing : '');
+        initialValue = typeof existing === 'string' ? existing : '';
       }
-      setMenuExtraOptions([]);
-      setMenuOptionsLoading(false);
+      setMenuFilterValue(initialValue);
+      setMenuFilterText(typeof initialValue === 'string' ? initialValue : '');
       setMenuState({ target, column: gridCol });
     },
-    [columnFiltersState],
+    [columnFiltersState, tableKey],
   );
 
   const onColumnHeaderClick = React.useCallback(
@@ -847,71 +1262,310 @@ export const Grid = React.memo((props: GridProps) => {
   );
 
   const applyFilter = React.useCallback(() => {
-    if (!menuState) {
-      return;
-    }
-    const fieldName = menuState.column.fieldName ?? menuState.column.key;
+    if (!menuState) return;
+    const fieldName = (menuState.column.fieldName ?? menuState.column.key) ?? '';
+    const cfg: ColumnFilterConfig | undefined = getColumnFilterConfigFor(tableKey, fieldName);
     setColumnFilters((prev) => {
-      const updated = { ...prev };
-      // If any values are selected in the list, prefer them (exact match semantics).
-      if (Array.isArray(menuFilterValue)) {
-        const vals = menuFilterValue.map((v) => String(v).trim()).filter((v) => v !== '');
-        if (vals.length > 0) {
-          updated[fieldName] = vals;
-          return updated;
+      const updated: Record<string, ColumnFilterValue> = { ...prev };
+      if (!cfg) {
+        const trimmed = String(menuFilterText ?? '').trim();
+        if (trimmed === '') delete updated[fieldName];
+        else updated[fieldName] = trimmed;
+        onColumnFiltersChange?.(updated);
+        return updated;
+      }
+      switch (cfg.control) {
+        case 'textEq':
+        case 'textPrefix':
+        case 'textContains': {
+          const trimmed = String(menuFilterText ?? '').trim();
+          if (trimmed === '') delete updated[fieldName];
+          else updated[fieldName] = trimmed;
+          break;
         }
+        case 'singleSelect': {
+          const val = typeof menuFilterValue === 'string' ? menuFilterValue : '';
+          if (!val) delete updated[fieldName];
+          else updated[fieldName] = val;
+          break;
+        }
+        case 'multiSelect': {
+          const vals = Array.isArray(menuFilterValue)
+            ? menuFilterValue.map((v) => String(v).trim()).filter((v) => v !== '')
+            : [];
+          if (vals.length === 0) delete updated[fieldName];
+          else updated[fieldName] = vals;
+          break;
+        }
+        case 'numeric': {
+          const val = (menuFilterValue as NumericFilter) ?? { mode: '>=' };
+          const sanitized: NumericFilter = {
+            mode: val.mode ?? '>=',
+            min: val.min ?? undefined,
+            max: val.max ?? undefined,
+          };
+          if (sanitized.mode === 'between' && sanitized.min === undefined && sanitized.max === undefined) {
+            delete updated[fieldName];
+          } else if (sanitized.mode === '>=' && sanitized.min === undefined) {
+            delete updated[fieldName];
+          } else if (sanitized.mode === '<=' && sanitized.max === undefined) {
+            delete updated[fieldName];
+          } else {
+            updated[fieldName] = sanitized;
+          }
+          break;
+        }
+        case 'dateRange': {
+          const val = (menuFilterValue as DateRangeFilter) ?? {};
+          const normalized: DateRangeFilter = {
+            from: val.from && val.from.trim() !== '' ? val.from : undefined,
+            to: val.to && val.to.trim() !== '' ? val.to : undefined,
+          };
+          if (!normalized.from && !normalized.to) delete updated[fieldName];
+          else updated[fieldName] = normalized;
+          break;
+        }
+        default:
+          break;
       }
-      // Otherwise, apply free‑text contains
-      const trimmed = String(menuFilterText ?? '').trim();
-      if (trimmed === '') {
-        delete updated[fieldName];
-      } else {
-        updated[fieldName] = trimmed;
-      }
-      if (onColumnFiltersChange) {
-        onColumnFiltersChange(updated);
-      }
+      onColumnFiltersChange?.(updated);
       return updated;
     });
     setMenuState(undefined);
-  }, [menuFilterValue, menuFilterText, menuState, onColumnFiltersChange]);
+  }, [menuFilterValue, menuFilterText, menuState, onColumnFiltersChange, tableKey]);
 
   const clearFilter = React.useCallback(() => {
     if (!menuState) {
       return;
     }
-    const fieldName = menuState.column.fieldName ?? menuState.column.key;
+    const fieldName = (menuState.column.fieldName ?? menuState.column.key) ?? '';
     setColumnFilters((prev) => {
-      if (!(fieldName in prev)) {
-        return prev;
-      }
-      const updated = { ...prev };
+      if (!(fieldName in prev)) return prev;
+      const updated: Record<string, ColumnFilterValue> = { ...prev };
       delete updated[fieldName];
-      if (onColumnFiltersChange) {
-        onColumnFiltersChange(updated);
-      }
+      onColumnFiltersChange?.(updated);
       return updated;
     });
-    const lookup = isLookupField(fieldName);
-    setMenuFilterValue(lookup ? [] : '');
+    setMenuFilterValue('');
     setMenuFilterText('');
     setMenuState(undefined);
-  }, [menuState, isLookupField, onColumnFiltersChange]);
+  }, [menuState, onColumnFiltersChange]);
 
   const menuItems = React.useMemo<IContextualMenuItem[]>(() => {
-    if (!menuState) {
-      return [];
-    }
-    const fieldName = menuState.column.fieldName ?? menuState.column.key;
-    const lookup = isLookupField(fieldName);
-    const baseOptions: IDropdownOption[] = getDistinctOptions([fieldName ?? '']);
-    const extraOptions: IDropdownOption[] = menuExtraOptions
-      .filter((v) => v && !baseOptions.some((b) => b.text.toLowerCase() === v.toLowerCase()))
-      .map((v) => ({ key: v, text: v }));
-    const valueOptions: IDropdownOption[] = [...baseOptions, ...extraOptions];
-    const filteredValueOptions = valueOptions.filter((o) =>
-      o.text.toLowerCase().includes(menuFilterText.toLowerCase()),
-    );
+    if (!menuState) return [];
+    const fieldName = (menuState.column.fieldName ?? menuState.column.key) ?? '';
+    const cfg = getColumnFilterConfigFor(tableKey, fieldName);
+    const options = cfg?.control === 'multiSelect' || cfg?.control === 'singleSelect'
+      ? buildColumnFilterOptions(fieldName, cfg)
+      : [];
+    const textVal = typeof menuFilterValue === 'string' ? menuFilterValue : '';
+    const numVal = (menuFilterValue as NumericFilter) ?? { mode: '>=' };
+    const dateVal = (menuFilterValue as DateRangeFilter) ?? {};
+    const minLen = cfg?.minLength ?? 1;
+
+    const isApplyDisabled = () => {
+      if (!cfg) {
+        return (menuFilterText ?? '').trim().length < minLen;
+      }
+      switch (cfg.control) {
+        case 'textEq':
+        case 'textPrefix':
+        case 'textContains': {
+          return (menuFilterText ?? '').trim().length < minLen;
+        }
+        case 'singleSelect': {
+          const val = typeof menuFilterValue === 'string' ? menuFilterValue.trim() : '';
+          return val.length < minLen;
+        }
+        case 'multiSelect': {
+          const vals = Array.isArray(menuFilterValue)
+            ? menuFilterValue.map((v) => String(v).trim()).filter((v) => v !== '')
+            : [];
+          return vals.length < minLen;
+        }
+        case 'numeric': {
+          const v = (menuFilterValue as NumericFilter) ?? { mode: '>=' };
+          if (v.mode === 'between') return v.min === undefined && v.max === undefined;
+          if (v.mode === '<=') return v.max === undefined;
+          return v.min === undefined;
+        }
+        case 'dateRange': {
+          const v = (menuFilterValue as DateRangeFilter) ?? {};
+          return !(v.from ?? v.to);
+        }
+        default:
+          return false;
+      }
+    };
+    const applyDisabled = isApplyDisabled();
+
+    const renderControl = () => {
+      if (!cfg) {
+        return (
+          <TextField
+            placeholder={`Filter ${menuState.column.name}`}
+            value={textVal}
+            onChange={(_, v) => {
+              const next = v ?? '';
+              setMenuFilterValue(next);
+              setMenuFilterText(next);
+            }}
+          />
+        );
+      }
+      switch (cfg.control) {
+        case 'textEq':
+        case 'textPrefix':
+        case 'textContains':
+          return (
+            <TextField
+              placeholder={`Filter ${menuState.column.name}`}
+              value={textVal}
+              onChange={(_, v) => {
+                const next = v ?? '';
+                setMenuFilterValue(next);
+                setMenuFilterText(next);
+              }}
+            />
+          );
+        case 'singleSelect':
+          return (
+            <ComboBox
+              placeholder={`Select ${menuState.column.name}`}
+              options={options}
+              allowFreeform={false}
+              autoComplete="on"
+              selectedKey={typeof menuFilterValue === 'string' ? menuFilterValue : undefined}
+              onChange={(_, opt) => setMenuFilterValue((opt?.key as string) ?? '')}
+              styles={{
+                root: { width: '100%' },
+                callout: { minWidth: 240 },
+                optionsContainer: { minWidth: 200 },
+              }}
+            />
+          );
+        case 'multiSelect':
+          return (
+          <ComboBox
+            placeholder={`Select ${menuState.column.name}`}
+            options={options}
+            multiSelect
+            allowFreeform={false}
+            autoComplete="on"
+            selectedKey={Array.isArray(menuFilterValue) ? menuFilterValue : []}
+            onChange={(_, opt) => {
+              if (!opt) return;
+              if (opt.key === 'all' && cfg.selectAllValues) {
+                setMenuFilterValue(cfg.selectAllValues);
+                return;
+              }
+              setMenuFilterValue((prev) => {
+                const current = Array.isArray(prev) ? prev.slice() : [];
+                const key = String(opt.key);
+                  const idx = current.indexOf(key);
+                  if (opt.selected) {
+                    if (idx === -1) current.push(key);
+                  } else if (idx !== -1) {
+                    current.splice(idx, 1);
+                  }
+                  if (cfg.multiLimit && current.length > cfg.multiLimit) {
+                    return current.slice(current.length - cfg.multiLimit);
+                  }
+                  return current;
+                });
+              }}
+              styles={{
+                root: { width: '100%' },
+                callout: { minWidth: 240 },
+                optionsContainer: { minWidth: 200 },
+              }}
+            />
+          );
+        case 'numeric':
+          return (
+            <Stack tokens={{ childrenGap: 8 }}>
+              <Dropdown
+                label="Options"
+                options={[
+                  { key: '>=', text: 'Greater than or equal to' },
+                  { key: '<=', text: 'Less than or equal to' },
+                  { key: 'between', text: 'Between' },
+                ]}
+                selectedKey={numVal.mode ?? '>='}
+                onChange={(_, opt) =>
+                  setMenuFilterValue((prev) => {
+                    const current = (prev as NumericFilter) ?? { mode: '>=' };
+                    const mode = typeof opt?.key === 'string' ? (opt.key as NumericFilter['mode']) : current.mode ?? '>=';
+                    return { ...current, mode };
+                  })
+                }
+              />
+              <TextField
+                label={numVal.mode === '<=' ? 'Max' : 'Min'}
+                type="number"
+                value={String(numVal.mode === '<=' ? numVal.max ?? '' : numVal.min ?? '')}
+                onChange={(_, v) =>
+                  setMenuFilterValue((prev) => {
+                    const current = (prev as NumericFilter) ?? { mode: '>=' };
+                    const mode = current.mode ?? '>=';
+                    if (mode === '<=') {
+                      return { ...current, max: v === '' ? undefined : Number(v) };
+                    }
+                    return { ...current, min: v === '' ? undefined : Number(v) };
+                  })
+                }
+              />
+              {numVal.mode === 'between' && (
+                <TextField
+                  label="Max"
+                  type="number"
+                  value={String(numVal.max ?? '')}
+                  onChange={(_, v) =>
+                    setMenuFilterValue((prev) => {
+                      const current = (prev as NumericFilter) ?? { mode: 'between' };
+                      return { ...current, max: v === '' ? undefined : Number(v) };
+                    })
+                  }
+                />
+              )}
+            </Stack>
+          );
+        case 'dateRange':
+          return (
+            <Stack tokens={{ childrenGap: 8 }}>
+              <DatePicker
+                label="Start"
+                firstDayOfWeek={DayOfWeek.Monday}
+                strings={dateStrings}
+                value={parseISODate(dateVal.from)}
+                formatDate={formatDisplayDate}
+                onSelectDate={(d) =>
+                  setMenuFilterValue((prev) => {
+                    const current = (prev as DateRangeFilter) ?? {};
+                    return { ...current, from: toISODateString(d) };
+                  })
+                }
+              />
+              <DatePicker
+                label="End"
+                firstDayOfWeek={DayOfWeek.Monday}
+                strings={dateStrings}
+                value={parseISODate(dateVal.to)}
+                formatDate={formatDisplayDate}
+                onSelectDate={(d) =>
+                  setMenuFilterValue((prev) => {
+                    const current = (prev as DateRangeFilter) ?? {};
+                    return { ...current, to: toISODateString(d) };
+                  })
+                }
+              />
+            </Stack>
+          );
+        default:
+          return null;
+      }
+    };
+
     return [
       {
         key: 'sortAsc',
@@ -925,131 +1579,34 @@ export const Grid = React.memo((props: GridProps) => {
         iconProps: { iconName: 'SortDown' },
         onClick: () => handleSort(menuState.column, true),
       },
-      {
-        key: 'divider',
-        itemType: ContextualMenuItemType.Divider,
-      },
-      {
-        key: 'filterHeader',
-        text: 'Filter',
-        iconProps: { iconName: 'Filter' },
-        disabled: true,
-        style: { fontWeight: 600 },
-      },
+      { key: 'divider', itemType: ContextualMenuItemType.Divider },
       {
         key: 'filterInput',
         onRender: () => (
-          <div style={{ padding: '0 12px 12px', width: 260 }}>
-            <Text variant="small" style={{ marginBottom: 4, display: 'block' }}>
-              Contains
-            </Text>
-            {lookup ? (
-              <>
-                <TextField
-                  placeholder={`Filter ${menuState.column.name}`}
-                  value={menuFilterText}
-                  onChange={(_, v) => {
-                    const next = v ?? '';
-                    setMenuFilterText(next);
-                    if (onLoadFilterOptions && !isTextOnlyField(fieldName)) {
-                      if (menuOptionsTimer.current) {
-                        window.clearTimeout(menuOptionsTimer.current);
-                      }
-                      menuOptionsTimer.current = window.setTimeout(() => {
-                        setMenuOptionsLoading(true);
-                        void onLoadFilterOptions(fieldName ?? '', next)
-                          .then((vals) => setMenuExtraOptions(vals ?? []))
-                          .finally(() => setMenuOptionsLoading(false));
-                      }, 350);
-                    }
-                  }}
-                />
-                {menuOptionsLoading && (
-                  <Stack horizontal verticalAlign="center" style={{ margin: '6px 0' }}>
-                    <Spinner size={SpinnerSize.small} />
-                    <Text variant="small" style={{ marginLeft: 8 }}>Searching…</Text>
-                  </Stack>
-                )}
-                <Dropdown
-                  placeholder={`Select ${menuState.column.name}`}
-                  options={filteredValueOptions}
-                  multiSelect
-                  selectedKeys={Array.isArray(menuFilterValue) ? menuFilterValue : []}
-                  onChange={(_, opt) => {
-                    const key = String(opt?.key ?? '');
-                    setMenuFilterValue((prev) => {
-                      const current = Array.isArray(prev) ? prev.slice() : [];
-                      const idx = current.indexOf(key);
-                      if (opt?.selected) {
-                        if (idx === -1) current.push(key);
-                      } else {
-                        if (idx !== -1) current.splice(idx, 1);
-                      }
-                      return current;
-                    });
-                  }}
-                  styles={{ dropdown: { width: '100%' } }}
-                />
-              </>
-            ) : (
-              <>
-                <TextField
-                  placeholder={`Filter ${menuState.column.name}`}
-                  value={menuFilterText}
-                  onChange={(_, v) => {
-                    const next = v ?? '';
-                    setMenuFilterText(next);
-                    if (onLoadFilterOptions && !isTextOnlyField(fieldName)) {
-                      if (menuOptionsTimer.current) {
-                        window.clearTimeout(menuOptionsTimer.current);
-                      }
-                      menuOptionsTimer.current = window.setTimeout(() => {
-                        setMenuOptionsLoading(true);
-                        void onLoadFilterOptions(fieldName ?? '', next)
-                          .then((vals) => setMenuExtraOptions(vals ?? []))
-                          .finally(() => setMenuOptionsLoading(false));
-                      }, 350);
-                    }
-                  }}
-                />
-                {menuOptionsLoading && (
-                  <Stack horizontal verticalAlign="center" style={{ margin: '6px 0' }}>
-                    <Spinner size={SpinnerSize.small} />
-                    <Text variant="small" style={{ marginLeft: 8 }}>Searching…</Text>
-                  </Stack>
-                )}
-                {!isTextOnlyField(fieldName) && (
-                <Dropdown
-                  placeholder={`Select ${menuState.column.name}`}
-                  options={filteredValueOptions}
-                  multiSelect
-                  selectedKeys={Array.isArray(menuFilterValue) ? menuFilterValue : (menuFilterValue ? [menuFilterValue] : [])}
-                  onChange={(_, opt) => {
-                    const key = String(opt?.key ?? '');
-                    setMenuFilterValue((prev) => {
-                      const current = Array.isArray(prev) ? prev.slice() : (prev ? [String(prev)] : []);
-                      const idx = current.indexOf(key);
-                      if (opt?.selected) {
-                        if (idx === -1) current.push(key);
-                      } else {
-                        if (idx !== -1) current.splice(idx, 1);
-                      }
-                      return current;
-                    });
-                  }}
-                  styles={{ dropdown: { width: '100%' } }}
-                />)}
-              </>
-            )}
+          <div style={{ padding: '0 12px 12px', width: 280 }}>
+            {renderControl()}
             <Stack horizontal tokens={{ childrenGap: 8 }} style={{ marginTop: 8 }}>
-              <PrimaryButton text="Apply" onClick={applyFilter} />
+              <PrimaryButton text="Apply" onClick={applyFilter} disabled={applyDisabled} />
               <DefaultButton text="Clear" onClick={clearFilter} />
             </Stack>
           </div>
         ),
       },
     ];
-  }, [applyFilter, clearFilter, handleSort, menuFilterValue, menuState, isLookupField, getDistinctOptions, scheduleLiveTextFilter]);
+  }, [
+    menuState,
+    tableKey,
+    menuFilterValue,
+    menuFilterText,
+    handleSort,
+    buildColumnFilterOptions,
+    applyFilter,
+    clearFilter,
+    dateStrings,
+    parseISODate,
+    formatDisplayDate,
+    toISODateString,
+  ]);
 
   if (datasetColumns.length === 0) {
     return <NoFields resources={resources} />;
@@ -1087,355 +1644,13 @@ export const Grid = React.memo((props: GridProps) => {
               <Stack.Item styles={{ root: { minWidth: 200 } }}>
                 <Dropdown
                   label="Search by"
-                  options={searchByOptions}
-                  selectedKey={filters.searchBy}
-                  onChange={onSearchByChange}
-                  styles={{ dropdown: { width: '100%' } }}
-                />
-              </Stack.Item>
-              {filters.searchBy === 'taskId' && (
-                <Stack.Item styles={{ root: { minWidth: 200 } }}>
-                  <TextField label="Task ID (Sale ID)" value={filters.taskId ?? ''} onChange={onTaskIdChange} />
-                </Stack.Item>
-              )}
-              {filters.searchBy === 'uprn' && (
-                <Stack.Item styles={{ root: { minWidth: 200 } }}>
-                  <TextField
-                    label="UPRN"
-                    value={filters.uprn ?? ''}
-                    onChange={onUprnChange}
-                    errorMessage={uprnError}
-                    type="tel"
-                    inputMode="numeric"
-                    pattern="[0-9]*"
-                  />
-                </Stack.Item>
-              )}
-              {filters.searchBy === 'address' && (
-                <Stack.Item styles={{ root: { minWidth: 260 } }}>
-                  <TextField label="Address" value={filters.address ?? ''} onChange={onAddressChange} errorMessage={addressError} />
-                </Stack.Item>
-              )}
-              {filters.searchBy === 'postcode' && (
-                <Stack.Item styles={{ root: { minWidth: 160 } }}>
-                  <TextField label="Post code" value={filters.postcode ?? ''} onChange={onPostcodeChange} errorMessage={postcodeError} />
-                  {showPostcodeHint && (
-                    <Text variant="small" styles={{ root: { marginTop: 4 } }}>
-                      Partial postcodes return all matching entries.
-                    </Text>
-                  )}
-                </Stack.Item>
-              )}
-              {filters.searchBy === 'billingAuthority' && (
-                <Stack.Item styles={{ root: { minWidth: 220 } }}>
-                  <Dropdown
-                    label="Billing Authority"
-                    multiSelect
-                    options={getDistinctOptions(['billingauthority'])}
-                    selectedKeys={filters.billingAuthority ?? []}
-                    onChange={(_, opt) => updateMultiSelect('billingAuthority', opt, 3)}
-                    styles={{ dropdown: { width: '100%' } }}
-                  />
-                </Stack.Item>
-              )}
-              {filters.searchBy === 'transactionDate' && (
-                <Stack horizontal tokens={{ childrenGap: 8 }} wrap>
-                  <Stack.Item styles={{ root: { minWidth: 160 } }}>
-                    <DatePicker
-                      label="Start date"
-                      firstDayOfWeek={DayOfWeek.Monday}
-                      strings={dateStrings}
-                      value={parseISODate(filters.transactionDate?.from)}
-                      formatDate={formatDisplayDate}
-                      onSelectDate={(d) => updateDateRange('transactionDate', 'from', d)}
-                    />
-                  </Stack.Item>
-                  <Stack.Item styles={{ root: { minWidth: 160 } }}>
-                    <DatePicker
-                      label="End date"
-                      firstDayOfWeek={DayOfWeek.Monday}
-                      strings={dateStrings}
-                      value={parseISODate(filters.transactionDate?.to)}
-                      formatDate={formatDisplayDate}
-                      onSelectDate={(d) => updateDateRange('transactionDate', 'to', d)}
-                    />
-                  </Stack.Item>
-                </Stack>
-              )}
-              {isNumericFilterKey(filters.searchBy) && (
-                <Stack horizontal wrap tokens={{ childrenGap: 8 }}>
-                  {(() => {
-                    const numericKey = filters.searchBy;
-                    const numericFilter = filters[numericKey] ?? { mode: '>=' };
-                    const mode = numericFilter.mode ?? '>=';
-                    const minValue = mode === '<=' ? numericFilter.max : numericFilter.min;
-                    const maxValue = numericFilter.max;
-                    return (
-                      <>
-                      <Stack.Item styles={{ root: { minWidth: 140 } }}>
-                        <Dropdown
-                          label="Mode"
-                          options={[
-                            { key: '>=', text: '>=' },
-                            { key: '<=', text: '<=' },
-                            { key: 'between', text: 'Between' },
-                          ]}
-                          selectedKey={mode}
-                          onChange={(_, o) =>
-                            updateNumericFilter(
-                              numericKey,
-                              'mode',
-                              typeof o?.key === 'string' ? o.key : mode,
-                            )
-                          }
-                        />
-                      </Stack.Item>
-                      <Stack.Item styles={{ root: { minWidth: 140 } }}>
-                        <TextField
-                          label={mode === '<=' ? 'Max' : 'Min'}
-                          type="number"
-                          value={String(minValue ?? '')}
-                          onChange={(_, v) => updateNumericFilter(numericKey, mode === '<=' ? 'max' : 'min', v ?? '')}
-                        />
-                      </Stack.Item>
-                      {mode === 'between' && (
-                        <Stack.Item styles={{ root: { minWidth: 140 } }}>
-                          <TextField
-                            label="Max"
-                            type="number"
-                            value={String(maxValue ?? '')}
-                            onChange={(_, v) => updateNumericFilter(numericKey, 'max', v ?? '')}
-                          />
-                        </Stack.Item>
-                      )}
-                      </>
-                    );
-                  })()}
-                </Stack>
-              )}
-              {filters.searchBy === 'dwellingType' && (
-                <Stack.Item styles={{ root: { minWidth: 200 } }}>
-                  <Dropdown
-                    label="Dwelling Type"
-                    multiSelect
-                    options={[{ key: 'all', text: 'Select all' }, ...getDistinctOptions(['dwellingtype'])]}
-                    selectedKeys={filters.dwellingType ?? []}
-                    onChange={(_, opt) => {
-                      if (!opt) return;
-                      if (opt.key === 'all') {
-                        updateFilters('dwellingType', getDistinctOptions(['dwellingtype']).map((o) => String(o.key)));
-                        return;
-                      }
-                      updateMultiSelect('dwellingType', opt);
-                    }}
-                    styles={{ dropdown: { width: '100%' } }}
-                  />
-                </Stack.Item>
-              )}
-              {filters.searchBy === 'flaggedForReview' && (
-                <Stack.Item styles={{ root: { minWidth: 160 } }}>
-                  <Dropdown
-                    label="Flagged for review"
-                    options={[
-                      { key: 'yes', text: 'Yes' },
-                      { key: 'no', text: 'No' },
-                    ]}
-                    selectedKey={filters.flaggedForReview}
-                    onChange={(_, opt) => updateSingleSelect('flaggedForReview', opt)}
-                  />
-                </Stack.Item>
-              )}
-              {filters.searchBy === 'reviewFlags' && (
-                <Stack.Item styles={{ root: { minWidth: 200 } }}>
-                  <Dropdown
-                    label="Review Flags"
-                    multiSelect
-                    options={[{ key: 'all', text: 'Select all' }, ...getDistinctOptions(['reviewflags'])]}
-                    selectedKeys={filters.reviewFlags ?? []}
-                    onChange={(_, opt) => {
-                      if (!opt) return;
-                      if (opt.key === 'all') {
-                        updateFilters('reviewFlags', getDistinctOptions(['reviewflags']).map((o) => String(o.key)));
-                        return;
-                      }
-                      updateMultiSelect('reviewFlags', opt);
-                    }}
-                    styles={{ dropdown: { width: '100%' } }}
-                  />
-                </Stack.Item>
-              )}
-              {filters.searchBy === 'outlierKeySale' && (
-                <Stack.Item styles={{ root: { minWidth: 200 } }}>
-                  <Dropdown
-                    label="Outlier / Key sale"
-                    multiSelect
-                    options={[
-                      { key: 'all', text: 'Select all' },
-                      { key: 'Outlier', text: 'Outlier' },
-                      { key: 'Key sale', text: 'Key sale' },
-                    ]}
-                    selectedKeys={filters.outlierKeySale ?? []}
-                    onChange={(_, opt) => {
-                      if (!opt) return;
-                      if (opt.key === 'all') {
-                        updateFilters('outlierKeySale', ['Outlier', 'Key sale']);
-                        return;
-                      }
-                      updateMultiSelect('outlierKeySale', opt);
-                    }}
-                  />
-                </Stack.Item>
-              )}
-              {filters.searchBy === 'overallFlag' && (
-                <Stack.Item styles={{ root: { minWidth: 220 } }}>
-                  <Dropdown
-                    label="Overall flag"
-                    multiSelect
-                    options={[
-                      { key: 'all', text: 'Select all' },
-                      { key: 'Exclude', text: 'Exclude' },
-                      { key: 'Exclude potential false', text: 'Exclude potential false' },
-                      { key: 'Investigate can use', text: 'Investigate can use' },
-                      { key: 'Investigate do not use', text: 'Investigate do not use' },
-                      { key: 'No flag', text: 'No flag' },
-                      { key: 'Not fully HPI adjusted', text: 'Not fully HPI adjusted' },
-                      { key: 'Remove', text: 'Remove' },
-                    ]}
-                    selectedKeys={filters.overallFlag ?? []}
-                    onChange={(_, opt) => {
-                      if (!opt) return;
-                      if (opt.key === 'all') {
-                        updateFilters('overallFlag', [
-                          'Exclude',
-                          'Exclude potential false',
-                          'Investigate can use',
-                          'Investigate do not use',
-                          'No flag',
-                          'Not fully HPI adjusted',
-                          'Remove',
-                        ]);
-                        return;
-                      }
-                      updateMultiSelect('overallFlag', opt);
-                    }}
-                  />
-                </Stack.Item>
-              )}
-              {filters.searchBy === 'summaryFlag' && (
-                <Stack.Item styles={{ root: { minWidth: 200 } }}>
-                  <TextField label="Summary flag" value={filters.summaryFlag ?? ''} onChange={onSummaryFlagChange} errorMessage={summaryFlagError} />
-                </Stack.Item>
-              )}
-              {filters.searchBy === 'taskStatus' && (
-                <Stack.Item styles={{ root: { minWidth: 200 } }}>
-                  <Dropdown
-                    label="Task status"
-                    multiSelect
-                    options={[{ key: 'all', text: 'Select all' }, ...getDistinctOptions(['taskstatus', 'status', 'statuscode'])]}
-                    selectedKeys={filters.taskStatus ?? []}
-                    onChange={(_, opt) => {
-                      if (!opt) return;
-                      if (opt.key === 'all') {
-                        updateFilters('taskStatus', getDistinctOptions(['taskstatus', 'status', 'statuscode']).map((o) => String(o.key)));
-                        return;
-                      }
-                      updateMultiSelect('taskStatus', opt);
-                    }}
-                  />
-                </Stack.Item>
-              )}
-              {filters.searchBy === 'assignedTo' && (
-                <Stack.Item styles={{ root: { minWidth: 200 } }}>
-                  <Dropdown
-                    label="Assigned to"
-                    options={getDistinctOptions(['assignedto'])}
-                    selectedKey={filters.assignedTo}
-                    onChange={(_, opt) => updateSingleSelect('assignedTo', opt)}
-                  />
-                </Stack.Item>
-              )}
-              {filters.searchBy === 'assignedDate' && (
-                <Stack horizontal tokens={{ childrenGap: 8 }} wrap>
-                  <Stack.Item styles={{ root: { minWidth: 160 } }}>
-                    <DatePicker
-                      label="Assigned start"
-                      firstDayOfWeek={DayOfWeek.Monday}
-                      strings={dateStrings}
-                      value={parseISODate(filters.assignedDate?.from)}
-                      formatDate={formatDisplayDate}
-                      onSelectDate={(d) => updateDateRange('assignedDate', 'from', d)}
-                    />
-                  </Stack.Item>
-                  <Stack.Item styles={{ root: { minWidth: 160 } }}>
-                    <DatePicker
-                      label="Assigned end"
-                      firstDayOfWeek={DayOfWeek.Monday}
-                      strings={dateStrings}
-                      value={parseISODate(filters.assignedDate?.to)}
-                      formatDate={formatDisplayDate}
-                      onSelectDate={(d) => updateDateRange('assignedDate', 'to', d)}
-                    />
-                  </Stack.Item>
-                </Stack>
-              )}
-              {filters.searchBy === 'qcAssignedTo' && (
-                <Stack.Item styles={{ root: { minWidth: 200 } }}>
-                  <Dropdown
-                    label="QC Assigned to"
-                    options={getDistinctOptions(['qcassignedto'])}
-                    selectedKey={filters.qcAssignedTo}
-                    onChange={(_, opt) => updateSingleSelect('qcAssignedTo', opt)}
-                  />
-                </Stack.Item>
-              )}
-              {filters.searchBy === 'qcAssignedDate' && (
-                <Stack horizontal tokens={{ childrenGap: 8 }} wrap>
-                  <Stack.Item styles={{ root: { minWidth: 160 } }}>
-                    <DatePicker
-                      label="QC Assigned start"
-                      firstDayOfWeek={DayOfWeek.Monday}
-                      strings={dateStrings}
-                      value={parseISODate(filters.qcAssignedDate?.from)}
-                      formatDate={formatDisplayDate}
-                      onSelectDate={(d) => updateDateRange('qcAssignedDate', 'from', d)}
-                    />
-                  </Stack.Item>
-                  <Stack.Item styles={{ root: { minWidth: 160 } }}>
-                    <DatePicker
-                      label="QC Assigned end"
-                      firstDayOfWeek={DayOfWeek.Monday}
-                      strings={dateStrings}
-                      value={parseISODate(filters.qcAssignedDate?.to)}
-                      formatDate={formatDisplayDate}
-                      onSelectDate={(d) => updateDateRange('qcAssignedDate', 'to', d)}
-                    />
-                  </Stack.Item>
-                </Stack>
-              )}
-              {filters.searchBy === 'completedDate' && (
-                <Stack horizontal tokens={{ childrenGap: 8 }} wrap>
-                  <Stack.Item styles={{ root: { minWidth: 160 } }}>
-                    <DatePicker
-                      label="Completed start"
-                      firstDayOfWeek={DayOfWeek.Monday}
-                      strings={dateStrings}
-                      value={parseISODate(filters.completedDate?.from)}
-                      formatDate={formatDisplayDate}
-                      onSelectDate={(d) => updateDateRange('completedDate', 'from', d)}
-                    />
-                  </Stack.Item>
-                  <Stack.Item styles={{ root: { minWidth: 160 } }}>
-                    <DatePicker
-                      label="Completed end"
-                      firstDayOfWeek={DayOfWeek.Monday}
-                      strings={dateStrings}
-                      value={parseISODate(filters.completedDate?.to)}
-                      formatDate={formatDisplayDate}
-                      onSelectDate={(d) => updateDateRange('completedDate', 'to', d)}
-                    />
-                  </Stack.Item>
-                </Stack>
-              )}
+              options={searchByOptions}
+              selectedKey={filters.searchBy}
+              onChange={onSearchByChange}
+              styles={{ dropdown: { width: '100%' } }}
+            />
+          </Stack.Item>
+              {renderSearchControl()}
             </Stack>
           </Stack.Item>
           <Stack.Item styles={{ root: { display: 'flex', alignItems: 'flex-end' } }}>

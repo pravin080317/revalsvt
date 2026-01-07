@@ -3,7 +3,7 @@ import { Selection, SelectionMode, IDetailsList, IObjectWithKey } from '@fluentu
 import { DetailsList as Grid, GridProps } from '../DetailsList';
 import { PCFContext } from '../context/PCFContext';
 import { ColumnConfig } from '../../Component.types';
-import { GridFilterState, createDefaultGridFilters, sanitizeFilters } from '../../Filters';
+import { GridFilterState, createDefaultGridFilters, sanitizeFilters, NumericFilter, DateRangeFilter } from '../../Filters';
 import { getProfileConfigs } from '../../config/ColumnProfiles';
 import { isLookupFieldFor } from '../../config/TableConfigs';
 import { fetchFilterOptions } from '../../services/DataService';
@@ -23,6 +23,21 @@ export interface DetailsListHostProps {
   // Bubble header filter Apply back to parent (used by external item scenarios to call API with extra params)
   onColumnFiltersApply?: (filters: Record<string, string | string[]>) => void;
 }
+
+type ColumnFilterValue = string | string[] | NumericFilter | DateRangeFilter;
+
+const toFilterValueString = (val: ColumnFilterValue | undefined): string => {
+  if (val === undefined || val === null) return '';
+  if (typeof val === 'string') return val;
+  if (Array.isArray(val)) return val.map((v) => toFilterValueString(v as ColumnFilterValue)).filter((s) => s !== '').join('|');
+  if (typeof val === 'object') return JSON.stringify(val);
+  return '';
+};
+
+const normalizeFilterArray = (val: unknown): string[] =>
+  Array.isArray(val)
+    ? val.map((v) => toFilterValueString(v as ColumnFilterValue)).filter((s) => s.trim() !== '')
+    : [];
 
 export const DetailsListHost: React.FC<DetailsListHostProps> = ({ context, onRowInvoke, onSelectionChange, externalItems, onColumnFiltersApply }) => {
   // Parse basic params
@@ -88,8 +103,25 @@ export const DetailsListHost: React.FC<DetailsListHostProps> = ({ context, onRow
 
   // State
   const [currentPage, setCurrentPage] = React.useState(0);
-  const [headerFilters, setHeaderFilters] = React.useState<Record<string, string | string[]>>({});
-  const lastAppliedFiltersRef = React.useRef<Record<string, string | string[]>>({});
+  const [headerFilters, setHeaderFilters] = React.useState<Record<string, ColumnFilterValue>>({});
+
+  const toApiHeaderFilters = React.useCallback(
+    (filters: Record<string, ColumnFilterValue>): Record<string, string | string[]> => {
+      const out: Record<string, string | string[]> = {};
+      Object.entries(filters).forEach(([k, v]) => {
+        if (Array.isArray(v)) {
+          out[k] = v.map((x) => String(x ?? ''));
+        } else if (typeof v === 'string') {
+          out[k] = v;
+        } else if (v && typeof v === 'object') {
+          out[k] = [JSON.stringify(v)];
+        }
+      });
+      return out;
+    },
+    [],
+  );
+  const lastAppliedFiltersRef = React.useRef<Record<string, ColumnFilterValue>>({});
   const [clientSort, setClientSort] = React.useState<{ name: string; sortDirection: number } | undefined>({
     name: 'taskid',
     sortDirection: 0,
@@ -125,7 +157,7 @@ export const DetailsListHost: React.FC<DetailsListHostProps> = ({ context, onRow
       if (rawLocalFilters) {
         // Stored as arrays for every field; coerce to proper types per lookup/text
         const parsed = JSON.parse(rawLocalFilters) as Record<string, string[]>;
-        const normalized: Record<string, string | string[]> = {};
+        const normalized: Record<string, ColumnFilterValue> = {};
         Object.entries(parsed).forEach(([k, v]) => {
           const keyLower = k.toLowerCase();
           const isLookup = isLookupFieldFor(String(tableKey), keyLower);
@@ -133,7 +165,7 @@ export const DetailsListHost: React.FC<DetailsListHostProps> = ({ context, onRow
         });
         lastAppliedFiltersRef.current = normalized;
         setHeaderFilters(normalized);
-        try { onColumnFiltersApply?.(normalized); } catch { /* ignore */ }
+        try { onColumnFiltersApply?.(toApiHeaderFilters(normalized)); } catch { /* ignore */ }
       }
       // Sort
       const rawLocalSort = localStorage.getItem(storageKeySort) ?? localStorage.getItem(storageKeySortNC);
@@ -165,10 +197,16 @@ export const DetailsListHost: React.FC<DetailsListHostProps> = ({ context, onRow
       if (Object.keys(headerFilters).length === 0) {
         localStorage.removeItem(storageKey); localStorage.removeItem(storageKeyNC);
       } else {
-        // Persist as arrays for all fields
+        // Persist as arrays for all fields (non-string values are stringified)
         const arrayStore: Record<string, string[]> = {};
         Object.entries(headerFilters).forEach(([k, v]) => {
-          arrayStore[k] = Array.isArray(v) ? v : [String(v ?? '')];
+          if (Array.isArray(v)) {
+            arrayStore[k] = v.map((x) => String(x ?? ''));
+          } else if (typeof v === 'string') {
+            arrayStore[k] = [v];
+          } else {
+            arrayStore[k] = [JSON.stringify(v ?? {})];
+          }
         });
         const filtersJSON = JSON.stringify(arrayStore);
         localStorage.setItem(storageKey, filtersJSON);
@@ -247,18 +285,27 @@ export const DetailsListHost: React.FC<DetailsListHostProps> = ({ context, onRow
     const t0 = performance.now();
     const ds = datasetColumns;
     const toText = (val: unknown): string => (typeof val === 'string' ? val : typeof val === 'number' || typeof val === 'boolean' ? String(val) : '');
-    const entries = Object.entries(headerFilters).filter(([, v]) => (Array.isArray(v) ? v.length > 0 : (v ?? '').toString().trim() !== ''));
+    const entries = Object.entries(headerFilters).filter(([, v]) => {
+      if (Array.isArray(v)) return v.length > 0;
+      if (typeof v === 'string') return v.trim() !== '';
+      if (v && typeof v === 'object') return JSON.stringify(v) !== '{}';
+      return false;
+    });
     if (entries.length === 0) return ids;
     const out = ids.filter((id) => {
       const rec = records[id] as unknown as Record<string, unknown>;
       return entries.every(([field, v]) => {
         const value = toText(rec[field]);
         if (Array.isArray(v)) {
-          const needles = v.map((s) => String(s).trim().toLowerCase()).filter((s) => s !== '');
+          const needles = v
+            .map((s) => toFilterValueString(s as ColumnFilterValue).trim().toLowerCase())
+            .filter((s) => s !== '');
           if (needles.length === 0) return true;
           return needles.some((n) => value.trim().toLowerCase() === n);
         }
-        return value.toLowerCase().includes(String(v).trim().toLowerCase());
+        const needle = toFilterValueString(v as ColumnFilterValue).trim().toLowerCase();
+        if (needle === '') return true;
+        return value.toLowerCase().includes(needle);
       });
     });
     const t1 = performance.now();
@@ -332,7 +379,7 @@ export const DetailsListHost: React.FC<DetailsListHostProps> = ({ context, onRow
         filters: sanitizeFilters(searchFilters),
         currentPage,
         pageSize,
-        headerFilters,
+        headerFilters: toApiHeaderFilters(headerFilters),
         clientSort,
       });
       setApimItems(res.items);
@@ -436,8 +483,8 @@ export const DetailsListHost: React.FC<DetailsListHostProps> = ({ context, onRow
       }
     },
     onColumnFiltersChange: (f) => {
-      const normalized: Record<string, string | string[]> = {};
-      Object.entries(f).forEach(([k, v]) => (normalized[k.toLowerCase()] = v));
+      const normalized: Record<string, ColumnFilterValue> = {};
+      Object.entries(f).forEach(([k, v]) => (normalized[k.toLowerCase()] = v as ColumnFilterValue));
       // No-op if unchanged to avoid duplicate apply calls
       const prev = lastAppliedFiltersRef.current;
       const same = (() => {
@@ -449,13 +496,23 @@ export const DetailsListHost: React.FC<DetailsListHostProps> = ({ context, onRow
           const av = prev[aKeys[i]];
           const bv = normalized[bKeys[i]];
           if (Array.isArray(av) || Array.isArray(bv)) {
-            const aa = Array.isArray(av) ? av : [String(av ?? '')];
-            const bb = Array.isArray(bv) ? bv : [String(bv ?? '')];
+            const aa = normalizeFilterArray(av);
+            const bb = normalizeFilterArray(bv);
             if (aa.length !== bb.length) return false;
-            for (let j = 0; j < aa.length; j++) if (String(aa[j]) !== String(bb[j])) return false;
-          } else if (String(av ?? '') !== String(bv ?? '')) {
-            return false;
+            for (let j = 0; j < aa.length; j++) if (aa[j] !== bb[j]) return false;
+            continue;
           }
+          const isObj = (val: unknown): val is Record<string, unknown> =>
+            !!val && typeof val === 'object' && !Array.isArray(val);
+          if (isObj(av) || isObj(bv)) {
+            const aJson = JSON.stringify(av ?? {});
+            const bJson = JSON.stringify(bv ?? {});
+            if (aJson !== bJson) return false;
+            continue;
+          }
+          const avText = toFilterValueString(av as ColumnFilterValue).trim();
+          const bvText = toFilterValueString(bv as ColumnFilterValue).trim();
+          if (avText !== bvText) return false;
         }
         return true;
       })();
@@ -469,7 +526,13 @@ export const DetailsListHost: React.FC<DetailsListHostProps> = ({ context, onRow
           } else {
             const arrayStore: Record<string, string[]> = {};
             Object.entries(normalized).forEach(([k, v]) => {
-              arrayStore[k] = Array.isArray(v) ? v : [String(v ?? '')];
+              if (Array.isArray(v)) {
+                arrayStore[k] = v.map((x) => String(x ?? ''));
+              } else if (typeof v === 'string') {
+                arrayStore[k] = [v];
+              } else {
+                arrayStore[k] = [JSON.stringify(v ?? {})];
+              }
             });
             const filtersJSON = JSON.stringify(arrayStore);
             localStorage.setItem(storageKey, filtersJSON);
@@ -479,7 +542,7 @@ export const DetailsListHost: React.FC<DetailsListHostProps> = ({ context, onRow
           // ignore storage failures
         }
         setCurrentPage(0);
-        try { onColumnFiltersApply?.(normalized); } catch { void 0; }
+        try { onColumnFiltersApply?.(toApiHeaderFilters(normalized)); } catch { void 0; }
       }
     },
     columnFilters: headerFilters,

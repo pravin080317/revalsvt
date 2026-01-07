@@ -31,6 +31,9 @@ import {
   Spinner,
   SpinnerSize,
   Link,
+  DatePicker,
+  DayOfWeek,
+  IDatePickerStrings,
 } from '@fluentui/react';
 import * as React from 'react';
 import { NoFields } from './NoFields';
@@ -209,10 +212,68 @@ export const Grid = React.memo((props: GridProps) => {
     setFilters(searchFilters);
   }, [searchFilters]);
 
+  const toISODateString = React.useCallback((date?: Date | null): string | undefined => {
+    if (!date) return undefined;
+    const year = date.getFullYear();
+    const month = `${date.getMonth() + 1}`.padStart(2, '0');
+    const day = `${date.getDate()}`.padStart(2, '0');
+    return `${year}-${month}-${day}`;
+  }, []);
+
+  const parseISODate = React.useCallback((value?: string): Date | undefined => {
+    if (!value) return undefined;
+    const [y, m, d] = value.split('-').map((v) => Number(v));
+    if (!y || !m || !d) return undefined;
+    return new Date(y, m - 1, d);
+  }, []);
+
+  const formatDisplayDate = React.useCallback((date?: Date | null): string => {
+    if (!date) return '';
+    const day = `${date.getDate()}`.padStart(2, '0');
+    const month = `${date.getMonth() + 1}`.padStart(2, '0');
+    const year = date.getFullYear();
+    return `${day}/${month}/${year}`;
+  }, []);
+
+  const dateStrings: IDatePickerStrings = React.useMemo(
+    () => ({
+      months: [
+        'January',
+        'February',
+        'March',
+        'April',
+        'May',
+        'June',
+        'July',
+        'August',
+        'September',
+        'October',
+        'November',
+        'December',
+      ],
+      shortMonths: ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'],
+      days: ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'],
+      shortDays: ['S', 'M', 'T', 'W', 'T', 'F', 'S'],
+      goToToday: 'Go to today',
+      prevMonthAriaLabel: 'Go to previous month',
+      nextMonthAriaLabel: 'Go to next month',
+      prevYearAriaLabel: 'Go to previous year',
+      nextYearAriaLabel: 'Go to next year',
+      prevYearRangeAriaLabel: 'Go to previous year range',
+      nextYearRangeAriaLabel: 'Go to next year range',
+      closeButtonAriaLabel: 'Close date picker',
+      isRequiredErrorMessage: 'This field is required.',
+      invalidInputErrorMessage: 'Invalid date format.',
+    }),
+    [],
+  );
+
   const searchByOptions = React.useMemo<IDropdownOption[]>(() => {
     const keys: SearchByOption[] = getSearchByOptionsFor(String(tableKey));
     const toLabel = (k: string): string => {
       switch (k) {
+        case 'saleId':
+          return 'Sale ID';
         case 'uprn':
           return 'UPRN';
         case 'taskId':
@@ -231,6 +292,8 @@ export const Grid = React.memo((props: GridProps) => {
           return 'Task Status';
         case 'source':
           return 'Source';
+        case 'qcCompletedDate':
+          return 'QC Completed date';
         default:
           return k.charAt(0).toUpperCase() + k.slice(1);
       }
@@ -292,6 +355,13 @@ export const Grid = React.memo((props: GridProps) => {
         return;
       }
       updateFilters('manualCheck', option.key as ManualCheckFilter);
+    },
+    [updateFilters],
+  );
+
+  const onSaleIdChange = React.useCallback(
+    (_: React.FormEvent<HTMLInputElement | HTMLTextAreaElement>, value?: string) => {
+      updateFilters('saleId', value ?? '');
     },
     [updateFilters],
   );
@@ -1004,12 +1074,17 @@ export const Grid = React.memo((props: GridProps) => {
               <Stack.Item styles={{ root: { minWidth: 200 } }}>
                 <Dropdown
                   label="Search by"
-                  options={searchByOptions}
-                  selectedKey={filters.searchBy}
-                  onChange={onSearchByChange}
-                  styles={{ dropdown: { width: '100%' } }}
-                />
-              </Stack.Item>
+              options={searchByOptions}
+              selectedKey={filters.searchBy}
+              onChange={onSearchByChange}
+              styles={{ dropdown: { width: '100%' } }}
+            />
+          </Stack.Item>
+              {filters.searchBy === 'saleId' && (
+                <Stack.Item styles={{ root: { minWidth: 200 } }}>
+                  <TextField label="Sale ID" value={filters.saleId ?? ''} onChange={onSaleIdChange} onKeyDown={onFieldEnter} />
+                </Stack.Item>
+              )}
               {filters.searchBy === 'uprn' && (
                 <Stack.Item styles={{ root: { minWidth: 200 } }}>
                   <TextField
@@ -1142,6 +1217,30 @@ export const Grid = React.memo((props: GridProps) => {
                     </Text>
                   )}
                 </Stack.Item>
+              )}
+              {filters.searchBy === 'qcCompletedDate' && (
+                <Stack horizontal tokens={{ childrenGap: 8 }} wrap>
+                  <Stack.Item styles={{ root: { minWidth: 160 } }}>
+                    <DatePicker
+                      label="QC Completed start"
+                      firstDayOfWeek={DayOfWeek.Monday}
+                      strings={dateStrings}
+                      value={parseISODate(filters.qcCompletedDate?.from)}
+                      formatDate={formatDisplayDate}
+                      onSelectDate={(d) => updateFilters('qcCompletedDate', { ...(filters.qcCompletedDate ?? {}), from: toISODateString(d) })}
+                    />
+                  </Stack.Item>
+                  <Stack.Item styles={{ root: { minWidth: 160 } }}>
+                    <DatePicker
+                      label="QC Completed end"
+                      firstDayOfWeek={DayOfWeek.Monday}
+                      strings={dateStrings}
+                      value={parseISODate(filters.qcCompletedDate?.to)}
+                      formatDate={formatDisplayDate}
+                      onSelectDate={(d) => updateFilters('qcCompletedDate', { ...(filters.qcCompletedDate ?? {}), to: toISODateString(d) })}
+                    />
+                  </Stack.Item>
+                </Stack>
               )}
             </Stack>
           </Stack.Item>

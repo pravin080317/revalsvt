@@ -7,6 +7,7 @@ export type SearchByOption =
   | 'street'
   | 'town'
   | 'source'
+  | 'saleId'
   | 'billingAuthority'
   | 'transactionDate'
   | 'salePrice'
@@ -23,7 +24,8 @@ export type SearchByOption =
   | 'assignedDate'
   | 'qcAssignedTo'
   | 'qcAssignedDate'
-  | 'completedDate';
+  | 'completedDate'
+  | 'qcCompletedDate';
 
 export type ManualCheckFilter = 'all' | 'yes' | 'no';
 
@@ -44,6 +46,7 @@ export interface GridFilterState {
   searchBy: SearchByOption;
   uprn?: string;
   taskId?: string;
+  saleId?: string;
   address?: string;
   buildingNameNumber?: string;
   street?: string;
@@ -66,6 +69,7 @@ export interface GridFilterState {
   assignedDate?: DateRangeFilter;
   qcAssignedTo?: string;
   qcAssignedDate?: DateRangeFilter;
+  qcCompletedDate?: DateRangeFilter;
   completedDate?: DateRangeFilter;
   source?: string;
   bacode?: string;
@@ -88,6 +92,11 @@ export const sanitizeFilters = (filters: GridFilterState): GridFilterState => {
   if (filters.taskId) {
     const trimmed = filters.taskId.trim();
     sanitized.taskId = trimmed.length > 0 ? trimmed : undefined;
+  }
+
+  if (filters.saleId) {
+    const trimmed = filters.saleId.trim();
+    sanitized.saleId = trimmed.length > 0 ? trimmed : undefined;
   }
 
   if (filters.postcode) {
@@ -213,6 +222,14 @@ export const sanitizeFilters = (filters: GridFilterState): GridFilterState => {
       }
     : undefined;
   if (qcAssignedDate && (qcAssignedDate.from || qcAssignedDate.to)) sanitized.qcAssignedDate = qcAssignedDate;
+
+  const qcCompletedDate = filters.qcCompletedDate
+    ? {
+        from: filters.qcCompletedDate.from?.trim() ?? undefined,
+        to: filters.qcCompletedDate.to?.trim() ?? undefined,
+      }
+    : undefined;
+  if (qcCompletedDate && (qcCompletedDate.from || qcCompletedDate.to)) sanitized.qcCompletedDate = qcCompletedDate;
 
   const completedDate = filters.completedDate
     ? {

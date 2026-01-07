@@ -3,11 +3,12 @@ import { DetailsList } from '../DetailsList';
 import { Selection, SelectionMode, IObjectWithKey, IDetailsList, IRefObject, Stack, Dropdown, IDropdownOption, PrimaryButton, TextField } from '@fluentui/react';
 import { SAMPLE_COLUMNS, SAMPLE_RECORDS } from '../../data/SampleData';
 import { ColumnConfig } from '../../Component.types';
-import { createDefaultGridFilters, GridFilterState } from '../../Filters';
+import { createDefaultGridFilters, DateRangeFilter, GridFilterState, NumericFilter } from '../../Filters';
 
 const EMPTY_COLUMN_CONFIGS: Record<string, ColumnConfig> = {};
 
 type EntityRecord = ComponentFramework.PropertyHelper.DataSetApi.EntityRecord & Record<string, unknown>;
+type ColumnFilterValue = string | string[] | NumericFilter | DateRangeFilter;
 
 type SampleColumn = ComponentFramework.PropertyHelper.DataSetApi.Column & { cellType?: string };
 
@@ -22,6 +23,19 @@ function buildDatasetColumns(): ComponentFramework.PropertyHelper.DataSetApi.Col
     cellType: c.cellType,
   } as unknown as SampleColumn));
 }
+
+const toFilterValueString = (val: ColumnFilterValue | undefined): string => {
+  if (val === undefined || val === null) return '';
+  if (typeof val === 'string') return val;
+  if (Array.isArray(val)) {
+    return val
+      .map((v) => toFilterValueString(v as ColumnFilterValue))
+      .filter((s) => s !== '')
+      .join('|');
+  }
+  if (typeof val === 'object') return JSON.stringify(val);
+  return '';
+};
 
 function toText(value: unknown): string {
   if (typeof value === 'string') return value;
@@ -115,7 +129,7 @@ export function SampleSearch(props: { pageSize?: number } = {}): JSX.Element {
     [],
   );
   const [filters, setFilters] = React.useState<GridFilterState>(createDefaultGridFilters());
-  const [headerFilters, setHeaderFilters] = React.useState<Record<string, string | string[]>>({});
+  const [headerFilters, setHeaderFilters] = React.useState<Record<string, ColumnFilterValue>>({});
   const updateFilters = React.useCallback((key: keyof GridFilterState, value: GridFilterState[keyof GridFilterState]) => {
     setFilters((prev) => ({ ...prev, [key]: value }));
   }, []);
@@ -159,16 +173,24 @@ export function SampleSearch(props: { pageSize?: number } = {}): JSX.Element {
       }
       if (!topOk) return false;
       // Header filters
-      const entries = Object.entries(headerFilters).filter(([_, v]) => Array.isArray(v) ? v.length > 0 : (v ?? '').toString().trim() !== '');
+      const entries = Object.entries(headerFilters).filter(([, v]) => {
+        if (Array.isArray(v)) return v.length > 0;
+        if (typeof v === 'string') return v.trim() !== '';
+        if (v && typeof v === 'object') return JSON.stringify(v) !== '{}';
+        return false;
+      });
       if (entries.length === 0) return true;
       return entries.every(([field, v]) => {
         const value = toText(rec[field]).toLowerCase().trim();
         if (Array.isArray(v)) {
-          const needles = v.map((s) => s.toLowerCase().trim()).filter((s) => s !== '');
+          const needles = v
+            .map((s) => toFilterValueString(s as ColumnFilterValue).toLowerCase().trim())
+            .filter((s) => s !== '');
           if (needles.length === 0) return true;
           return needles.some((n) => value === n);
         }
-        const needle = v.toLowerCase().trim();
+        const needle = toFilterValueString(v as ColumnFilterValue).toLowerCase().trim();
+        if (needle === '') return true;
         return value.includes(needle);
       });
     });
@@ -273,18 +295,22 @@ export function SampleSearch(props: { pageSize?: number } = {}): JSX.Element {
           itemsLoading={false}
           selectionType={SelectionMode.none}
           selection={selection}
-          onNavigate={() => undefined}
-          onSort={onSort}
-          sorting={sortedCol ? ([{ name: sortedCol, sortDirection: sortedDesc ? 1 : 0 }] as ComponentFramework.PropertyHelper.DataSetApi.SortStatus[]) : ([] as ComponentFramework.PropertyHelper.DataSetApi.SortStatus[])}
-          componentRef={componentRef as unknown as IRefObject<IDetailsList>}
-          resources={dummyResources}
-          onSearch={() => handleSearch()}
-          onColumnFiltersChange={(f) => { setHeaderFilters(f); /* apply immediately */ handleSearch(); }}
-          columnFilters={headerFilters}
-          onLoadFilterOptions={onLoadFilterOptions}
-          onNextPage={() => setPage((p) => Math.min(totalPages - 1, p + 1))}
-          onPrevPage={() => setPage((p) => Math.max(0, p - 1))}
-          onSetPage={(p) => setPage(p)}
+        onNavigate={() => undefined}
+        onSort={onSort}
+        sorting={sortedCol ? ([{ name: sortedCol, sortDirection: sortedDesc ? 1 : 0 }] as ComponentFramework.PropertyHelper.DataSetApi.SortStatus[]) : ([] as ComponentFramework.PropertyHelper.DataSetApi.SortStatus[])}
+        componentRef={componentRef as unknown as IRefObject<IDetailsList>}
+        resources={dummyResources}
+        onSearch={() => handleSearch()}
+        onColumnFiltersChange={(f) => {
+          setHeaderFilters(f as Record<string, ColumnFilterValue>);
+          // apply immediately
+          handleSearch();
+        }}
+        columnFilters={headerFilters}
+        onLoadFilterOptions={onLoadFilterOptions}
+        onNextPage={() => setPage((p) => Math.min(totalPages - 1, p + 1))}
+        onPrevPage={() => setPage((p) => Math.max(0, p - 1))}
+        onSetPage={(p) => setPage(p)}
           currentPage={page}
           totalPages={totalPages}
           canNext={page < totalPages - 1}
