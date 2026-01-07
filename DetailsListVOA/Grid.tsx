@@ -1728,19 +1728,42 @@ export const Grid = React.memo((props: GridProps) => {
             disabled={!canPrev}
             styles={{ root: { height: 32, padding: '0 8px' } }}
           />
-          {Array.from({ length: totalPages }, (_, i) => (
-            <Text
-              key={`page-${i}`}
-              style={{
-                cursor: 'pointer',
-                fontWeight: i === currentPage ? 600 : undefined,
-                fontSize: 14,
-              }}
-              onClick={() => (i === currentPage ? undefined : onSetPage(i))}
-            >
-              {i + 1}
-            </Text>
-          ))}
+          {(() => {
+            const pageItems: Array<number | 'ellipsis'> = [];
+            if (totalPages <= 5) {
+              pageItems.push(...Array.from({ length: totalPages }, (_, i) => i));
+            } else if (currentPage <= 1) {
+              pageItems.push(0, 1, 2, 'ellipsis', totalPages - 1);
+            } else if (currentPage >= totalPages - 2) {
+              pageItems.push(0, 'ellipsis', totalPages - 3, totalPages - 2, totalPages - 1);
+            } else {
+              pageItems.push(0, 'ellipsis', currentPage - 1, currentPage, currentPage + 1, 'ellipsis', totalPages - 1);
+            }
+
+            return pageItems.map((item, index) => {
+              if (item === 'ellipsis') {
+                return (
+                  <Text key={`page-ellipsis-${index}`} style={{ fontSize: 14 }}>
+                    ...
+                  </Text>
+                );
+              }
+
+              return (
+                <Text
+                  key={`page-${item}`}
+                  style={{
+                    cursor: 'pointer',
+                    fontWeight: item === currentPage ? 600 : undefined,
+                    fontSize: 14,
+                  }}
+                  onClick={() => (item === currentPage ? undefined : onSetPage(item))}
+                >
+                  {item + 1}
+                </Text>
+              );
+            });
+          })()}
           <DefaultButton
             text="Next"
             onClick={onNextPage}
@@ -1755,4 +1778,3 @@ export const Grid = React.memo((props: GridProps) => {
 });
 
 Grid.displayName = 'Grid';
-
