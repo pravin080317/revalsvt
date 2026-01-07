@@ -1,7 +1,6 @@
 import { ColumnConfig } from '../Component.types';
 
 // Built-in, code-defined column configuration profiles.
-// Makers can select a profile via the PCF property `columnConfigProfile`.
 // Any JSON provided in `columnConfig` will be merged on top to override.
 
 const SALES_COLUMNS: ColumnConfig[] = [
