@@ -25,7 +25,7 @@ const getPrefilterParams = (context: ComponentFramework.Context<IInputs>): Recor
     const text = normalizeText(raw);
     if (!text) return '';
     try {
-      const parsed = JSON.parse(text);
+      const parsed: unknown = JSON.parse(text);
       if (Array.isArray(parsed)) {
         return parsed.map((value) => String(value).trim()).filter((value) => value !== '').join(',');
       }
