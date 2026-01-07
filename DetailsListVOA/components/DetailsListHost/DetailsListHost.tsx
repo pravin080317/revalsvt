@@ -361,7 +361,7 @@ export const DetailsListHost: React.FC<DetailsListHostProps> = ({ context, onRow
   }, [externalItems]);
 
   // Initial load and reloads when critical props change (skips when externalItems are supplied)
-  const lastRef = React.useRef<{ apim?: string; apiName?: string; table?: string }>({});
+  const lastRef = React.useRef<{ apim?: string; apiName?: string; table?: string; trigger?: string }>({});
   React.useEffect(() => {
     if (externalItems !== undefined) {
       // External data path; do not load from APIM
@@ -369,9 +369,14 @@ export const DetailsListHost: React.FC<DetailsListHostProps> = ({ context, onRow
     }
     const apim = (context.parameters as unknown as Record<string, { raw?: string }>).apimEndpoint?.raw?.trim() ?? '';
     const apiName = (context.parameters as unknown as Record<string, { raw?: string }>).customApiName?.raw?.trim() ?? '';
-    const changed = lastRef.current.apim !== apim || lastRef.current.apiName !== apiName || lastRef.current.table !== tableKey || !hasLoadedApim;
+    const trigger = String((context.parameters as unknown as Record<string, { raw?: string | number }>).searchTrigger?.raw ?? '');
+    const changed = lastRef.current.apim !== apim
+      || lastRef.current.apiName !== apiName
+      || lastRef.current.table !== tableKey
+      || lastRef.current.trigger !== trigger
+      || !hasLoadedApim;
     if (!changed) return;
-    lastRef.current = { apim, apiName, table: tableKey };
+    lastRef.current = { apim, apiName, table: tableKey, trigger };
     setApimLoading(true);
     void (async () => {
       const res = await loadGridData(context, {

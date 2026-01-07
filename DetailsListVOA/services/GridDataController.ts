@@ -14,6 +14,41 @@ export interface LoadResult {
   serverDriven: boolean;
 }
 
+const getPrefilterParams = (context: ComponentFramework.Context<IInputs>): Record<string, string> => {
+  const params = context.parameters as unknown as Record<string, { raw?: string | number | boolean }>;
+  const normalizeText = (raw?: string | number | boolean): string => {
+    if (raw === undefined || raw === null) return '';
+    const text = String(raw).trim();
+    return text;
+  };
+  const normalizeMulti = (raw?: string | number | boolean): string => {
+    const text = normalizeText(raw);
+    if (!text) return '';
+    try {
+      const parsed = JSON.parse(text);
+      if (Array.isArray(parsed)) {
+        return parsed.map((value) => String(value).trim()).filter((value) => value !== '').join(',');
+      }
+    } catch {
+      // ignore JSON parsing errors; fall back to raw text
+    }
+    return text;
+  };
+  const addIfPresent = (obj: Record<string, string>, key: string, value: string): void => {
+    if (value.trim().length > 0) {
+      obj[key] = value.trim();
+    }
+  };
+  const result: Record<string, string> = {};
+  addIfPresent(result, 'searchBy', normalizeText(params.searchBy?.raw));
+  addIfPresent(result, 'billingAuthorities', normalizeMulti(params.billingAuthorities?.raw));
+  addIfPresent(result, 'caseworkers', normalizeMulti(params.caseworkers?.raw));
+  addIfPresent(result, 'workThat', normalizeText(params.workThat?.raw));
+  addIfPresent(result, 'fromDate', normalizeText(params.fromDate?.raw));
+  addIfPresent(result, 'toDate', normalizeText(params.toDate?.raw));
+  return result;
+};
+
 export async function loadGridData(
   context: ComponentFramework.Context<IInputs>,
   args: {
@@ -40,6 +75,7 @@ export async function loadGridData(
 
   const pageSize = (context.parameters as unknown as Record<string, { raw?: number }>).pageSize?.raw ?? 10;
   const apiParamsBase = buildApiParamsFor(args.tableKey, args.filters as never, args.currentPage, pageSize);
+  const prefilterParams = getPrefilterParams(context);
   const headerFilterEntries = Object.entries(args.headerFilters).filter(([_, v]) =>
     Array.isArray(v) ? v.length > 0 : (v ?? '').toString().trim() !== '',
   );
@@ -49,7 +85,12 @@ export async function loadGridData(
   const sortBy = args.clientSort?.name;
   const sortDirection = args.clientSort?.sortDirection;
   const buildParams = (page: number) => {
-    const p: Record<string, string> = { ...apiParamsBase, page: String(page), pageSize: String(pageSize) };
+    const p: Record<string, string> = {
+      ...apiParamsBase,
+      ...prefilterParams,
+      page: String(page),
+      pageSize: String(pageSize),
+    };
     if (sortBy) p.sortBy = sortBy;
     if (typeof sortDirection === 'number') p.sortDirection = String(sortDirection);
     return p;
