@@ -7,9 +7,6 @@ This project contains a Power Apps Component Framework (PCF) control that render
 - Build and run locally: `npm start`
 - Add the control to a form/app and configure properties:
   - `revalSalesDataset`: Bind to your dataset.
-  - `tableKey` (optional): Select a table profile for the current screen (defaults to `sales`). Supported keys out of the box: `sales`/`allsales`, `myassignment`, `manager`, `qa`.
-  - `customApiName` (optional): Name of your unbound Dataverse Custom API to execute. If set, the control calls this API with the built query parameters. If not set, it falls back to `apimEndpoint`.
-  - `apimEndpoint` (optional): Fully qualified URL to call when `customApiName` is not provided.
   - `pageSize` (optional): Grid page size (default 10).
   - `columnDisplayNames` (optional): JSON mapping of dataset field → display label.
   - `columnConfig` (optional): JSON array configuring column behavior (width, sorting, cell type, etc.).
@@ -47,9 +44,9 @@ Example:
 
 Each entry is matched to the dataset column by `ColName`, and supported properties are applied when rendering the grid.
 
-## Screen Profiles (tableKey)
+## Screen Profiles
 
-Use the `tableKey` property to select a profile for each screen without changing code. Profiles specify:
+Set `CONTROL_CONFIG.tableKey` to select a profile for each screen without changing code. Profiles specify:
 
 - Which columns behave as lookups (show a dropdown of distinct values in the column menu).
 - How to map the current search filters into API query parameters.
@@ -65,19 +62,19 @@ Implementation details live in `DetailsListVOA/TableConfigs.ts`:
 To add or customize a profile:
 
 1) Add a new key in `TABLE_CONFIGS` and provide `lookupFields` + `buildApiParams`.
-2) Set `tableKey` to that key on the screen using the control.
+2) Update `CONTROL_CONFIG.tableKey` to that key.
 
 ## Data Loading
 
 The control supports two data-calling modes:
 
 1) Dataverse Custom API (recommended)
-   - Set `customApiName` to the name of your unbound Custom API.
+   - Set `CONTROL_CONFIG.customApiName` to the name of your unbound Custom API.
    - The control calls `context.webAPI.execute` and passes all built parameters as strings.
    - Your Custom API can call APIM or any backend service and return a payload shaped like `TaskSearchResponse`.
 
 2) Direct HTTP endpoint
-   - If `customApiName` is not set, the control builds a URL using `apimEndpoint` and appends the same parameters.
+   - If `customApiName` is not set, the control builds a URL using `CONTROL_CONFIG.apimEndpoint` and appends the same parameters.
 
 ## Filtering and Sorting
 
@@ -96,7 +93,7 @@ The top panel contains quick filters (e.g., UPRN, Task ID, Address, Postcode, Ta
 ## Extending to Additional Screens
 
 - Create or adjust a profile in `TableConfigs.ts` for each screen.
-- Set `tableKey` on each screen instance to select the profile.
+- Update `CONTROL_CONFIG.tableKey` to select the profile.
 - If different screens need different API parameter names, implement a dedicated `buildApiParams` for each profile.
 
 ## Notes
@@ -177,11 +174,14 @@ After import, the control appears in maker under code components and can be adde
 
 Set the following properties in the app/form where the control is used:
 
+- `pageSize`, `columnDisplayNames`, `columnConfig`, `allowColumnReorder`, `perfLogsEnabled`: Tuning options; see sections above.
+
+Set the API and profile defaults in `DetailsListVOA/config/ControlConfig.ts`:
+
 - `customApiName` (optional): Name of an unbound Dataverse Custom API to execute. If set, the control uses `context.webAPI.execute` and passes built query parameters.
 - `apimEndpoint` (optional): Fully qualified HTTP URL used when `customApiName` is not provided.
 - `apiBaseUrl` (optional): Base URL used for sale details fetch on row invoke.
 - `tableKey` (optional): Profile key selecting column/parameter behavior (defaults to `sales`).
-- `pageSize`, `columnDisplayNames`, `columnConfig`, `columnConfigProfile`, `allowColumnReorder`, `perfLogsEnabled`: Tuning options; see sections above.
 
 ### Useful Scripts
 

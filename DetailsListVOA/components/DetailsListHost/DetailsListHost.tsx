@@ -5,6 +5,7 @@ import { PCFContext } from '../context/PCFContext';
 import { ColumnConfig } from '../../Component.types';
 import { GridFilterState, createDefaultGridFilters, sanitizeFilters, NumericFilter, DateRangeFilter } from '../../Filters';
 import { getProfileConfigs } from '../../config/ColumnProfiles';
+import { CONTROL_CONFIG } from '../../config/ControlConfig';
 import { isLookupFieldFor } from '../../config/TableConfigs';
 import { fetchFilterOptions } from '../../services/DataService';
 import { buildColumns } from '../../utils/ColumnsBuilder';
@@ -42,16 +43,7 @@ const normalizeFilterArray = (val: unknown): string[] =>
 export const DetailsListHost: React.FC<DetailsListHostProps> = ({ context, onRowInvoke, onSelectionChange, externalItems, onColumnFiltersApply }) => {
   // Parse basic params
   const pageSize = (context.parameters as unknown as Record<string, { raw?: number }>).pageSize?.raw ?? 10;
-  // Navigation is Canvas-owned (Option 1). Keep params for future use but do not navigate here.
-  const navigationTarget = (context.parameters as unknown as Record<string, { raw?: string }>).navigationTarget?.raw ?? '';
-  const canvasScreenName = (context.parameters as unknown as Record<string, { raw?: string }>).canvasScreenName?.raw?.trim() ?? '';
-  let tableKey = 'sales';
-  try {
-    const raw = (context.parameters as unknown as Record<string, { raw?: string }>).tableKey?.raw;
-    tableKey = raw?.trim()?.toLowerCase() ?? 'sales';
-  } catch {
-    tableKey = 'sales';
-  }
+  const tableKey = (CONTROL_CONFIG.tableKey || 'sales').trim().toLowerCase();
 
   // Column display names and configs
   const [columnDisplayNames, setColumnDisplayNames] = React.useState<Record<string, string>>({});
@@ -72,8 +64,7 @@ export const DetailsListHost: React.FC<DetailsListHostProps> = ({ context, onRow
   React.useEffect(() => {
     const raw = (context.parameters as unknown as Record<string, { raw?: string }>).columnConfig?.raw?.trim() ?? '[]';
     try {
-      const profileKey = (context.parameters as unknown as Record<string, { raw?: string }>).columnConfigProfile?.raw?.trim()?.toLowerCase();
-      const fromProfile = getProfileConfigs(profileKey);
+      const fromProfile = getProfileConfigs();
       const fromJson = JSON.parse(raw) as ColumnConfig[];
       const merged = [...fromProfile, ...fromJson];
       const map: Record<string, ColumnConfig> = {};
@@ -361,22 +352,18 @@ export const DetailsListHost: React.FC<DetailsListHostProps> = ({ context, onRow
   }, [externalItems]);
 
   // Initial load and reloads when critical props change (skips when externalItems are supplied)
-  const lastRef = React.useRef<{ apim?: string; apiName?: string; table?: string; trigger?: string }>({});
+  const lastRef = React.useRef<{ table?: string; trigger?: string }>({});
   React.useEffect(() => {
     if (externalItems !== undefined) {
       // External data path; do not load from APIM
       return;
     }
-    const apim = (context.parameters as unknown as Record<string, { raw?: string }>).apimEndpoint?.raw?.trim() ?? '';
-    const apiName = (context.parameters as unknown as Record<string, { raw?: string }>).customApiName?.raw?.trim() ?? '';
     const trigger = String((context.parameters as unknown as Record<string, { raw?: string | number }>).searchTrigger?.raw ?? '');
-    const changed = lastRef.current.apim !== apim
-      || lastRef.current.apiName !== apiName
-      || lastRef.current.table !== tableKey
+    const changed = lastRef.current.table !== tableKey
       || lastRef.current.trigger !== trigger
       || !hasLoadedApim;
     if (!changed) return;
-    lastRef.current = { apim, apiName, table: tableKey, trigger };
+    lastRef.current = { table: tableKey, trigger };
     setApimLoading(true);
     void (async () => {
       const res = await loadGridData(context, {
@@ -478,14 +465,12 @@ export const DetailsListHost: React.FC<DetailsListHostProps> = ({ context, onRow
     selectedCount,
     allowColumnReorder,
     onLoadFilterOptions: async (field, query) => {
-      const configuredEndpoint = (context.parameters as unknown as Record<string, { raw?: string }>).apimEndpoint?.raw?.trim();
-      const customApiName = (context.parameters as unknown as Record<string, { raw?: string }>).customApiName?.raw?.trim();
-      if (!query || query.trim().length === 0) return [];
-      try {
-        return await fetchFilterOptions(context, { tableKey, field, query, apimEndpoint: configuredEndpoint, customApiName });
-      } catch {
-        return [];
-      }
+    if (!query || query.trim().length === 0) return [];
+    try {
+        return await fetchFilterOptions(context, { tableKey, field, query });
+    } catch {
+      return [];
+    }
     },
     onColumnFiltersChange: (f) => {
       const normalized: Record<string, ColumnFilterValue> = {};

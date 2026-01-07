@@ -5,6 +5,7 @@ import { PCFContext } from './components/context/PCFContext';
 import { DetailsListHost } from './components/DetailsListHost/DetailsListHost';
 import { StatutorySpatialUnitBrowser } from './components/SpatialUnitBrowser/StatutorySpatialUnitBrowser';
 import { SVTSaleRecord, SDLTRecord } from './models/SVTModels';
+import { CONTROL_CONFIG } from './config/ControlConfig';
 
 export class DetailsListVOA implements ComponentFramework.ReactControl<IInputs, IOutputs> {
   private _notifyOutputChanged!: () => void;
@@ -84,7 +85,7 @@ export class DetailsListVOA implements ComponentFramework.ReactControl<IInputs, 
       return;
     }
 
-    const baseUrl = this._context.parameters.apiBaseUrl?.raw?.trim();
+    const baseUrl = CONTROL_CONFIG.apiBaseUrl?.trim();
 
     try {
       if (!baseUrl) {

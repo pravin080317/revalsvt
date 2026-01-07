@@ -6,10 +6,7 @@ import type { IInputs } from '../../generated/ManifestTypes';
 export function useExecuteSearch() {
   const ctx = useContext(PCFContext);
   const run = useCallback(
-    async (req: Omit<SearchRequest, 'apimEndpoint' | 'customApiName'> & {
-      apimEndpoint?: string;
-      customApiName?: string;
-    }) => {
+    async (req: SearchRequest) => {
       if (!ctx) {
         throw new Error('PCF Context not available. Make sure to wrap your component with PCFContext.Provider.');
       }

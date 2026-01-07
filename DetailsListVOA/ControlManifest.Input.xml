@@ -18,8 +18,6 @@
 
     <!-- Removed dataset-bound task properties for unbound API-first control -->
 
-    <!-- Optional canvas page or url to open when a row is invoked -->
-    <property name="navigationTarget" display-name-key="NavigationTarget" description-key="NavigationTarget description" of-type="SingleLine.Text" usage="input" required="false" />
     <property name="canvasScreenName" display-name-key="Canvas Screen Name" description-key="Name of the Canvas App screen to navigate to on row click (e.g., svt-sale-details)." of-type="SingleLine.Text" usage="input" required="false" default-value="" />
     <!-- Number of records shown per page -->
     <property name="pageSize" display-name-key="PageSize" description-key="PageSize description" of-type="Whole.None" usage="input" required="false" default-value="10" />
@@ -42,34 +40,6 @@
       usage="input"
       required="false"
       default-value="[]"
-    />
-    <!-- Named, code-defined column profile. If set, merges with JSON in Column Configuration. -->
-    <property
-      name="columnConfigProfile"
-      display-name-key="Column Configuration Profile"
-      description-key="Name of a built-in column profile (e.g., sales, manager)."
-      of-type="SingleLine.Text"
-      usage="input"
-      required="false"
-      default-value=""
-    />
-    <property
-      name="apiBaseUrl"
-      display-name-key="API Base URL"
-      description-key="Base URL of the SVT sales API"
-      of-type="SingleLine.Text"
-      usage="input"
-      required="false"
-      default-value=""
-    />
-    <property
-      name="apimEndpoint"
-      display-name-key="APIM Endpoint"
-      description-key="Fully qualified URL of the APIM search endpoint"
-      of-type="SingleLine.Text"
-      usage="input"
-      required="false"
-      default-value="https://api.contoso.gov.uk/revaluation/tasks"
     />
     <property
       name="searchBy"
@@ -136,24 +106,6 @@
     />
     <!-- Removed search UI configuration properties; composition is component-based -->
     <!-- Removed sample search toggle -->
-    <property
-      name="customApiName"
-      display-name-key="Custom API Name"
-      description-key="Name of the Dataverse Custom API to execute (unbound). If set, the control will call this instead of the external endpoint."
-      of-type="SingleLine.Text"
-      usage="input"
-      required="false"
-      default-value=""
-    />
-    <property
-      name="tableKey"
-      display-name-key="Table Key"
-      description-key="Logical key for table config (e.g., sales, reviews)"
-      of-type="SingleLine.Text"
-      usage="input"
-      required="false"
-      default-value="sales"
-    />
     <property
       name="allowColumnReorder"
       display-name-key="Allow Column Reorder"

@@ -1,4 +1,5 @@
 import { buildApiParamsFor } from '../config/TableConfigs';
+import { CONTROL_CONFIG } from '../config/ControlConfig';
 import { TaskSearchItem, TaskSearchResponse } from '../data/TaskSearchSample';
 import { SAMPLE_RECORDS } from '../data/SampleData';
 import { IInputs } from '../generated/ManifestTypes';
@@ -60,7 +61,7 @@ export async function loadGridData(
     clientSort?: ClientSortState;
   },
 ): Promise<LoadResult> {
-  const configuredEndpoint = (context.parameters as unknown as Record<string, { raw?: string }>).apimEndpoint?.raw?.trim();
+  const configuredEndpoint = CONTROL_CONFIG.apimEndpoint?.trim();
   const baseUrl = configuredEndpoint && configuredEndpoint.length > 0
     ? configuredEndpoint
     : 'https://api.contoso.gov.uk/revaluation/tasks';
@@ -80,7 +81,7 @@ export async function loadGridData(
     Array.isArray(v) ? v.length > 0 : (v ?? '').toString().trim() !== '',
   );
 
-  const customApiName = (context.parameters as unknown as Record<string, { raw?: string }>).customApiName?.raw?.trim();
+  const customApiName = CONTROL_CONFIG.customApiName?.trim();
 
   const sortBy = args.clientSort?.name;
   const sortDirection = args.clientSort?.sortDirection;

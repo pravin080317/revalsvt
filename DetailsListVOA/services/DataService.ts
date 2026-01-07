@@ -1,6 +1,7 @@
 import { IInputs } from '../generated/ManifestTypes';
 import { GridFilterState } from '../Filters';
 import { buildApiParamsFor } from '../config/TableConfigs';
+import { CONTROL_CONFIG } from '../config/ControlConfig';
 import { TaskSearchItem, TaskSearchResponse } from '../data/TaskSearchSample';
 
 export interface SearchRequest {
@@ -8,8 +9,6 @@ export interface SearchRequest {
   page: number;
   pageSize: number;
   filters: GridFilterState;
-  apimEndpoint?: string;
-  customApiName?: string;
 }
 
 async function executeCustomApi(
@@ -35,12 +34,13 @@ export async function executeSearch(
   context: ComponentFramework.Context<IInputs>,
   req: SearchRequest,
 ): Promise<TaskSearchResponse> {
-  const { tableKey, page, pageSize, filters, apimEndpoint, customApiName } = req;
-  const ep = apimEndpoint ?? '';
+  const { tableKey, page, pageSize, filters } = req;
+  const ep = CONTROL_CONFIG.apimEndpoint ?? '';
   const baseUrl = ep.trim().length > 0 ? ep : 'https://api.contoso.gov.uk/revaluation/tasks';
 
   const apiParams = buildApiParamsFor(tableKey, filters, page, pageSize);
 
+  const customApiName = CONTROL_CONFIG.customApiName;
   if (customApiName?.trim()) {
     // Build an unbound Custom API request with string parameters
     const actionName = customApiName.trim();
@@ -85,18 +85,17 @@ export interface FilterOptionsRequest {
   tableKey: string;
   field: string;
   query: string;
-  apimEndpoint?: string;
-  customApiName?: string;
 }
 
 export async function fetchFilterOptions(
   context: ComponentFramework.Context<IInputs>,
   req: FilterOptionsRequest,
 ): Promise<string[]> {
-  const { tableKey, field, query, apimEndpoint, customApiName } = req;
-  const ep = apimEndpoint ?? '';
+  const { tableKey, field, query } = req;
+  const ep = CONTROL_CONFIG.apimEndpoint ?? '';
   const baseUrl = ep.trim().length > 0 ? ep : 'https://api.contoso.gov.uk/revaluation/tasks';
 
+  const customApiName = CONTROL_CONFIG.customApiName;
   if ((customApiName ?? '').trim().length > 0) {
     // Unbound Custom API variant for filter suggestions
     const actionName = `${customApiName?.trim()}_FilterOptions`;
