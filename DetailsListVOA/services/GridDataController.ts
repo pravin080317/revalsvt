@@ -113,12 +113,14 @@ export async function loadGridData(
           return acc;
         }, {} as Record<string, { typeName: string; structuralProperty: number }>),
         operationType: 0,
-        operationName: customApiName!,
+        operationName: customApiName ?? '',
       }),
     };
-    Object.entries(params).forEach(([k, v]) => ((request as Record<string, unknown>)[k] = v));
+    Object.entries(params).forEach(([k, v]) => {
+      request[k] = v;
+    });
     if (headerFilterEntries.length > 0) {
-      (request as Record<string, unknown>).columnFilters = JSON.stringify(args.headerFilters);
+      request.columnFilters = JSON.stringify(args.headerFilters);
     }
     interface WebApiWithExecute { execute: (request: unknown) => Promise<Response>; }
     const result = await (context.webAPI as unknown as WebApiWithExecute).execute(request);
