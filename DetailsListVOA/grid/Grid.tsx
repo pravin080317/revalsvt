@@ -1345,11 +1345,7 @@ export const Grid = React.memo((props: GridProps) => {
             styles={{ root: { height: 32, padding: '0 8px' } }}
           />
           {(() => {
-<<<<<<< HEAD
             const pageItems: (number | 'ellipsis')[] = [];
-=======
-            const pageItems: Array<number | 'ellipsis'> = [];
->>>>>>> 9da7d00d9b1bf6985a0b9490ad03e533a1202421
             if (totalPages <= 7) {
               pageItems.push(...Array.from({ length: totalPages }, (_, i) => i));
             } else if (currentPage <= 2) {
