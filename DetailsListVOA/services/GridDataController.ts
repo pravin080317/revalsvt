@@ -2,6 +2,7 @@ import { buildApiParamsFor } from '../config/TableConfigs';
 import { CONTROL_CONFIG } from '../config/ControlConfig';
 import { TaskSearchItem, TaskSearchResponse } from '../data/TaskSearchSample';
 import { SAMPLE_TASK_RESULTS } from '../data/TaskSearchSample';
+import { SAMPLE_RECORDS } from '../data/SampleData';
 import { IInputs } from '../generated/ManifestTypes';
 import { executeUnboundCustomApi } from './CustomApi';
 import { normalizeSearchResponse } from './DataService';
@@ -98,7 +99,8 @@ export async function loadGridData(
   try {
     const firstParams = buildParams(args.currentPage);
     if (!customApiName) {
-      return { items: SAMPLE_TASK_RESULTS, totalCount: SAMPLE_TASK_RESULTS.length, serverDriven: false };
+      // When no custom API is configured, show local sample data (from SampleData)
+      return { items: SAMPLE_RECORDS as unknown as TaskSearchItem[], totalCount: SAMPLE_RECORDS.length, serverDriven: false };
     }
     const firstPayload = await execCustomApi(firstParams);
     const total = Number(firstPayload.totalCount ?? firstPayload.items?.length ?? 0);
@@ -116,6 +118,7 @@ export async function loadGridData(
     }
     return { items: firstPayload.items ?? [], totalCount: total, serverDriven, filters: responseFilters };
   } catch {
-    return { items: SAMPLE_TASK_RESULTS, totalCount: SAMPLE_TASK_RESULTS.length, serverDriven: false };
+    // On error, fall back to showing local sample data (from SampleData)
+    return { items: SAMPLE_RECORDS as unknown as TaskSearchItem[], totalCount: SAMPLE_RECORDS.length, serverDriven: false };
   }
 }
