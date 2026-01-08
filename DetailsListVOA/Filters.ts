@@ -58,7 +58,7 @@ export interface GridFilterState {
   salePrice?: NumericFilter;
   ratio?: NumericFilter;
   dwellingType?: string[];
-  flaggedForReview?: 'yes' | 'no';
+  flaggedForReview?: 'true' | 'false';
   reviewFlags?: string[];
   outlierKeySale?: string[];
   outlierRatio?: NumericFilter;

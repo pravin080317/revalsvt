@@ -3,6 +3,8 @@ import { CONTROL_CONFIG } from '../config/ControlConfig';
 import { TaskSearchItem, TaskSearchResponse } from '../data/TaskSearchSample';
 import { SAMPLE_RECORDS } from '../data/SampleData';
 import { IInputs } from '../generated/ManifestTypes';
+import { executeUnboundCustomApi } from './CustomApi';
+import { normalizeSearchResponse } from './DataService';
 
 export interface ClientSortState {
   name: string;
@@ -41,12 +43,11 @@ const getPrefilterParams = (context: ComponentFramework.Context<IInputs>): Recor
     }
   };
   const result: Record<string, string> = {};
-  addIfPresent(result, 'searchBy', normalizeText(params.searchBy?.raw));
-  addIfPresent(result, 'billingAuthorities', normalizeMulti(params.billingAuthorities?.raw));
-  addIfPresent(result, 'caseworkers', normalizeMulti(params.caseworkers?.raw));
-  addIfPresent(result, 'workThat', normalizeText(params.workThat?.raw));
-  addIfPresent(result, 'fromDate', normalizeText(params.fromDate?.raw));
-  addIfPresent(result, 'toDate', normalizeText(params.toDate?.raw));
+  addIfPresent(result, 'billingAuthority', normalizeMulti(params.billingAuthorities?.raw));
+  addIfPresent(result, 'assignedTo', normalizeMulti(params.caseworkers?.raw));
+  addIfPresent(result, 'taskStatus', normalizeMulti(params.workThat?.raw));
+  addIfPresent(result, 'assignedFromDate', normalizeText(params.fromDate?.raw));
+  addIfPresent(result, 'assignedToDate', normalizeText(params.toDate?.raw));
   return result;
 };
 
@@ -89,42 +90,21 @@ export async function loadGridData(
     const p: Record<string, string> = {
       ...apiParamsBase,
       ...prefilterParams,
-      page: String(page),
+      pageNumber: String(page + 1),
       pageSize: String(pageSize),
     };
-    if (sortBy) p.sortBy = sortBy;
-    if (typeof sortDirection === 'number') p.sortDirection = String(sortDirection);
+    if (sortBy) p.sortField = sortBy;
+    if (typeof sortDirection === 'number') p.sortDirection = sortDirection === 1 ? 'desc' : 'asc';
     return p;
   };
 
   const execCustomApi = async (params: Record<string, string>): Promise<TaskSearchResponse> => {
-    const request: Record<string, unknown> & {
-      getMetadata: () => {
-        boundParameter: null;
-        parameterTypes: Record<string, { typeName: string; structuralProperty: number }>;
-        operationType: number;
-        operationName: string;
-      };
-    } = {
-      getMetadata: () => ({
-        boundParameter: null,
-        parameterTypes: Object.keys(params).reduce((acc, key) => {
-          acc[key] = { typeName: 'Edm.String', structuralProperty: 1 };
-          return acc;
-        }, {} as Record<string, { typeName: string; structuralProperty: number }>),
-        operationType: 0,
-        operationName: customApiName ?? '',
-      }),
+    const withFilters = {
+      ...params,
+      ...(headerFilterEntries.length > 0 ? { columnFilters: JSON.stringify(args.headerFilters) } : {}),
     };
-    Object.entries(params).forEach(([k, v]) => {
-      request[k] = v;
-    });
-    if (headerFilterEntries.length > 0) {
-      request.columnFilters = JSON.stringify(args.headerFilters);
-    }
-    interface WebApiWithExecute { execute: (request: unknown) => Promise<Response>; }
-    const result = await (context.webAPI as unknown as WebApiWithExecute).execute(request);
-    return (await result.json()) as TaskSearchResponse;
+    const payload = await executeUnboundCustomApi<TaskSearchResponse>(context, customApiName ?? '', withFilters);
+    return normalizeSearchResponse(payload);
   };
 
   const execHttp = async (params: Record<string, string>): Promise<TaskSearchResponse> => {
@@ -144,7 +124,8 @@ export async function loadGridData(
     }
     const response = await fetch(url.toString(), { method: 'GET' });
     if (!response.ok) throw new Error(`APIM request failed with status ${response.status}`);
-    return (await response.json()) as TaskSearchResponse;
+    const payload = (await response.json()) as TaskSearchResponse;
+    return normalizeSearchResponse(payload);
   };
 
   try {

@@ -1,4 +1,5 @@
 export interface TaskSearchItem {
+    saleId?: string;
     uprn: string;
     taskId: string;
     taskStatus: string;
@@ -7,6 +8,21 @@ export interface TaskSearchItem {
     postcode: string;
     transactionDate: string;
     source: string;
+    billingAuthority?: string;
+    salesPrice?: number;
+    ratio?: number;
+    dwellingType?: string;
+    flaggedForReview?: boolean;
+    reviewFlags?: string[];
+    outlierRatio?: number;
+    overallFlag?: string;
+    summaryFlags?: string[];
+    assignedTo?: string[] | string;
+    assignedDate?: string;
+    taskCompletedDate?: string;
+    qcAssignedTo?: string[] | string;
+    qcAssignedDate?: string;
+    qcCompletedDate?: string;
 }
 
 export interface TaskSearchResponse {

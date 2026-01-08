@@ -211,8 +211,8 @@ const SEARCH_FIELD_CONFIGS: Record<SearchByOption, SearchFieldConfig> = {
     control: 'singleSelect',
     stateKey: 'flaggedForReview',
     options: [
-      { key: 'yes', text: 'Yes' },
-      { key: 'no', text: 'No' },
+      { key: 'true', text: 'Yes' },
+      { key: 'false', text: 'No' },
     ],
   },
   reviewFlags: {
