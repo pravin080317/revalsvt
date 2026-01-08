@@ -3,6 +3,7 @@ import { GridFilterState } from '../Filters';
 import { buildApiParamsFor } from '../config/TableConfigs';
 import { CONTROL_CONFIG } from '../config/ControlConfig';
 import { TaskSearchItem, TaskSearchResponse } from '../data/TaskSearchSample';
+import { executeUnboundCustomApi } from './CustomApi';
 
 export interface SearchRequest {
   tableKey: string;
@@ -11,24 +12,82 @@ export interface SearchRequest {
   filters: GridFilterState;
 }
 
-async function executeCustomApi(
-  context: ComponentFramework.Context<IInputs>,
-  request: unknown,
-): Promise<Response> {
-  const webApi = (context as unknown as { webAPI?: { execute?: (req: unknown) => Promise<Response> } }).webAPI;
-  if (webApi?.execute) {
-    return webApi.execute(request);
-  }
-  interface XrmLike { WebApi?: { execute?: (req: unknown) => Promise<Response>; online?: { execute?: (req: unknown) => Promise<Response> } } }
-  const xrm = (globalThis as unknown as { Xrm?: XrmLike }).Xrm;
-  if (xrm?.WebApi?.online?.execute) {
-    return xrm.WebApi.online.execute(request);
-  }
-  if (xrm?.WebApi?.execute) {
-    return xrm.WebApi.execute(request);
-  }
-  throw new Error('Web API execute is not available in this environment');
+interface SalesPageInfo {
+  pageNumber?: number;
+  pageSize?: number;
+  totalRecords?: number;
 }
+
+interface SalesApiItem {
+  saleId?: string;
+  taskId?: string;
+  uprn?: string;
+  address?: string;
+  postcode?: string;
+  billingAuthority?: string;
+  transactionDate?: string;
+  salesPrice?: number;
+  ratio?: number;
+  dwellingType?: string;
+  flaggedForReview?: boolean;
+  reviewFlags?: string[];
+  outlierRatio?: number;
+  overallFlag?: string;
+  summaryFlags?: string[];
+  taskStatus?: string;
+  assignedTo?: string[] | string;
+  assignedDate?: string | null;
+  taskCompletedDate?: string | null;
+  qcAssignedTo?: string[] | string;
+  qcAssignedDate?: string | null;
+  qcCompletedDate?: string | null;
+  source?: string;
+}
+
+interface SalesApiResponse {
+  pageInfo?: SalesPageInfo;
+  sales?: SalesApiItem[];
+}
+
+const normalizeSalesItem = (item: SalesApiItem): TaskSearchItem => ({
+  saleId: item.saleId,
+  taskId: item.taskId ?? '',
+  uprn: item.uprn ?? '',
+  taskStatus: item.taskStatus ?? '',
+  caseAssignedTo: Array.isArray(item.assignedTo) ? item.assignedTo.join(', ') : item.assignedTo ?? '',
+  address: item.address ?? '',
+  postcode: item.postcode ?? '',
+  transactionDate: item.transactionDate ?? '',
+  source: item.source ?? '',
+  billingAuthority: item.billingAuthority,
+  salesPrice: item.salesPrice,
+  ratio: item.ratio,
+  dwellingType: item.dwellingType,
+  flaggedForReview: item.flaggedForReview,
+  reviewFlags: item.reviewFlags,
+  outlierRatio: item.outlierRatio,
+  overallFlag: item.overallFlag,
+  summaryFlags: item.summaryFlags,
+  assignedTo: item.assignedTo,
+  assignedDate: item.assignedDate ?? undefined,
+  taskCompletedDate: item.taskCompletedDate ?? undefined,
+  qcAssignedTo: item.qcAssignedTo,
+  qcAssignedDate: item.qcAssignedDate ?? undefined,
+  qcCompletedDate: item.qcCompletedDate ?? undefined,
+});
+
+export const normalizeSearchResponse = (payload: TaskSearchResponse | SalesApiResponse): TaskSearchResponse => {
+  if ('sales' in payload || 'pageInfo' in payload) {
+    const sales = payload.sales ?? [];
+    return {
+      items: sales.map(normalizeSalesItem),
+      totalCount: payload.pageInfo?.totalRecords ?? sales.length,
+      page: payload.pageInfo?.pageNumber ?? 1,
+      pageSize: payload.pageInfo?.pageSize ?? sales.length,
+    };
+  }
+  return payload as TaskSearchResponse;
+};
 
 export async function executeSearch(
   context: ComponentFramework.Context<IInputs>,
@@ -42,33 +101,9 @@ export async function executeSearch(
 
   const customApiName = CONTROL_CONFIG.customApiName;
   if (customApiName?.trim()) {
-    // Build an unbound Custom API request with string parameters
     const actionName = customApiName.trim();
-    const request: Record<string, unknown> & {
-      getMetadata: () => {
-        boundParameter: null;
-        parameterTypes: Record<string, { typeName: string; structuralProperty: number }>;
-        operationType: number;
-        operationName: string;
-      };
-    } = {
-      getMetadata: () => ({
-        boundParameter: null,
-        parameterTypes: Object.keys(apiParams).reduce((acc, key) => {
-          acc[key] = { typeName: 'Edm.String', structuralProperty: 1 };
-          return acc;
-        }, {} as Record<string, { typeName: string; structuralProperty: number }>),
-        operationType: 0, // Action
-        operationName: actionName,
-      }),
-    };
-    Object.entries(apiParams).forEach(([k, v]) => {
-      (request as Record<string, unknown>)[k] = v;
-    });
-
-    const result = await executeCustomApi(context, request);
-    const payload = (await result.json()) as TaskSearchResponse;
-    return payload;
+    const payload = await executeUnboundCustomApi<TaskSearchResponse | SalesApiResponse>(context, actionName, apiParams);
+    return normalizeSearchResponse(payload);
   }
 
   const url = new URL(baseUrl);
@@ -77,8 +112,8 @@ export async function executeSearch(
   if (!response.ok) {
     throw new Error(`APIM request failed with status ${response.status}`);
   }
-  const payload = (await response.json()) as TaskSearchResponse;
-  return payload;
+  const payload = (await response.json()) as TaskSearchResponse | SalesApiResponse;
+  return normalizeSearchResponse(payload);
 }
 
 export interface FilterOptionsRequest {
@@ -99,32 +134,8 @@ export async function fetchFilterOptions(
   if ((customApiName ?? '').trim().length > 0) {
     // Unbound Custom API variant for filter suggestions
     const actionName = `${customApiName?.trim()}_FilterOptions`;
-    const request: Record<string, unknown> & {
-      getMetadata: () => {
-        boundParameter: null;
-        parameterTypes: Record<string, { typeName: string; structuralProperty: number }>;
-        operationType: number;
-        operationName: string;
-      };
-    } = {
-      getMetadata: () => ({
-        boundParameter: null,
-        parameterTypes: {
-          tableKey: { typeName: 'Edm.String', structuralProperty: 1 },
-          field: { typeName: 'Edm.String', structuralProperty: 1 },
-          query: { typeName: 'Edm.String', structuralProperty: 1 },
-        },
-        operationType: 0,
-        operationName: actionName,
-      }),
-    };
-    (request as Record<string, unknown>).tableKey = tableKey;
-    (request as Record<string, unknown>).field = field;
-    (request as Record<string, unknown>).query = query;
-
     try {
-      const resp = await executeCustomApi(context, request);
-      const payload = (await resp.json()) as { values?: string[] };
+      const payload = await executeUnboundCustomApi<{ values?: string[] }>(context, actionName, { tableKey, field, query });
       return payload.values ?? [];
     } catch {
       return [];
@@ -172,6 +183,8 @@ export function mapTaskItemToRecord(
   record.uprn = item.uprn;
   record.taskid = item.taskId;
   record.taskId = item.taskId;
+  record.saleid = item.saleId ?? '';
+  record.saleId = item.saleId ?? '';
   record.taskstatus = item.taskStatus;
   record.taskStatus = item.taskStatus;
   record.caseassignedto = item.caseAssignedTo;
@@ -181,7 +194,23 @@ export function mapTaskItemToRecord(
   record.transactiondate = formattedDate;
   record.transactionDate = formattedDate;
   record.source = item.source;
-  record.saleId = '';
+  record.billingauthority = item.billingAuthority ?? '';
+  record.billingAuthority = item.billingAuthority ?? '';
+  record.saleprice = item.salesPrice ?? '';
+  record.salesPrice = item.salesPrice ?? '';
+  record.ratio = item.ratio ?? '';
+  record.dwellingtype = item.dwellingType ?? '';
+  record.flaggedforreview = item.flaggedForReview ?? '';
+  record.reviewflags = item.reviewFlags ?? [];
+  record.outlierratio = item.outlierRatio ?? '';
+  record.overallflag = item.overallFlag ?? '';
+  record.summaryflags = item.summaryFlags ?? [];
+  record.assignedto = item.assignedTo ?? '';
+  record.assigneddate = item.assignedDate ?? '';
+  record.taskcompleteddate = item.taskCompletedDate ?? '';
+  record.qcassignedto = item.qcAssignedTo ?? '';
+  record.qcassigneddate = item.qcAssignedDate ?? '';
+  record.qccompleteddate = item.qcCompletedDate ?? '';
   return record;
 }
 

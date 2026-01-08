@@ -54,7 +54,7 @@ const SALES_COLUMN_FILTERS: Record<string, ColumnFilterConfig> = {
   saleprice: { control: 'numeric', minLength: 1 },
   ratio: { control: 'numeric', minLength: 1 },
   dwellingtype: { control: 'multiSelect', optionFields: ['dwellingtype'], selectAllValues: ['all'], minLength: 1 },
-  flaggedforreview: { control: 'singleSelect', options: ['yes', 'no'], minLength: 1 },
+  flaggedforreview: { control: 'singleSelect', options: ['true', 'false'], minLength: 1 },
   reviewflags: { control: 'multiSelect', optionFields: ['reviewflags'], minLength: 1 },
   outlierratio: { control: 'numeric', minLength: 1 },
   overallflag: {
@@ -86,60 +86,98 @@ const buildSalesParams = (
   pageSize: number,
 ): Record<string, string> => {
   const params: Record<string, string> = {
-    searchBy: filters.searchBy,
-    page: String(page),
+    pageNumber: String(page + 1),
     pageSize: String(pageSize),
   };
 
+  if (filters.source) params.source = filters.source;
   if (filters.saleId) params.saleId = filters.saleId;
   if (filters.taskId) params.taskId = filters.taskId;
   if (filters.uprn) params.uprn = filters.uprn;
   if (filters.address) params.address = filters.address;
+  if (filters.buildingNameNumber) params.buildingNameOrNumber = filters.buildingNameNumber;
+  if (filters.street) params.street = filters.street;
+  if (filters.townCity) params.town = filters.townCity;
   if (filters.postcode) params.postcode = filters.postcode;
   if (filters.billingAuthority?.length) params.billingAuthority = filters.billingAuthority.join(',');
+  if (filters.bacode) params.billingAuthorityReference = filters.bacode;
   if (filters.transactionDate) {
-    if (filters.transactionDate.from) params.transactionDateFrom = filters.transactionDate.from;
-    if (filters.transactionDate.to) params.transactionDateTo = filters.transactionDate.to;
+    const from = filters.transactionDate.from;
+    const to = filters.transactionDate.to;
+    if (from && to && from === to) {
+      params.transactionDate = from;
+    } else if (from && !to) {
+      params.transactionDate = from;
+    } else if (to && !from) {
+      params.transactionDate = to;
+    } else if (from) {
+      params.transactionDate = from;
+    }
   }
   if (filters.salePrice) {
-    params.salePriceMode = filters.salePrice.mode;
-    if (filters.salePrice.min !== undefined) params.salePriceMin = String(filters.salePrice.min);
-    if (filters.salePrice.max !== undefined) params.salePriceMax = String(filters.salePrice.max);
+    const { mode, min, max } = filters.salePrice;
+    if (mode === '>=' && min !== undefined) {
+      params.salesPrice = String(min);
+      params.salesPriceOperator = 'GE';
+    } else if (mode === '<=' && max !== undefined) {
+      params.salesPrice = String(max);
+      params.salesPriceOperator = 'LE';
+    } else if (mode === 'between') {
+      if (min !== undefined) {
+        params.salesPrice = String(min);
+        params.salesPriceOperator = 'GE';
+      } else if (max !== undefined) {
+        params.salesPrice = String(max);
+        params.salesPriceOperator = 'LE';
+      }
+    }
   }
   if (filters.ratio) {
-    params.ratioMode = filters.ratio.mode;
-    if (filters.ratio.min !== undefined) params.ratioMin = String(filters.ratio.min);
-    if (filters.ratio.max !== undefined) params.ratioMax = String(filters.ratio.max);
+    if (filters.ratio.mode === '>=' && filters.ratio.min !== undefined) {
+      params.ratio = String(filters.ratio.min);
+    } else if (filters.ratio.mode === '<=' && filters.ratio.max !== undefined) {
+      params.ratio = String(filters.ratio.max);
+    } else if (filters.ratio.mode === 'between') {
+      if (filters.ratio.min !== undefined) {
+        params.ratio = String(filters.ratio.min);
+      } else if (filters.ratio.max !== undefined) {
+        params.ratio = String(filters.ratio.max);
+      }
+    }
   }
   if (filters.dwellingType?.length) params.dwellingType = filters.dwellingType.join(',');
   if (filters.flaggedForReview) params.flaggedForReview = filters.flaggedForReview;
-  if (filters.reviewFlags?.length) params.reviewFlags = filters.reviewFlags.join(',');
+  if (filters.reviewFlags?.length) params.reviewFlag = filters.reviewFlags.join(',');
   if (filters.outlierKeySale?.length) params.outlierKeySale = filters.outlierKeySale.join(',');
   if (filters.outlierRatio) {
-    params.outlierRatioMode = filters.outlierRatio.mode;
-    if (filters.outlierRatio.min !== undefined) params.outlierRatioMin = String(filters.outlierRatio.min);
-    if (filters.outlierRatio.max !== undefined) params.outlierRatioMax = String(filters.outlierRatio.max);
+    if (filters.outlierRatio.mode === '>=' && filters.outlierRatio.min !== undefined) {
+      params.outlierRatio = String(filters.outlierRatio.min);
+    } else if (filters.outlierRatio.mode === '<=' && filters.outlierRatio.max !== undefined) {
+      params.outlierRatio = String(filters.outlierRatio.max);
+    } else if (filters.outlierRatio.mode === 'between') {
+      if (filters.outlierRatio.min !== undefined) {
+        params.outlierRatio = String(filters.outlierRatio.min);
+      } else if (filters.outlierRatio.max !== undefined) {
+        params.outlierRatio = String(filters.outlierRatio.max);
+      }
+    }
   }
   if (filters.overallFlag?.length) params.overallFlag = filters.overallFlag.join(',');
   if (filters.summaryFlag) params.summaryFlag = filters.summaryFlag;
   if (filters.taskStatus?.length) params.taskStatus = filters.taskStatus.join(',');
   if (filters.assignedTo) params.assignedTo = filters.assignedTo;
   if (filters.assignedDate) {
-    if (filters.assignedDate.from) params.assignedDateFrom = filters.assignedDate.from;
-    if (filters.assignedDate.to) params.assignedDateTo = filters.assignedDate.to;
+    if (filters.assignedDate.from) params.assignedFromDate = filters.assignedDate.from;
+    if (filters.assignedDate.to) params.assignedToDate = filters.assignedDate.to;
   }
   if (filters.qcAssignedTo) params.qcAssignedTo = filters.qcAssignedTo;
   if (filters.qcAssignedDate) {
-    if (filters.qcAssignedDate.from) params.qcAssignedDateFrom = filters.qcAssignedDate.from;
-    if (filters.qcAssignedDate.to) params.qcAssignedDateTo = filters.qcAssignedDate.to;
+    if (filters.qcAssignedDate.from) params.qcAssignedFromDate = filters.qcAssignedDate.from;
+    if (filters.qcAssignedDate.to) params.qcAssignedToDate = filters.qcAssignedDate.to;
   }
   if (filters.qcCompletedDate) {
-    if (filters.qcCompletedDate.from) params.qcCompletedDateFrom = filters.qcCompletedDate.from;
-    if (filters.qcCompletedDate.to) params.qcCompletedDateTo = filters.qcCompletedDate.to;
-  }
-  if (filters.completedDate) {
-    if (filters.completedDate.from) params.completedDateFrom = filters.completedDate.from;
-    if (filters.completedDate.to) params.completedDateTo = filters.completedDate.to;
+    if (filters.qcCompletedDate.from) params.qcCompleteFromDate = filters.qcCompletedDate.from;
+    if (filters.qcCompletedDate.to) params.qcCompleteToDate = filters.qcCompletedDate.to;
   }
 
   return params;
