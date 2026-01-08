@@ -47,6 +47,7 @@ interface SalesApiItem {
 interface SalesApiResponse {
   pageInfo?: SalesPageInfo;
   sales?: SalesApiItem[];
+  filters?: Record<string, string | string[]>;
 }
 
 const normalizeSalesItem = (item: SalesApiItem): TaskSearchItem => ({
@@ -84,6 +85,7 @@ export const normalizeSearchResponse = (payload: TaskSearchResponse | SalesApiRe
       totalCount: payload.pageInfo?.totalRecords ?? sales.length,
       page: payload.pageInfo?.pageNumber ?? 1,
       pageSize: payload.pageInfo?.pageSize ?? sales.length,
+      filters: payload.filters,
     };
   }
   return payload as TaskSearchResponse;

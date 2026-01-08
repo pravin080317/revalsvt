@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-return */
 import * as React from 'react';
 import { Selection, SelectionMode, IDetailsList, IObjectWithKey } from '@fluentui/react';
 import { DetailsList as Grid, GridProps } from '../DetailsList';
@@ -39,6 +40,73 @@ const normalizeFilterArray = (val: unknown): string[] =>
   Array.isArray(val)
     ? val.map((v) => toFilterValueString(v as ColumnFilterValue)).filter((s) => s.trim() !== '')
     : [];
+
+const isPlainObject = (val: unknown): val is Record<string, unknown> =>
+  !!val && typeof val === 'object' && !Array.isArray(val);
+
+const parseFilterValue = (raw: string): ColumnFilterValue => {
+  const trimmed = raw.trim();
+  if (!trimmed) return '';
+  if ((trimmed.startsWith('{') && trimmed.endsWith('}')) || (trimmed.startsWith('[') && trimmed.endsWith(']'))) {
+    try {
+      const parsed = JSON.parse(trimmed) as unknown;
+      if (Array.isArray(parsed)) return parsed.map((v) => String(v));
+      if (isPlainObject(parsed)) return parsed as ColumnFilterValue;
+    } catch {
+      // ignore JSON parse issues
+    }
+  }
+  return trimmed;
+};
+
+const normalizeApiFilters = (filters?: Record<string, unknown>): Record<string, ColumnFilterValue> | undefined => {
+  if (!filters) return undefined;
+  const normalized: Record<string, ColumnFilterValue> = {};
+  Object.entries(filters).forEach(([key, value]) => {
+    const lowerKey = key.toLowerCase();
+    if (value === undefined || value === null) return;
+    if (Array.isArray(value)) {
+      const arr = value.map((v) => String(v ?? '')).filter((v) => v.trim() !== '');
+      if (arr.length > 0) normalized[lowerKey] = arr;
+      return;
+    }
+    if (typeof value === 'string') {
+      const parsed = parseFilterValue(value);
+      if (parsed !== '') normalized[lowerKey] = parsed;
+      return;
+    }
+    if (isPlainObject(value)) {
+      normalized[lowerKey] = value as ColumnFilterValue;
+    }
+  });
+  return normalized;
+};
+
+const areFiltersEqual = (a: Record<string, ColumnFilterValue>, b: Record<string, ColumnFilterValue>): boolean => {
+  const aKeys = Object.keys(a).sort();
+  const bKeys = Object.keys(b).sort();
+  if (aKeys.length !== bKeys.length) return false;
+  for (let i = 0; i < aKeys.length; i++) {
+    if (aKeys[i] !== bKeys[i]) return false;
+    const av = a[aKeys[i]];
+    const bv = b[bKeys[i]];
+    if (Array.isArray(av) || Array.isArray(bv)) {
+      const aa = normalizeFilterArray(av);
+      const bb = normalizeFilterArray(bv);
+      if (aa.length !== bb.length) return false;
+      for (let j = 0; j < aa.length; j++) if (aa[j] !== bb[j]) return false;
+      continue;
+    }
+    if (isPlainObject(av) || isPlainObject(bv)) {
+      if (JSON.stringify(av ?? {}) !== JSON.stringify(bv ?? {})) return false;
+      continue;
+    }
+    const avText = toFilterValueString(av as ColumnFilterValue).trim();
+    const bvText = toFilterValueString(bv as ColumnFilterValue).trim();
+    if (avText !== bvText) return false;
+  }
+  return true;
+};
 
 export const DetailsListHost: React.FC<DetailsListHostProps> = ({ context, onRowInvoke, onSelectionChange, externalItems, onColumnFiltersApply }) => {
   // Parse basic params
@@ -379,6 +447,12 @@ export const DetailsListHost: React.FC<DetailsListHostProps> = ({ context, onRow
       setServerDriven(res.serverDriven);
       setApimLoading(false);
       setHasLoadedApim(true);
+      const apiFilters = normalizeApiFilters(res.filters);
+      if (apiFilters && !areFiltersEqual(apiFilters, lastAppliedFiltersRef.current)) {
+        lastAppliedFiltersRef.current = apiFilters;
+        setHeaderFilters(apiFilters);
+        setCurrentPage(0);
+      }
     })();
   }, [context, tableKey, searchFilters, currentPage, pageSize, headerFilters, clientSort, hasLoadedApim]);
 
@@ -465,47 +539,19 @@ export const DetailsListHost: React.FC<DetailsListHostProps> = ({ context, onRow
     selectedCount,
     allowColumnReorder,
     onLoadFilterOptions: async (field, query) => {
-    if (!query || query.trim().length === 0) return [];
-    try {
+      if (!query || query.trim().length === 0) return [];
+      try {
         return await fetchFilterOptions(context, { tableKey, field, query });
-    } catch {
-      return [];
-    }
+      } catch {
+        return [];
+      }
     },
     onColumnFiltersChange: (f) => {
       const normalized: Record<string, ColumnFilterValue> = {};
       Object.entries(f).forEach(([k, v]) => (normalized[k.toLowerCase()] = v as ColumnFilterValue));
       // No-op if unchanged to avoid duplicate apply calls
       const prev = lastAppliedFiltersRef.current;
-      const same = (() => {
-        const aKeys = Object.keys(prev).sort();
-        const bKeys = Object.keys(normalized).sort();
-        if (aKeys.length !== bKeys.length) return false;
-        for (let i = 0; i < aKeys.length; i++) {
-          if (aKeys[i] !== bKeys[i]) return false;
-          const av = prev[aKeys[i]];
-          const bv = normalized[bKeys[i]];
-          if (Array.isArray(av) || Array.isArray(bv)) {
-            const aa = normalizeFilterArray(av);
-            const bb = normalizeFilterArray(bv);
-            if (aa.length !== bb.length) return false;
-            for (let j = 0; j < aa.length; j++) if (aa[j] !== bb[j]) return false;
-            continue;
-          }
-          const isObj = (val: unknown): val is Record<string, unknown> =>
-            !!val && typeof val === 'object' && !Array.isArray(val);
-          if (isObj(av) || isObj(bv)) {
-            const aJson = JSON.stringify(av ?? {});
-            const bJson = JSON.stringify(bv ?? {});
-            if (aJson !== bJson) return false;
-            continue;
-          }
-          const avText = toFilterValueString(av as ColumnFilterValue).trim();
-          const bvText = toFilterValueString(bv as ColumnFilterValue).trim();
-          if (avText !== bvText) return false;
-        }
-        return true;
-      })();
+      const same = areFiltersEqual(prev, normalized);
       if (!same) {
         lastAppliedFiltersRef.current = normalized;
         setHeaderFilters(normalized);
