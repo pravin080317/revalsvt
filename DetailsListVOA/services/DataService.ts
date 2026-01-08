@@ -2,6 +2,7 @@ import { IInputs } from '../generated/ManifestTypes';
 import { GridFilterState } from '../Filters';
 import { buildApiParamsFor } from '../config/TableConfigs';
 import { CONTROL_CONFIG } from '../config/ControlConfig';
+import { SAMPLE_RECORDS, SampleRecord, SampleRecordValue } from '../data/SampleData';
 import { TaskSearchItem, TaskSearchResponse, SAMPLE_TASK_RESULTS } from '../data/TaskSearchSample';
 import { executeUnboundCustomApi } from './CustomApi';
 
@@ -49,6 +50,78 @@ interface SalesApiResponse {
   sales?: SalesApiItem[];
   filters?: Record<string, string | string[]>;
 }
+
+const sampleValueToString = (value: SampleRecordValue): string => {
+  if (typeof value === 'string') return value;
+  if (typeof value === 'number' || typeof value === 'boolean') return value.toString();
+  return '';
+};
+
+const sampleValueToOptionalString = (value: SampleRecordValue): string | undefined => {
+  const text = sampleValueToString(value);
+  return text ? text : undefined;
+};
+
+const sampleValueToNumber = (value: SampleRecordValue): number | undefined => {
+  if (typeof value === 'number') return value;
+  if (typeof value === 'string') {
+    const parsed = Number(value);
+    return Number.isNaN(parsed) ? undefined : parsed;
+  }
+  return undefined;
+};
+
+const sampleValueToStringArray = (value: SampleRecordValue): string[] | undefined => {
+  if (Array.isArray(value)) {
+    return value.map((entry) => sampleValueToString(entry));
+  }
+  const text = sampleValueToOptionalString(value);
+  return text ? [text] : undefined;
+};
+
+const sampleValueToStringOrArray = (value: SampleRecordValue): string | string[] | undefined => {
+  if (Array.isArray(value)) {
+    return value.map((entry) => sampleValueToString(entry));
+  }
+  return sampleValueToOptionalString(value);
+};
+
+const sampleValueToBoolean = (value: SampleRecordValue): boolean | undefined => {
+  if (typeof value === 'boolean') return value;
+  if (typeof value === 'string') {
+    const normalized = value.trim().toLowerCase();
+    if (['yes', 'true', 'y', '1'].includes(normalized)) return true;
+    if (['no', 'false', 'n', '0'].includes(normalized)) return false;
+  }
+  return undefined;
+};
+
+const mapSampleRecordToTaskSearchItem = (record: SampleRecord): TaskSearchItem => ({
+  saleId: sampleValueToOptionalString(record.saleid),
+  taskId: sampleValueToString(record.taskid),
+  uprn: sampleValueToString(record.uprn),
+  taskStatus: sampleValueToString(record.taskstatus),
+  caseAssignedTo: sampleValueToString(record.assignedto),
+  address: sampleValueToString(record.address),
+  postcode: sampleValueToString(record.postcode),
+  transactionDate: sampleValueToString(record.transactiondate),
+  source: sampleValueToString(record.source),
+  billingAuthority: sampleValueToOptionalString(record.billingauthority),
+  salesPrice: sampleValueToNumber(record.saleprice),
+  ratio: sampleValueToNumber(record.ratio),
+  dwellingType: sampleValueToOptionalString(record.dwellingtype),
+  flaggedForReview: sampleValueToBoolean(record.flaggedforreview),
+  reviewFlags: sampleValueToStringArray(record.reviewflags),
+  outlierRatio: sampleValueToNumber(record.outlierratio),
+  overallFlag: sampleValueToOptionalString(record.overallflag),
+  summaryFlags: sampleValueToStringArray(record.summaryflags),
+  assignedTo: sampleValueToStringOrArray(record.assignedto),
+  assignedDate: sampleValueToOptionalString(record.assigneddate),
+  taskCompletedDate: sampleValueToOptionalString(record.taskcompleteddate ?? record.completeddate),
+  qcAssignedTo: sampleValueToStringOrArray(record.qcassignedto),
+  qcAssignedDate: sampleValueToOptionalString(record.qcassigneddate),
+  qcCompletedDate: sampleValueToOptionalString(record.qccompleteddate),
+});
 
 const normalizeSalesItem = (item: SalesApiItem): TaskSearchItem => ({
   saleId: item.saleId,
@@ -113,9 +186,10 @@ export async function executeSearch(
     const payload = await executeUnboundCustomApi<TaskSearchResponse | SalesApiResponse>(context, customApiName, apiParams);
     return normalizeSearchResponse(payload);
   } catch {
+    const fallbackItems = SAMPLE_RECORDS.map(mapSampleRecordToTaskSearchItem);
     return {
-      items: SAMPLE_TASK_RESULTS,
-      totalCount: SAMPLE_TASK_RESULTS.length,
+      items: fallbackItems,
+      totalCount: fallbackItems.length,
       page,
       pageSize,
     };
