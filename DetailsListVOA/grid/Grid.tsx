@@ -35,6 +35,7 @@ import {
   DayOfWeek,
   IDatePickerStrings,
 } from '@fluentui/react';
+/* eslint-disable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-return, @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-redundant-type-constituents */
 import * as React from 'react';
 import { NoFields } from './NoFields';
 import { RecordsColumns } from '../config/ManifestConstants';

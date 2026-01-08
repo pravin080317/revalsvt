@@ -30,6 +30,7 @@ export interface TaskSearchResponse {
     totalCount: number;
     page: number;
     pageSize: number;
+    filters?: Record<string, string | string[]>;
 }
 
 export const SAMPLE_TASK_RESULTS: TaskSearchItem[] = [

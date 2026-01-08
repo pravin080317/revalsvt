@@ -15,6 +15,7 @@ export interface LoadResult {
   items: TaskSearchItem[];
   totalCount: number;
   serverDriven: boolean;
+  filters?: Record<string, string | string[]>;
 }
 
 const getPrefilterParams = (context: ComponentFramework.Context<IInputs>): Record<string, string> => {
@@ -62,7 +63,7 @@ export async function loadGridData(
     clientSort?: ClientSortState;
   },
 ): Promise<LoadResult> {
-  const pageSize = (context.parameters as unknown as Record<string, { raw?: number }>).pageSize?.raw ?? 10;
+  const pageSize = args.pageSize ?? (context.parameters as unknown as Record<string, { raw?: number }>).pageSize?.raw ?? 10;
   const apiParamsBase = buildApiParamsFor(args.tableKey, args.filters as never, args.currentPage, pageSize);
   const prefilterParams = getPrefilterParams(context);
   const headerFilterEntries = Object.entries(args.headerFilters).filter(([_, v]) =>
@@ -102,6 +103,7 @@ export async function loadGridData(
     const firstPayload = await execCustomApi(firstParams);
     const total = Number(firstPayload.totalCount ?? firstPayload.items?.length ?? 0);
     const serverDriven = total > 2000;
+    const responseFilters = firstPayload.filters;
     if (!serverDriven && total > 0 && (firstPayload.items?.length ?? 0) < total) {
       const pages = Math.ceil(total / pageSize);
       const all: TaskSearchItem[] = [...(firstPayload.items ?? [])];
@@ -110,9 +112,9 @@ export async function loadGridData(
         const payload = await execCustomApi(buildParams(p));
         all.push(...(payload.items ?? []));
       }
-      return { items: all, totalCount: total, serverDriven: false };
+      return { items: all, totalCount: total, serverDriven: false, filters: responseFilters };
     }
-    return { items: firstPayload.items ?? [], totalCount: total, serverDriven };
+    return { items: firstPayload.items ?? [], totalCount: total, serverDriven, filters: responseFilters };
   } catch {
     return { items: SAMPLE_TASK_RESULTS, totalCount: SAMPLE_TASK_RESULTS.length, serverDriven: false };
   }
