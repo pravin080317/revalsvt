@@ -1,7 +1,7 @@
 import { buildApiParamsFor } from '../config/TableConfigs';
 import { CONTROL_CONFIG } from '../config/ControlConfig';
 import { TaskSearchItem, TaskSearchResponse } from '../data/TaskSearchSample';
-import { SAMPLE_RECORDS } from '../data/SampleData';
+import { SAMPLE_TASK_RESULTS } from '../data/TaskSearchSample';
 import { IInputs } from '../generated/ManifestTypes';
 import { executeUnboundCustomApi } from './CustomApi';
 import { normalizeSearchResponse } from './DataService';
@@ -62,19 +62,6 @@ export async function loadGridData(
     clientSort?: ClientSortState;
   },
 ): Promise<LoadResult> {
-  const configuredEndpoint = CONTROL_CONFIG.apimEndpoint?.trim();
-  const baseUrl = configuredEndpoint && configuredEndpoint.length > 0
-    ? configuredEndpoint
-    : 'https://api.contoso.gov.uk/revaluation/tasks';
-
-  let requestUrl: URL;
-  try {
-    requestUrl = new URL(baseUrl);
-  } catch {
-    // Fall back to showing local SAMPLE_RECORDS via host's sample path
-    return { items: [], totalCount: SAMPLE_RECORDS.length, serverDriven: false };
-  }
-
   const pageSize = (context.parameters as unknown as Record<string, { raw?: number }>).pageSize?.raw ?? 10;
   const apiParamsBase = buildApiParamsFor(args.tableKey, args.filters as never, args.currentPage, pageSize);
   const prefilterParams = getPrefilterParams(context);
@@ -82,7 +69,7 @@ export async function loadGridData(
     Array.isArray(v) ? v.length > 0 : (v ?? '').toString().trim() !== '',
   );
 
-  const customApiName = CONTROL_CONFIG.customApiName?.trim();
+  const customApiName = CONTROL_CONFIG.customApiName?.trim() ?? '';
 
   const sortBy = args.clientSort?.name;
   const sortDirection = args.clientSort?.sortDirection;
@@ -103,34 +90,16 @@ export async function loadGridData(
       ...params,
       ...(headerFilterEntries.length > 0 ? { columnFilters: JSON.stringify(args.headerFilters) } : {}),
     };
-    const payload = await executeUnboundCustomApi<TaskSearchResponse>(context, customApiName ?? '', withFilters);
-    return normalizeSearchResponse(payload);
-  };
-
-  const execHttp = async (params: Record<string, string>): Promise<TaskSearchResponse> => {
-    const url = new URL(baseUrl);
-    Object.entries(params).forEach(([k, v]) => url.searchParams.set(k, v));
-    if (headerFilterEntries.length > 0) {
-      headerFilterEntries.forEach(([field, val]) => {
-        if (Array.isArray(val)) {
-          val.forEach((v) => {
-            if ((v ?? '').toString().trim() !== '') url.searchParams.append(`filter[${field}][]`, String(v));
-          });
-        } else {
-          const trimmed = (val ?? '').toString().trim();
-          if (trimmed !== '') url.searchParams.append(`filter[${field}]`, trimmed);
-        }
-      });
-    }
-    const response = await fetch(url.toString(), { method: 'GET' });
-    if (!response.ok) throw new Error(`APIM request failed with status ${response.status}`);
-    const payload = (await response.json()) as TaskSearchResponse;
+    const payload = await executeUnboundCustomApi<TaskSearchResponse>(context, customApiName, withFilters);
     return normalizeSearchResponse(payload);
   };
 
   try {
     const firstParams = buildParams(args.currentPage);
-    const firstPayload = customApiName ? await execCustomApi(firstParams) : await execHttp(firstParams);
+    if (!customApiName) {
+      return { items: SAMPLE_TASK_RESULTS, totalCount: SAMPLE_TASK_RESULTS.length, serverDriven: false };
+    }
+    const firstPayload = await execCustomApi(firstParams);
     const total = Number(firstPayload.totalCount ?? firstPayload.items?.length ?? 0);
     const serverDriven = total > 2000;
     if (!serverDriven && total > 0 && (firstPayload.items?.length ?? 0) < total) {
@@ -138,14 +107,13 @@ export async function loadGridData(
       const all: TaskSearchItem[] = [...(firstPayload.items ?? [])];
       for (let p = 0; p < pages; p++) {
         if (p === args.currentPage) continue;
-        const payload = customApiName ? await execCustomApi(buildParams(p)) : await execHttp(buildParams(p));
+        const payload = await execCustomApi(buildParams(p));
         all.push(...(payload.items ?? []));
       }
       return { items: all, totalCount: total, serverDriven: false };
     }
     return { items: firstPayload.items ?? [], totalCount: total, serverDriven };
   } catch {
-    // Fall back to showing local SAMPLE_RECORDS via host's sample path
-    return { items: [], totalCount: SAMPLE_RECORDS.length, serverDriven: false };
+    return { items: SAMPLE_TASK_RESULTS, totalCount: SAMPLE_TASK_RESULTS.length, serverDriven: false };
   }
 }

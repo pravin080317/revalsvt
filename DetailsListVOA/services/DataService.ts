@@ -2,7 +2,7 @@ import { IInputs } from '../generated/ManifestTypes';
 import { GridFilterState } from '../Filters';
 import { buildApiParamsFor } from '../config/TableConfigs';
 import { CONTROL_CONFIG } from '../config/ControlConfig';
-import { TaskSearchItem, TaskSearchResponse } from '../data/TaskSearchSample';
+import { TaskSearchItem, TaskSearchResponse, SAMPLE_TASK_RESULTS } from '../data/TaskSearchSample';
 import { executeUnboundCustomApi } from './CustomApi';
 
 export interface SearchRequest {
@@ -94,26 +94,30 @@ export async function executeSearch(
   req: SearchRequest,
 ): Promise<TaskSearchResponse> {
   const { tableKey, page, pageSize, filters } = req;
-  const ep = CONTROL_CONFIG.apimEndpoint ?? '';
-  const baseUrl = ep.trim().length > 0 ? ep : 'https://api.contoso.gov.uk/revaluation/tasks';
 
   const apiParams = buildApiParamsFor(tableKey, filters, page, pageSize);
 
-  const customApiName = CONTROL_CONFIG.customApiName;
-  if (customApiName?.trim()) {
-    const actionName = customApiName.trim();
-    const payload = await executeUnboundCustomApi<TaskSearchResponse | SalesApiResponse>(context, actionName, apiParams);
-    return normalizeSearchResponse(payload);
+  const customApiName = CONTROL_CONFIG.customApiName?.trim() ?? '';
+  if (!customApiName) {
+    return {
+      items: SAMPLE_TASK_RESULTS,
+      totalCount: SAMPLE_TASK_RESULTS.length,
+      page,
+      pageSize,
+    };
   }
 
-  const url = new URL(baseUrl);
-  Object.entries(apiParams).forEach(([k, v]) => url.searchParams.set(k, v));
-  const response = await fetch(url.toString(), { method: 'GET' });
-  if (!response.ok) {
-    throw new Error(`APIM request failed with status ${response.status}`);
+  try {
+    const payload = await executeUnboundCustomApi<TaskSearchResponse | SalesApiResponse>(context, customApiName, apiParams);
+    return normalizeSearchResponse(payload);
+  } catch {
+    return {
+      items: SAMPLE_TASK_RESULTS,
+      totalCount: SAMPLE_TASK_RESULTS.length,
+      page,
+      pageSize,
+    };
   }
-  const payload = (await response.json()) as TaskSearchResponse | SalesApiResponse;
-  return normalizeSearchResponse(payload);
 }
 
 export interface FilterOptionsRequest {
@@ -127,31 +131,12 @@ export async function fetchFilterOptions(
   req: FilterOptionsRequest,
 ): Promise<string[]> {
   const { tableKey, field, query } = req;
-  const ep = CONTROL_CONFIG.apimEndpoint ?? '';
-  const baseUrl = ep.trim().length > 0 ? ep : 'https://api.contoso.gov.uk/revaluation/tasks';
-
-  const customApiName = CONTROL_CONFIG.customApiName;
-  if ((customApiName ?? '').trim().length > 0) {
-    // Unbound Custom API variant for filter suggestions
-    const actionName = `${customApiName?.trim()}_FilterOptions`;
-    try {
-      const payload = await executeUnboundCustomApi<{ values?: string[] }>(context, actionName, { tableKey, field, query });
-      return payload.values ?? [];
-    } catch {
-      return [];
-    }
-  }
-
+  const customApiName = CONTROL_CONFIG.customApiName?.trim() ?? '';
+  if (!customApiName) return [];
+  // Unbound Custom API variant for filter suggestions
+  const actionName = `${customApiName}_FilterOptions`;
   try {
-    const url = new URL(baseUrl.replace(/\/?$/, '/')); // ensure trailing slash
-    // Expect an endpoint like: GET /filterOptions?tableKey=...&field=...&query=...
-    url.pathname = `${url.pathname.replace(/\/$/, '')}/filterOptions`;
-    url.searchParams.set('tableKey', tableKey);
-    url.searchParams.set('field', field);
-    url.searchParams.set('query', query);
-    const res = await fetch(url.toString(), { method: 'GET' });
-    if (!res.ok) return [];
-    const payload = (await res.json()) as { values?: string[] };
+    const payload = await executeUnboundCustomApi<{ values?: string[] }>(context, actionName, { tableKey, field, query });
     return payload.values ?? [];
   } catch {
     return [];
