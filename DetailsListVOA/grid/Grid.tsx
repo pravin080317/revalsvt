@@ -164,6 +164,31 @@ export const Grid = React.memo((props: GridProps) => {
   } = props;
 
   const theme = useTheme(themeJSON);
+  const paginationButtonStyles = React.useMemo(
+    () => ({
+      root: {
+        height: 32,
+        minWidth: 32,
+        padding: '0 10px',
+        borderRadius: 6,
+      },
+    }),
+    [],
+  );
+  const activePaginationButtonStyles = React.useMemo(
+    () => ({
+      root: {
+        height: 32,
+        minWidth: 32,
+        padding: '0 10px',
+        borderRadius: 6,
+        backgroundColor: theme.palette.neutralLighter,
+        borderColor: theme.palette.neutralQuaternary,
+        fontWeight: 600,
+      },
+    }),
+    [theme.palette.neutralLighter, theme.palette.neutralQuaternary],
+  );
 
   const [columns, setColumns] = React.useState<IGridColumn[]>([]);
   const [isComponentLoading, setIsLoading] = React.useState(false);
@@ -1321,12 +1346,12 @@ export const Grid = React.memo((props: GridProps) => {
           />
           {(() => {
             const pageItems: Array<number | 'ellipsis'> = [];
-            if (totalPages <= 5) {
+            if (totalPages <= 7) {
               pageItems.push(...Array.from({ length: totalPages }, (_, i) => i));
-            } else if (currentPage <= 1) {
-              pageItems.push(0, 1, 2, 'ellipsis', totalPages - 1);
-            } else if (currentPage >= totalPages - 2) {
-              pageItems.push(0, 'ellipsis', totalPages - 3, totalPages - 2, totalPages - 1);
+            } else if (currentPage <= 2) {
+              pageItems.push(0, 1, 2, 3, 'ellipsis', totalPages - 1);
+            } else if (currentPage >= totalPages - 3) {
+              pageItems.push(0, 'ellipsis', totalPages - 4, totalPages - 3, totalPages - 2, totalPages - 1);
             } else {
               pageItems.push(0, 'ellipsis', currentPage - 1, currentPage, currentPage + 1, 'ellipsis', totalPages - 1);
             }
@@ -1334,24 +1359,20 @@ export const Grid = React.memo((props: GridProps) => {
             return pageItems.map((item, index) => {
               if (item === 'ellipsis') {
                 return (
-                  <Text key={`page-ellipsis-${index}`} style={{ fontSize: 14 }}>
+                  <Text key={`page-ellipsis-${index}`} style={{ fontSize: 14, padding: '0 4px' }}>
                     ...
                   </Text>
                 );
               }
 
               return (
-                <Text
+                <DefaultButton
                   key={`page-${item}`}
-                  style={{
-                    cursor: 'pointer',
-                    fontWeight: item === currentPage ? 600 : undefined,
-                    fontSize: 14,
-                  }}
-                  onClick={() => (item === currentPage ? undefined : onSetPage(item))}
+                  styles={item === currentPage ? activePaginationButtonStyles : paginationButtonStyles}
+                  onClick={() => onSetPage(item)}
                 >
                   {item + 1}
-                </Text>
+                </DefaultButton>
               );
             });
           })()}
