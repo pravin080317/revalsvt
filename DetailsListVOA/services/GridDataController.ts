@@ -117,8 +117,22 @@ export async function loadGridData(
       return { items: all, totalCount: total, serverDriven: false, filters: responseFilters };
     }
     return { items: firstPayload.items ?? [], totalCount: total, serverDriven, filters: responseFilters };
-  } catch {
-    // On error, fall back to showing local sample data (from SampleData)
+  } catch (err) {
+    // On error, log and fall back to showing local sample data (from SampleData)
+    const errText = (() => {
+      if (err instanceof Error) return `${err.name}: ${err.message}`;
+      if (typeof err === 'string') return err;
+      try {
+        return JSON.stringify(err);
+      } catch {
+        return 'Unknown error';
+      }
+    })();
+    try {
+      console.error('[GridDataController] loadGridData failed; showing sample data', errText);
+    } catch {
+      /* ignore logging failures */
+    }
     return { items: SAMPLE_RECORDS as unknown as TaskSearchItem[], totalCount: SAMPLE_RECORDS.length, serverDriven: false };
   }
 }
