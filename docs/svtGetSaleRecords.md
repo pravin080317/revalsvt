@@ -104,6 +104,9 @@ The control accepts two response shapes and normalizes them into `TaskSearchResp
 
 If `sales` or `pageInfo` exist, the control maps them into `TaskSearchResponse` before returning to the grid.【F:DetailsListVOA/services/DataService.ts†L146-L164】
 
+### When the API returns a JSON string payload
+The Dataverse Custom API plugin returns the APIM response in the `Result` output parameter (as a JSON string). The PCF control detects `Result`/`result`, parses the JSON, and then applies the mapping rules above.【F:DetailsListVOA/services/DataService.ts†L168-L186】【F:VOA.SVT.Plugins/Plugins/CustomAPI/GetAllSalesRecord.cs†L116-L118】
+
 ### Item field mapping
 When the API returns `sales`, each item is mapped into the internal `TaskSearchItem`. The mapping is one-to-one (e.g., `saleId` → `saleId`, `taskStatus` → `taskStatus`, etc.).【F:DetailsListVOA/services/DataService.ts†L94-L144】
 
@@ -126,3 +129,42 @@ This normalization happens in `normalizeApiFilters` inside the grid host compone
 - For numeric/date range filters, return a JSON object (example: `{ "mode": ">=", "min": 100000 }`) so the UI can parse it into header filter state.
 
 These response filters are applied to the grid and stay synchronized as users refine column header filters.【F:DetailsListVOA/components/DetailsListHost/DetailsListHost.tsx†L52-L169】
+
+---
+
+## Using `svtGetSaleRecords` in a Canvas app
+Canvas apps can call the Custom API directly and parse the `Result` string returned by the plugin.
+
+### Example Power Fx flow
+1. **Call the API** (adjust parameters to suit your filters):
+   ```
+   Set(
+     salesResponse,
+     svtGetSaleRecords({
+       pageNumber: "1",
+       pageSize: "25",
+       sortField: "saleId",
+       sortDirection: "asc"
+     })
+   )
+   ```
+2. **Parse the JSON string** from `Result`:
+   ```
+   Set(parsedSales, ParseJSON(salesResponse.Result))
+   ```
+3. **Bind to a gallery or data table**:
+   ```
+   ClearCollect(
+     SalesItems,
+     ForAll(parsedSales.sales, {
+       SaleId: Text(ThisRecord.saleId),
+       Address: Text(ThisRecord.address),
+       Postcode: Text(ThisRecord.postcode),
+       SalesPrice: Value(ThisRecord.salesPrice)
+     })
+   )
+   ```
+
+### Notes
+- `Result` is a string because the plugin forwards the raw APIM response back to Dataverse. If you update the plugin to return structured output parameters later, you can skip `ParseJSON`.【F:VOA.SVT.Plugins/Plugins/CustomAPI/GetAllSalesRecord.cs†L116-L118】
+- The response schema matches the `SalesApiResponse` format (with `sales` and `pageInfo`) described above, so you can read `parsedSales.pageInfo.totalRecords` for pagination if needed.【F:DetailsListVOA/services/DataService.ts†L146-L164】
