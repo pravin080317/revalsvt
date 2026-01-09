@@ -53,6 +53,12 @@ const getPrefilterParams = (context: ComponentFramework.Context<IInputs>): Recor
   return result;
 };
 
+const resolveCustomApiName = (context: ComponentFramework.Context<IInputs>): string => {
+  const raw = (context.parameters as unknown as Record<string, { raw?: string }>).customApiName?.raw;
+  const fromContext = typeof raw === 'string' ? raw.trim() : '';
+  return fromContext || CONTROL_CONFIG.customApiName?.trim() || '';
+};
+
 export async function loadGridData(
   context: ComponentFramework.Context<IInputs>,
   args: {
@@ -71,7 +77,7 @@ export async function loadGridData(
     Array.isArray(v) ? v.length > 0 : (v ?? '').toString().trim() !== '',
   );
 
-  const customApiName = CONTROL_CONFIG.customApiName?.trim() ?? '';
+  const customApiName = resolveCustomApiName(context);
 
   const sortBy = args.clientSort?.name;
   const sortDirection = args.clientSort?.sortDirection;
