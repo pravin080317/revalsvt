@@ -5,7 +5,7 @@ import { SAMPLE_TASK_RESULTS } from '../data/TaskSearchSample';
 import { SAMPLE_RECORDS } from '../data/SampleData';
 import { IInputs } from '../generated/ManifestTypes';
 import { executeUnboundCustomApi, normalizeCustomApiName, resolveCustomApiOperationType } from './CustomApi';
-import { normalizeSearchResponse } from './DataService';
+import { normalizeSearchResponse, SalesApiResponse, unwrapCustomApiPayload } from './DataService';
 
 export interface ClientSortState {
   name: string;
@@ -66,6 +66,16 @@ const resolveCustomApiType = (context: ComponentFramework.Context<IInputs>): num
   return resolveCustomApiOperationType(fromContext ?? CONTROL_CONFIG.customApiType);
 };
 
+const resolveServerDrivenThreshold = (context: ComponentFramework.Context<IInputs>): number => {
+  const raw = (context.parameters as unknown as Record<string, { raw?: number | string }>).serverDrivenThreshold?.raw;
+  if (typeof raw === 'number' && !Number.isNaN(raw)) return raw;
+  if (typeof raw === 'string') {
+    const parsed = Number(raw);
+    if (!Number.isNaN(parsed)) return parsed;
+  }
+  return CONTROL_CONFIG.serverDrivenThreshold;
+};
+
 export async function loadGridData(
   context: ComponentFramework.Context<IInputs>,
   args: {
@@ -73,17 +83,12 @@ export async function loadGridData(
     filters: unknown; // GridFilterState but keep loose to avoid circular deps
     currentPage: number;
     pageSize: number;
-    headerFilters: Record<string, string | string[]>;
     clientSort?: ClientSortState;
   },
 ): Promise<LoadResult> {
   const pageSize = args.pageSize ?? (context.parameters as unknown as Record<string, { raw?: number }>).pageSize?.raw ?? 10;
   const apiParamsBase = buildApiParamsFor(args.tableKey, args.filters as never, args.currentPage, pageSize);
   const prefilterParams = getPrefilterParams(context);
-  const headerFilterEntries = Object.entries(args.headerFilters).filter(([_, v]) =>
-    Array.isArray(v) ? v.length > 0 : (v ?? '').toString().trim() !== '',
-  );
-
   const customApiName = resolveCustomApiName(context);
   const customApiType = resolveCustomApiType(context);
 
@@ -102,13 +107,10 @@ export async function loadGridData(
   };
 
   const execCustomApi = async (params: Record<string, string>): Promise<TaskSearchResponse> => {
-    const withFilters = {
-      ...params,
-      ...(headerFilterEntries.length > 0 ? { columnFilters: JSON.stringify(args.headerFilters) } : {}),
-    };
-    const payload = await executeUnboundCustomApi<TaskSearchResponse>(context, customApiName, withFilters, {
+    const rawPayload = await executeUnboundCustomApi<TaskSearchResponse | SalesApiResponse>(context, customApiName, params, {
       operationType: customApiType,
     });
+    const payload = unwrapCustomApiPayload(rawPayload);
     return normalizeSearchResponse(payload);
   };
 
@@ -120,18 +122,10 @@ export async function loadGridData(
     }
     const firstPayload = await execCustomApi(firstParams);
     const total = Number(firstPayload.totalCount ?? firstPayload.items?.length ?? 0);
-    const serverDriven = total > 2000;
+    const threshold = resolveServerDrivenThreshold(context);
+    const firstPageCount = firstPayload.items?.length ?? 0;
+    const serverDriven = total > threshold || total > firstPageCount;
     const responseFilters = firstPayload.filters;
-    if (!serverDriven && total > 0 && (firstPayload.items?.length ?? 0) < total) {
-      const pages = Math.ceil(total / pageSize);
-      const all: TaskSearchItem[] = [...(firstPayload.items ?? [])];
-      for (let p = 0; p < pages; p++) {
-        if (p === args.currentPage) continue;
-        const payload = await execCustomApi(buildParams(p));
-        all.push(...(payload.items ?? []));
-      }
-      return { items: all, totalCount: total, serverDriven: false, filters: responseFilters };
-    }
     return { items: firstPayload.items ?? [], totalCount: total, serverDriven, filters: responseFilters };
   } catch (err) {
     // On error, log and fall back to showing local sample data (from SampleData)
@@ -149,6 +143,7 @@ export async function loadGridData(
     } catch {
       /* ignore logging failures */
     }
-    return { items: SAMPLE_RECORDS as unknown as TaskSearchItem[], totalCount: SAMPLE_RECORDS.length, serverDriven: false };
+    // Sample fallback disabled for now; return empty set on error.
+    return { items: [], totalCount: 0, serverDriven: false };
   }
 }

@@ -7,7 +7,6 @@ import { GridFilterState, createDefaultGridFilters, sanitizeFilters, NumericFilt
 import { getProfileConfigs } from '../../config/ColumnProfiles';
 import { CONTROL_CONFIG } from '../../config/ControlConfig';
 import { isLookupFieldFor } from '../../config/TableConfigs';
-import { fetchFilterOptions } from '../../services/DataService';
 import { buildColumns } from '../../utils/ColumnsBuilder';
 import { ensureSampleColumns, buildSampleEntityRecords } from '../../utils/SampleHelpers';
 import { loadGridData } from '../../services/GridDataController';
@@ -26,6 +25,7 @@ export interface DetailsListHostProps {
 }
 
 type ColumnFilterValue = string | string[] | NumericFilter | DateRangeFilter;
+type FilterOptionsMap = Record<string, string[]>;
 
 const toFilterValueString = (val: ColumnFilterValue | undefined): string => {
   if (val === undefined || val === null) return '';
@@ -76,6 +76,38 @@ const normalizeApiFilters = (filters?: Record<string, unknown>): Record<string, 
     }
     if (isPlainObject(value)) {
       normalized[lowerKey] = value as ColumnFilterValue;
+    }
+  });
+  return normalized;
+};
+
+const normalizeFilterOptions = (filters?: Record<string, string | string[]>): FilterOptionsMap => {
+  if (!filters) return {};
+  const normalized: FilterOptionsMap = {};
+  Object.entries(filters).forEach(([key, value]) => {
+    const lowerKey = key.toLowerCase();
+    if (value === undefined || value === null) return;
+    if (Array.isArray(value)) {
+      const arr = value.map((v) => String(v ?? '')).filter((v) => v.trim() !== '');
+      if (arr.length > 0) normalized[lowerKey] = arr;
+      return;
+    }
+    if (typeof value === 'string') {
+      const trimmed = value.trim();
+      if (!trimmed) return;
+      if ((trimmed.startsWith('[') && trimmed.endsWith(']')) || (trimmed.startsWith('{') && trimmed.endsWith('}'))) {
+        try {
+          const parsed = JSON.parse(trimmed) as unknown;
+          if (Array.isArray(parsed)) {
+            const arr = parsed.map((v) => String(v ?? '')).filter((v) => v.trim() !== '');
+            if (arr.length > 0) normalized[lowerKey] = arr;
+            return;
+          }
+        } catch {
+          // fall back to plain string
+        }
+      }
+      normalized[lowerKey] = [trimmed];
     }
   });
   return normalized;
@@ -189,6 +221,8 @@ export const DetailsListHost: React.FC<DetailsListHostProps> = ({ context, onRow
     searchBy: 'taskStatus',
     taskStatus: ['New'],
   });
+  const [searchNonce, setSearchNonce] = React.useState(0);
+  const [apiFilterOptions, setApiFilterOptions] = React.useState<FilterOptionsMap>({});
   const [apimItems, setApimItems] = React.useState<unknown[]>([]);
   const [totalCount, setTotalCount] = React.useState(0);
   const [serverDriven, setServerDriven] = React.useState(false);
@@ -210,21 +244,21 @@ export const DetailsListHost: React.FC<DetailsListHostProps> = ({ context, onRow
   // Hydrate from localStorage on table change (URL persistence disabled by policy)
   React.useEffect(() => {
     try {
-      // Filters
+      // Filters (disabled for now to avoid auto-prefill from localStorage)
       const rawLocalFilters = localStorage.getItem(storageKey) ?? localStorage.getItem(storageKeyNC);
-      if (rawLocalFilters) {
-        // Stored as arrays for every field; coerce to proper types per lookup/text
-        const parsed = JSON.parse(rawLocalFilters) as Record<string, string[]>;
-        const normalized: Record<string, ColumnFilterValue> = {};
-        Object.entries(parsed).forEach(([k, v]) => {
-          const keyLower = k.toLowerCase();
-          const isLookup = isLookupFieldFor(String(tableKey), keyLower);
-          normalized[keyLower] = isLookup ? (Array.isArray(v) ? v : [String(v ?? '')]) : (Array.isArray(v) ? (v[0] ?? '') : String(v ?? ''));
-        });
-        lastAppliedFiltersRef.current = normalized;
-        setHeaderFilters(normalized);
-        try { onColumnFiltersApply?.(toApiHeaderFilters(normalized)); } catch { /* ignore */ }
-      }
+      // if (rawLocalFilters) {
+      //   // Stored as arrays for every field; coerce to proper types per lookup/text
+      //   const parsed = JSON.parse(rawLocalFilters) as Record<string, string[]>;
+      //   const normalized: Record<string, ColumnFilterValue> = {};
+      //   Object.entries(parsed).forEach(([k, v]) => {
+      //     const keyLower = k.toLowerCase();
+      //     const isLookup = isLookupFieldFor(String(tableKey), keyLower);
+      //     normalized[keyLower] = isLookup ? (Array.isArray(v) ? v : [String(v ?? '')]) : (Array.isArray(v) ? (v[0] ?? '') : String(v ?? ''));
+      //   });
+      //   lastAppliedFiltersRef.current = normalized;
+      //   setHeaderFilters(normalized);
+      //   try { onColumnFiltersApply?.(toApiHeaderFilters(normalized)); } catch { /* ignore */ }
+      // }
       // Sort
       const rawLocalSort = localStorage.getItem(storageKeySort) ?? localStorage.getItem(storageKeySortNC);
       if (rawLocalSort) {
@@ -419,18 +453,23 @@ export const DetailsListHost: React.FC<DetailsListHostProps> = ({ context, onRow
   }, [externalItems]);
 
   // Initial load and reloads when critical props change (skips when externalItems are supplied)
-  const lastRef = React.useRef<{ table?: string; trigger?: string }>({});
+  const lastRef = React.useRef<{ table?: string; trigger?: string; page?: number; size?: number; sort?: string; nonce?: number }>({});
   React.useEffect(() => {
     if (externalItems !== undefined) {
       // External data path; do not load from APIM
       return;
     }
     const trigger = String((context.parameters as unknown as Record<string, { raw?: string | number }>).searchTrigger?.raw ?? '');
+    const sortKey = clientSort ? `${clientSort.name}:${clientSort.sortDirection}` : '';
     const changed = lastRef.current.table !== tableKey
       || lastRef.current.trigger !== trigger
+      || lastRef.current.page !== currentPage
+      || lastRef.current.size !== pageSize
+      || lastRef.current.sort !== sortKey
+      || lastRef.current.nonce !== searchNonce
       || !hasLoadedApim;
     if (!changed) return;
-    lastRef.current = { table: tableKey, trigger };
+    lastRef.current = { table: tableKey, trigger, page: currentPage, size: pageSize, sort: sortKey, nonce: searchNonce };
     setApimLoading(true);
     void (async () => {
       const res = await loadGridData(context, {
@@ -438,7 +477,6 @@ export const DetailsListHost: React.FC<DetailsListHostProps> = ({ context, onRow
         filters: sanitizeFilters(searchFilters),
         currentPage,
         pageSize,
-        headerFilters: toApiHeaderFilters(headerFilters),
         clientSort,
       });
       setApimItems(res.items);
@@ -446,14 +484,9 @@ export const DetailsListHost: React.FC<DetailsListHostProps> = ({ context, onRow
       setServerDriven(res.serverDriven);
       setApimLoading(false);
       setHasLoadedApim(true);
-      const apiFilters = normalizeApiFilters(res.filters);
-      if (apiFilters && !areFiltersEqual(apiFilters, lastAppliedFiltersRef.current)) {
-        lastAppliedFiltersRef.current = apiFilters;
-        setHeaderFilters(apiFilters);
-        setCurrentPage(0);
-      }
+      setApiFilterOptions(normalizeFilterOptions(res.filters));
     })();
-  }, [context, tableKey, searchFilters, currentPage, pageSize, headerFilters, clientSort, hasLoadedApim]);
+  }, [context, tableKey, searchFilters, currentPage, pageSize, clientSort, searchNonce, hasLoadedApim]);
 
   // Handlers
   const [selectedCount, setSelectedCount] = React.useState(0);
@@ -519,6 +552,7 @@ export const DetailsListHost: React.FC<DetailsListHostProps> = ({ context, onRow
     onSearch: (fs) => {
       setSearchFilters(sanitizeFilters(fs));
       setCurrentPage(0);
+      setSearchNonce((n) => n + 1);
     },
     onNextPage: () => {
       if (canNext) setCurrentPage((p) => p + 1);
@@ -537,13 +571,12 @@ export const DetailsListHost: React.FC<DetailsListHostProps> = ({ context, onRow
     showResults: true,
     selectedCount,
     allowColumnReorder,
-    onLoadFilterOptions: async (field, query) => {
-      if (!query || query.trim().length === 0) return [];
-      try {
-        return await fetchFilterOptions(context, { tableKey, field, query });
-      } catch {
-        return [];
-      }
+    onLoadFilterOptions: (field, query) => {
+      const key = String(field ?? '').toLowerCase();
+      const options = apiFilterOptions[key] ?? [];
+      if (!query || query.trim().length === 0) return Promise.resolve(options);
+      const q = query.trim().toLowerCase();
+      return Promise.resolve(options.filter((opt) => opt.toLowerCase().includes(q)));
     },
     onColumnFiltersChange: (f) => {
       const normalized: Record<string, ColumnFilterValue> = {};
