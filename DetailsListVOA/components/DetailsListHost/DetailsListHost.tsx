@@ -431,12 +431,16 @@ export const DetailsListHost: React.FC<DetailsListHostProps> = ({ context, onRow
   }, [clientSort, filteredIds, records, serverDriven]);
 
   const start = currentPage * pageSize;
-  const pageSliceT0 = performance.now();
-  const pageIds = sortedIds.slice(start, start + pageSize);
-  const pageSliceT1 = performance.now();
-  if (sortedIds.length > 0) {
-    logPerf('[Grid Perf] Host page slice (ms):', Math.round(pageSliceT1 - pageSliceT0), 'start:', start, 'size:', pageSize, 'result:', pageIds.length);
-  }
+  const pageIds = React.useMemo(() => {
+    if (serverDriven) return filteredIds;
+    const pageSliceT0 = performance.now();
+    const slice = sortedIds.slice(start, start + pageSize);
+    const pageSliceT1 = performance.now();
+    if (sortedIds.length > 0) {
+      logPerf('[Grid Perf] Host page slice (ms):', Math.round(pageSliceT1 - pageSliceT0), 'start:', start, 'size:', pageSize, 'result:', slice.length);
+    }
+    return slice;
+  }, [filteredIds, serverDriven, sortedIds, start, pageSize]);
   const canPrev = currentPage > 0;
   const canNext = serverDriven ? (currentPage + 1) * pageSize < totalCount : start + pageSize < filteredIds.length;
   const totalPages = serverDriven ? Math.ceil(totalCount / pageSize) : Math.ceil(filteredIds.length / pageSize);
