@@ -21,6 +21,7 @@ interface SalesPageInfo {
 
 interface SalesApiItem {
   saleId?: string;
+  suid?: string;
   taskId?: string;
   uprn?: string;
   address?: string;
@@ -42,7 +43,6 @@ interface SalesApiItem {
   qcAssignedTo?: string[] | string;
   qcAssignedDate?: string | null;
   qcCompletedDate?: string | null;
-  source?: string;
 }
 
 export interface SalesApiResponse {
@@ -103,13 +103,11 @@ const mapSampleRecordToTaskSearchItem = (record: SampleRecord): TaskSearchItem =
   taskId: sampleValueToString(record.taskid),
   uprn: sampleValueToString(record.uprn),
   taskStatus: sampleValueToString(record.taskstatus),
-  caseAssignedTo: sampleValueToString(record.assignedto),
   address: sampleValueToString(record.address),
   postcode: sampleValueToString(record.postcode),
   transactionDate: sampleValueToString(record.transactiondate),
-  source: sampleValueToString(record.source),
   billingAuthority: sampleValueToOptionalString(record.billingauthority),
-  salesPrice: sampleValueToNumber(record.saleprice),
+  salePrice: sampleValueToNumber(record.saleprice),
   ratio: sampleValueToNumber(record.ratio),
   dwellingType: sampleValueToOptionalString(record.dwellingtype),
   flaggedForReview: sampleValueToBoolean(record.flaggedforreview),
@@ -206,22 +204,18 @@ const normalizeSalesItem = (item: SalesApiItem): TaskSearchItem => {
   const map = buildNormalizedMap(item as Record<string, unknown>);
   const assignedToValue = getNormalizedValue(map, 'assignedTo', ['assignedto']);
   const assignedTo = toStringOrArrayOrEmpty(assignedToValue);
-  const caseAssignedTo = Array.isArray(assignedTo)
-    ? assignedTo.join(', ')
-    : assignedTo;
 
   return {
     saleId: toText(getNormalizedValue(map, 'saleId')) ?? undefined,
+    suid: toText(getNormalizedValue(map, 'suid')) ?? undefined,
     taskId: toTextOrEmpty(getNormalizedValue(map, 'taskId')),
     uprn: toTextOrEmpty(getNormalizedValue(map, 'uprn')),
     taskStatus: toTextOrEmpty(getNormalizedValue(map, 'taskStatus')),
-    caseAssignedTo,
     address: toTextOrEmpty(getNormalizedValue(map, 'address')),
     postcode: toTextOrEmpty(getNormalizedValue(map, 'postcode', ['postCode'])),
     transactionDate: toTextOrEmpty(getNormalizedValue(map, 'transactionDate')),
-    source: toTextOrEmpty(getNormalizedValue(map, 'source')),
     billingAuthority: toText(getNormalizedValue(map, 'billingAuthority', ['billingauthorityity'])) ?? undefined,
-    salesPrice: toNumber(getNormalizedValue(map, 'salesPrice', ['salePrice'])),
+    salePrice: toNumber(getNormalizedValue(map, 'saleprice', ['salePrice'])),
     ratio: toNumber(getNormalizedValue(map, 'ratio')),
     dwellingType: toText(getNormalizedValue(map, 'dwellingType', ['deellingtype', 'dwellinlingtype', 'dwelwellingtype'])) ?? undefined,
     flaggedForReview: toBoolean(getNormalizedValue(map, 'flaggedForReview')),
@@ -374,6 +368,7 @@ export function mapTaskItemToRecord(
   const recordBase: Record<string, unknown> = {};
   const record = recordBase as ComponentFramework.PropertyHelper.DataSetApi.EntityRecord & Record<string, unknown>;
   const recordId = item.taskId || `${item.uprn}-${index}` || `apim-${index}`;
+  const assignedTo = Array.isArray(item.assignedTo) ? item.assignedTo.join(', ') : item.assignedTo ?? '';
   record.getRecordId = () => recordId;
   record.getNamedReference = undefined as unknown as ComponentFramework.PropertyHelper.DataSetApi.EntityRecord['getNamedReference'];
   record.getValue = ((columnName: string) => record[columnName] ?? '') as ComponentFramework.PropertyHelper.DataSetApi.EntityRecord['getValue'];
@@ -394,19 +389,16 @@ export function mapTaskItemToRecord(
   record.taskId = item.taskId;
   record.saleid = item.saleId ?? '';
   record.saleId = item.saleId ?? '';
+  record.suid = item.suid ?? '';
   record.taskstatus = item.taskStatus;
   record.taskStatus = item.taskStatus;
-  record.caseassignedto = item.caseAssignedTo;
-  record.caseAssignedTo = item.caseAssignedTo;
   record.address = item.address;
   record.postcode = item.postcode;
   record.transactiondate = formattedDate;
   record.transactionDate = formattedDate;
-  record.source = item.source;
   record.billingauthority = item.billingAuthority ?? '';
   record.billingAuthority = item.billingAuthority ?? '';
-  record.saleprice = item.salesPrice ?? '';
-  record.salesPrice = item.salesPrice ?? '';
+  record.saleprice = item.salePrice ?? '';
   record.ratio = item.ratio ?? '';
   record.dwellingtype = item.dwellingType ?? '';
   record.flaggedforreview = item.flaggedForReview ?? '';
@@ -414,7 +406,8 @@ export function mapTaskItemToRecord(
   record.outlierratio = item.outlierRatio ?? '';
   record.overallflag = item.overallFlag ?? '';
   record.summaryflags = item.summaryFlags ?? [];
-  record.assignedto = item.assignedTo ?? '';
+  record.assignedto = assignedTo;
+  record.assignedTo = assignedTo;
   record.assigneddate = item.assignedDate ?? '';
   record.taskcompleteddate = item.taskCompletedDate ?? '';
   record.qcassignedto = item.qcAssignedTo ?? '';

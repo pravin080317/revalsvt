@@ -1,4 +1,5 @@
 import { GridFilterState, SearchByOption } from '../Filters';
+import { mapManagerPrefiltersToApi, type ManagerPrefilterState } from './PrefilterConfigs';
 
 export type TableKey = 'sales' | 'allsales' | 'myassignment' | 'manager' | 'qa';
 
@@ -23,6 +24,7 @@ export interface ColumnFilterConfig {
 export interface TableConfig {
   lookupFields: Set<string>;
   buildApiParams: (filters: GridFilterState, page: number, pageSize: number) => Record<string, string>;
+  buildPrefilterParams?: (prefilters?: unknown) => Record<string, string>;
   // Controls which top-of-grid search modes are available per persona/table
   searchByOptions: SearchByOption[];
   columnFilterConfig: Record<string, ColumnFilterConfig>;
@@ -74,7 +76,7 @@ const SALES_COLUMN_FILTERS: Record<string, ColumnFilterConfig> = {
   taskstatus: { control: 'multiSelect', optionFields: ['taskstatus', 'status', 'statuscode'], minLength: 1 },
   assignedto: { control: 'singleSelect', optionFields: ['assignedto'], minLength: 1 },
   assigneddate: { control: 'dateRange', minLength: 1 },
-  completeddate: { control: 'dateRange', minLength: 1 },
+  taskcompleteddate: { control: 'dateRange', minLength: 1 },
   qcassignedto: { control: 'singleSelect', optionFields: ['qcassignedto'], minLength: 1 },
   qcassigneddate: { control: 'dateRange', minLength: 1 },
   qccompleteddate: { control: 'dateRange', minLength: 1 },
@@ -179,7 +181,6 @@ const buildSalesParams = (
     if (filters.qcCompletedDate.from) params.qcCompleteFromDate = filters.qcCompletedDate.from;
     if (filters.qcCompletedDate.to) params.qcCompleteToDate = filters.qcCompletedDate.to;
   }
-
   return params;
 };
 
@@ -211,7 +212,6 @@ export const TABLE_CONFIGS: Record<TableKey, TableConfig> = {
       'qcAssignedTo',
       'qcAssignedDate',
       'qcCompletedDate',
-      'completedDate',
     ],
   },
   allsales: {
@@ -240,7 +240,6 @@ export const TABLE_CONFIGS: Record<TableKey, TableConfig> = {
       'qcAssignedTo',
       'qcAssignedDate',
       'qcCompletedDate',
-      'completedDate',
     ],
   },
   // My Assignment
@@ -270,13 +269,13 @@ export const TABLE_CONFIGS: Record<TableKey, TableConfig> = {
       'qcAssignedTo',
       'qcAssignedDate',
       'qcCompletedDate',
-      'completedDate',
     ],
   },
   // Manager dashboard
   manager: {
     lookupFields: new Set<string>([...salesLookupFields]),
     buildApiParams: buildSalesParams,
+    buildPrefilterParams: (prefilters?: unknown) => mapManagerPrefiltersToApi(prefilters as ManagerPrefilterState | undefined),
     columnFilterConfig: SALES_COLUMN_FILTERS,
     searchByOptions: [
       'saleId',
@@ -300,7 +299,6 @@ export const TABLE_CONFIGS: Record<TableKey, TableConfig> = {
       'qcAssignedTo',
       'qcAssignedDate',
       'qcCompletedDate',
-      'completedDate',
     ],
   },
   // QA dashboard
@@ -330,7 +328,6 @@ export const TABLE_CONFIGS: Record<TableKey, TableConfig> = {
       'qcAssignedTo',
       'qcAssignedDate',
       'qcCompletedDate',
-      'completedDate',
     ],
   },
 };
@@ -351,8 +348,15 @@ export function buildApiParamsFor(
   filters: GridFilterState,
   page: number,
   pageSize: number,
+  prefilters?: unknown,
 ): Record<string, string> {
-  return getConfig(table).buildApiParams(filters, page, pageSize);
+  const config = getConfig(table);
+  const base = config.buildApiParams(filters, page, pageSize);
+  const extra = config.buildPrefilterParams ? config.buildPrefilterParams(prefilters) : {};
+  return {
+    ...base,
+    ...extra,
+  };
 }
 
 export function getSearchByOptionsFor(table?: string): SearchByOption[] {
