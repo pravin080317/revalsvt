@@ -22,6 +22,8 @@ export interface DetailsListHostProps {
   onSelectionChange?: (args: { taskId?: string; saleId?: string; selectedTaskIds?: string[]; selectedSaleIds?: string[] }) => void;
   // Emit count of selected rows (even if IDs are missing)
   onSelectionCountChange?: (count: number) => void;
+  // Triggered when the back button is pressed
+  onBackRequested?: () => void;
   // When provided, the host renders these items instead of loading via APIM.
   externalItems?: unknown[];
   // Bubble header filter Apply back to parent (used by external item scenarios to call API with extra params)
@@ -52,6 +54,19 @@ const resolveClientUrl = (ctx: ComponentFramework.Context<IInputs>): string => {
     return window.location.origin;
   }
   return '';
+};
+
+const normalizeSuid = (value: unknown): string => {
+  if (typeof value !== 'string') {
+    return '';
+  }
+  const trimmed = value.trim();
+  if (!trimmed) return '';
+  const lowered = trimmed.toLowerCase();
+  if (lowered === 'null' || lowered === 'undefined') return '';
+  const unwrapped = trimmed.replace(/^[{(]?(.*?)[)}]?$/, '$1');
+  const isGuid = /^[0-9a-f]{8}-([0-9a-f]{4}-){3}[0-9a-f]{12}$/i.test(unwrapped);
+  return isGuid ? unwrapped : '';
 };
 
 const toFilterValueString = (val: ColumnFilterValue | undefined): string => {
@@ -171,11 +186,15 @@ export const DetailsListHost: React.FC<DetailsListHostProps> = ({
   onRowInvoke,
   onSelectionChange,
   onSelectionCountChange,
+  onBackRequested,
   externalItems,
   onColumnFiltersApply,
 }) => {
   // Parse basic params
-  const pageSize = (context.parameters as unknown as Record<string, { raw?: number }>).pageSize?.raw ?? 10;
+  const pageSize = (context.parameters as unknown as Record<string, { raw?: number }>).pageSize?.raw ?? 500;
+  const allocatedHeight = typeof context.mode?.allocatedHeight === 'number' && context.mode.allocatedHeight > 0
+    ? context.mode.allocatedHeight
+    : undefined;
   const tableKey = (CONTROL_CONFIG.tableKey || 'sales').trim().toLowerCase();
 
   // Column display names and configs
@@ -203,7 +222,7 @@ export const DetailsListHost: React.FC<DetailsListHostProps> = ({
       const map: Record<string, ColumnConfig> = {};
       merged.forEach((c) => {
         const n = c.ColName?.trim().toLowerCase();
-        if (n) map[n] = c;
+        if (n && n !== 'completeddate') map[n] = c;
       });
       // Ensure multi-value flags render as tags by default
       if (!map.summaryflags) {
@@ -212,12 +231,12 @@ export const DetailsListHost: React.FC<DetailsListHostProps> = ({
       if (!map.reviewflags) {
         map.reviewflags = { ColName: 'reviewflags', ColCellType: 'tag' } as ColumnConfig;
       }
-      if (map.taskid) {
-        if (!map.taskid.ColCellType) {
-          map.taskid = { ...map.taskid, ColCellType: 'link' } as ColumnConfig;
+      if (map.saleid) {
+        if (!map.saleid.ColCellType) {
+          map.saleid = { ...map.saleid, ColCellType: 'link' } as ColumnConfig;
         }
       } else {
-        map.taskid = { ColName: 'taskid', ColCellType: 'link' } as ColumnConfig;
+        map.saleid = { ColName: 'saleid', ColCellType: 'link' } as ColumnConfig;
       }
       setColumnConfigs(map);
     } catch {
@@ -407,12 +426,7 @@ export const DetailsListHost: React.FC<DetailsListHostProps> = ({
         Object.keys(obj).forEach((k) => (r[k.toLowerCase()] = obj[k]));
         // some handy aliases
         r.saleid = r.saleid ?? (r as Record<string, unknown> & { saleId?: unknown }).saleId;
-        const suidValue = r.suid;
-        const suid = typeof suidValue === 'string'
-          ? suidValue
-          : typeof suidValue === 'number'
-            ? String(suidValue)
-            : '';
+        const suid = normalizeSuid(r.suid);
         r.addressurl = suid && clientUrl ? buildSsuUrl(clientUrl, suid) : '';
         all.push(id);
         recs[id] = r;
@@ -810,7 +824,7 @@ export const DetailsListHost: React.FC<DetailsListHostProps> = ({
     },
   };
 
-  return <Grid {...(props as unknown as GridProps)} />;
+  return <Grid {...(props as unknown as GridProps)} height={allocatedHeight} onBackRequested={onBackRequested} />;
 };
 
 DetailsListHost.displayName = 'DetailsListHost';
