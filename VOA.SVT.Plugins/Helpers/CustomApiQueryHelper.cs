@@ -3,7 +3,7 @@ using System;
 using System.Collections.Generic;
 using VOA.SVT.Plugins.CustomAPI.DataAccessLayer.Model;
 
-namespace VOA.SVT.Plugins.CustomAPI.Helpers
+namespace VOA.SVT.Plugins.Helpers
 {
     public static class CustomApiQueryHelper
     {

@@ -17,6 +17,9 @@ export class DetailsListVOA implements ComponentFramework.ReactControl<IInputs, 
   private selectedSaleIdsJson?: string;
   private selectedCount?: number;
   private backRequestId?: string;
+  private actionType?: string;
+  private actionRequestId?: string;
+  private notifyScheduled = false;
 
   public init(
     context: ComponentFramework.Context<IInputs>,
@@ -48,6 +51,8 @@ export class DetailsListVOA implements ComponentFramework.ReactControl<IInputs, 
           onRowInvoke: (args) => {
             this.selectedTaskId = args?.taskId;
             this.selectedSaleId = args?.saleId;
+            console.log('[DetailsListVOA] Row invoke:', { taskId: args?.taskId, saleId: args?.saleId });
+            this._saleDetails = '';
             void this.onTaskClick(args?.taskId, args?.saleId);
           },
           onSelectionChange: (args) => {
@@ -59,16 +64,16 @@ export class DetailsListVOA implements ComponentFramework.ReactControl<IInputs, 
             const taskCount = args?.selectedTaskIds?.length ?? 0;
             const saleCount = args?.selectedSaleIds?.length ?? 0;
             this.selectedCount = taskCount || saleCount;
-            this._saleDetails = '';
-            this._notifyOutputChanged();
           },
           onSelectionCountChange: (count) => {
-            this.selectedCount = count;
-            this._notifyOutputChanged();
+            if (this.selectedCount !== count) {
+              this.selectedCount = count;
+            }
           },
           onBackRequested: () => {
-            this.backRequestId = new Date().toISOString();
-            this._notifyOutputChanged();
+            this._saleDetails = '';
+            console.log('[DetailsListVOA] Back requested');
+            this.emitAction('back');
           },
         }),
         //React.createElement(StatutorySpatialUnitBrowser, null)
@@ -77,15 +82,19 @@ export class DetailsListVOA implements ComponentFramework.ReactControl<IInputs, 
   }
 
   public getOutputs(): IOutputs {
-    return {
+    const outputs = {
       selectedTaskId: this.selectedTaskId,
       selectedSaleId: this.selectedSaleId,
       selectedTaskIdsJson: this.selectedTaskIdsJson,
       selectedSaleIdsJson: this.selectedSaleIdsJson,
       selectedCount: this.selectedCount,
       saleDetails: this._saleDetails,
+      actionType: this.actionType,
+      actionRequestId: this.actionRequestId,
       backRequestId: this.backRequestId,
     } as IOutputs;
+    console.log('[DetailsListVOA] getOutputs:', outputs);
+    return outputs;
   }
 
   public destroy(): void {
@@ -94,10 +103,12 @@ export class DetailsListVOA implements ComponentFramework.ReactControl<IInputs, 
 
   private async onTaskClick(taskId?: string, saleId?: string): Promise<void> {
     this._saleDetails = '';
+    console.log('[DetailsListVOA] Fetching sale details:', { taskId, saleId });
 
     if (!saleId) {
       this._saleDetails = JSON.stringify(this.getEmptySaleRecord());
-      this._notifyOutputChanged();
+      console.log('[DetailsListVOA] Empty sale details returned (no saleId).');
+      this.emitAction('viewSale');
       return;
     }
 
@@ -123,7 +134,36 @@ export class DetailsListVOA implements ComponentFramework.ReactControl<IInputs, 
       this._saleDetails = JSON.stringify(this.getEmptySaleRecord());
     }
 
+    console.log('[DetailsListVOA] Sale details updated.', {
+      hasDetails: !!this._saleDetails,
+      length: this._saleDetails.length,
+    });
+    this.emitAction('viewSale');
+  }
+
+  private emitAction(type: 'back' | 'viewSale'): void {
+    this.actionType = type;
+    this.actionRequestId = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    this.backRequestId = this.actionRequestId;
+    console.log('[DetailsListVOA] Action emitted:', {
+      actionType: this.actionType,
+      actionRequestId: this.actionRequestId,
+      backRequestId: this.backRequestId,
+    });
+    if (type === 'viewSale') {
+      this.notifyOutputChangedAsync();
+      return;
+    }
     this._notifyOutputChanged();
+  }
+
+  private notifyOutputChangedAsync(): void {
+    if (this.notifyScheduled) return;
+    this.notifyScheduled = true;
+    setTimeout(() => {
+      this.notifyScheduled = false;
+      this._notifyOutputChanged();
+    }, 0);
   }
 
   private resolveViewSaleRecordApiName(): string {

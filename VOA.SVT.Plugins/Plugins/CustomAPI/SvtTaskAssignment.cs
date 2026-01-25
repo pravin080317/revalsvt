@@ -33,6 +33,22 @@ namespace VOA.SVT.Plugins.CustomAPI
             }
 
             var context = localPluginContext.PluginExecutionContext;
+            var userContext = UserContextResolver.Resolve(
+                localPluginContext.SystemUserService,
+                context.InitiatingUserId,
+                localPluginContext.TracingService);
+            var screenName = GetInput(context, "screenName");
+            if (string.IsNullOrWhiteSpace(screenName))
+            {
+                screenName = GetInput(context, "canvasScreenName");
+            }
+            var assignmentContext = AssignmentContextResolver.Resolve(screenName);
+            if (!AssignmentContextResolver.IsAuthorized(userContext.Persona, assignmentContext))
+            {
+                localPluginContext.TracingService.Trace(
+                    $"SVT TaskAssignment denied. User={context.InitiatingUserId}, Persona={userContext.Persona}, Screen={screenName ?? "<null>"}");
+                throw new InvalidPluginExecutionException("SVT task assignment is restricted based on assignment context and role.");
+            }
 
             var assignedToUserId = GetInput(context, "assignedToUserId");
             var taskStatus = GetInput(context, "taskStatus");
