@@ -34,6 +34,17 @@ The prefilter model includes:
 
 These values are mapped into API parameters (e.g., `billingAuthority`, `assignedTo`, `taskStatus`, `completedFromDate`, `completedToDate`) before the Custom API call is made.【F:DetailsListVOA/config/PrefilterConfigs.ts†L9-L41】【F:DetailsListVOA/config/PrefilterConfigs.ts†L47-L90】
 
+## Assignment security context (roles + teams)
+### User context resolution
+SVT uses a **user context resolver** to determine persona (`Manager`, `QA`, or `User`) by checking **security-group teams first** and then **Dataverse roles** if no matching teams are found. The resolver looks for the configured team and role names (SVT Manager/QA/User) and returns the matched persona along with the resolution source and matched team/role names.【F:VOA.SVT.Plugins/Helpers/UserContextResolver.cs†L7-L200】
+
+The `voa_SvtGetUserContext` Custom API exposes this resolution result to Canvas apps, returning output parameters such as `svtPersona`, `hasSvtAccess`, `matchedTeamName`, `matchedRoleName`, and the semicolon-delimited `matchedRoleNames` list.【F:VOA.SVT.Plugins/Plugins/CustomAPI/SvtGetUserContext.cs†L8-L56】
+
+### Assignable users for manager assignment
+When the **assignment panel opens**, the PCF calls the **assignable users** Custom API (default `voa_SvtGetAssignableUsers`) with the current `screenName` to determine which users can be assigned. The request is cached per `assignmentContextKey` + API name/type, and the response is normalized into `{ id, firstName, lastName, email, team, role }` for the picker UI.【F:DetailsListVOA/components/DetailsListHost/DetailsListHost.tsx†L608-L707】【F:DetailsListVOA/config/ControlConfig.ts†L1-L12】
+
+The plugin resolves assignment context from the screen name (manager vs QA), then loads users from **team membership** and **role membership** using the assignment context’s configured team/role names (e.g., SVT User team or role for manager assignment).【F:VOA.SVT.Plugins/Plugins/CustomAPI/SvtGetAssignableUsers.cs†L24-L83】【F:VOA.SVT.Plugins/Helpers/AssignmentContextResolver.cs†L7-L95】
+
 ## PCF configuration (inputs + outputs)
 ### Inputs (app maker/config)
 The PCF control exposes inputs for:
