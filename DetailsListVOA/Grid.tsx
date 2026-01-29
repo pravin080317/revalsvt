@@ -474,6 +474,7 @@ export const Grid = React.memo((props: GridProps) => {
   const [prefilters, setPrefilters] = React.useState<ManagerPrefilterState>(MANAGER_PREFILTER_DEFAULT);
   const [prefilterExpanded, setPrefilterExpanded] = React.useState(true);
   const [prefilterContainerWidth, setPrefilterContainerWidth] = React.useState<number | null>(null);
+  const [searchPanelExpanded, setSearchPanelExpanded] = React.useState(true);
   const openAssignPanel = React.useCallback(() => {
     setAssignPanelOpen(true);
     onAssignPanelToggle?.(true);
@@ -482,6 +483,9 @@ export const Grid = React.memo((props: GridProps) => {
     setAssignPanelOpen(false);
     onAssignPanelToggle?.(false);
   }, [onAssignPanelToggle]);
+  const toggleSearchPanel = React.useCallback(() => {
+    setSearchPanelExpanded((prev) => !prev);
+  }, []);
 
   const screenName = (canvasScreenName ?? '').toLowerCase();
   const normalizedScreenId = React.useMemo(() => screenName.replace(/[^a-z0-9]/g, ''), [screenName]);
@@ -571,6 +575,10 @@ export const Grid = React.memo((props: GridProps) => {
 
     lastScreenKindRef.current = next;
   }, [derivedScreenKind, onPrefilterClear, prefilterStorageKey]);
+
+  React.useEffect(() => {
+    setSearchPanelExpanded(true);
+  }, [derivedScreenKind]);
 
   React.useEffect(() => {
     if (!isManagerAssign) return;
@@ -865,14 +873,9 @@ export const Grid = React.memo((props: GridProps) => {
             : undefined;
 
         let billingAuthorityError: string | undefined;
-        let billingAuthorityRefError: string | undefined;
-        if (fs.searchBy === 'billingAuthority') {
-          const hasAuthority = billingAuthority.length > 0;
-          const hasReference = billingAuthorityReference.length > 0;
-          if (hasAuthority !== hasReference) {
-            billingAuthorityError = hasAuthority ? undefined : 'Billing Authority is required';
-            billingAuthorityRefError = hasReference ? undefined : 'Billing Authority Reference is required';
-          }
+        const billingAuthorityRefError: string | undefined = undefined;
+        if (fs.searchBy === 'billingAuthority' && billingAuthority.length === 0) {
+          billingAuthorityError = 'Billing Authority is required';
         }
 
         let postcodeError: string | undefined;
@@ -1196,7 +1199,7 @@ export const Grid = React.memo((props: GridProps) => {
       case 'uprn':
         return uprn.length > 0 && uprn.length <= UPRN_MAX_LENGTH;
       case 'billingAuthority':
-        return billingAuthority.length > 0 && billingAuthorityReference.length > 0;
+        return billingAuthority.length > 0;
       case 'address': {
         const hasPostcode = postcode.length > 0;
         const postcodeValid = hasPostcode ? isValidUkPostcode(postcode, false) : false;
@@ -2383,6 +2386,8 @@ export const Grid = React.memo((props: GridProps) => {
   const showViewSalesRecord = isViewSalesRecordEnabledFor(tableKey);
   const showPrefilterToggle = useAssignmentLayout && !!showResults && !!prefilterApplied;
   const prefilterToggleText = prefilterExpanded ? 'Hide Prefilter' : 'Show Prefilter';
+  const showSearchPanelToggle = showSearchPanel && !useAssignmentLayout;
+  const searchPanelToggleText = searchPanelExpanded ? 'Hide Filters' : 'Show Filters';
 
   const menuItems = React.useMemo<IContextualMenuItem[]>(() => {
     if (!menuState) return [];
@@ -2712,6 +2717,29 @@ export const Grid = React.memo((props: GridProps) => {
                 </div>
               </div>
               <div className="voa-command-bar__actions">
+                {showSearchPanelToggle && (
+                  <DefaultButton
+                    className="voa-prefilter-toggle"
+                    text={searchPanelToggleText}
+                    iconProps={{ iconName: searchPanelExpanded ? 'FilterSolid' : 'Filter' }}
+                    ariaLabel={searchPanelToggleText}
+                    title={searchPanelToggleText}
+                    aria-expanded={searchPanelExpanded}
+                    onClick={toggleSearchPanel}
+                  />
+                )}
+                {useAssignmentLayout && showPrefilterToggle && (
+                  <DefaultButton
+                    className="voa-prefilter-toggle"
+                    text={prefilterToggleText}
+                    iconProps={{ iconName: prefilterExpanded ? 'FilterSolid' : 'Filter' }}
+                    ariaLabel={prefilterToggleText}
+                    title={prefilterToggleText}
+                    aria-expanded={prefilterExpanded}
+                    aria-controls="voa-prefilter-panel"
+                    onClick={togglePrefilters}
+                  />
+                )}
                 {showResults && showViewSalesRecord && (
                   <DefaultButton
                     text="View Sales Record"
@@ -2903,7 +2931,7 @@ export const Grid = React.memo((props: GridProps) => {
           </Stack.Item>
         </Stack>
         )}
-        {showSearchPanel && (
+        {showSearchPanel && searchPanelExpanded && (
         <Stack
           className="voa-search-panel"
           horizontal
@@ -2924,7 +2952,7 @@ export const Grid = React.memo((props: GridProps) => {
           </Stack.Item>
           {renderSearchControl()}
           <Stack.Item className="voa-search-panel__actions">
-            <Stack horizontal verticalAlign="center" tokens={{ childrenGap: 12 }}>
+            <Stack horizontal wrap verticalAlign="center" tokens={{ childrenGap: 12 }}>
               {(shimmer || itemsLoading || isComponentLoading) && (
                 <Spinner size={SpinnerSize.small} ariaLabel="Loading filter results" />
               )}
@@ -2945,32 +2973,17 @@ export const Grid = React.memo((props: GridProps) => {
           </Stack.Item>
         </Stack>
         )}
-          {showResults && ((useAssignmentLayout && showPrefilterToggle) || (!useAssignmentLayout && hasColumnFilters)) && (
+          {showResults && ((useAssignmentLayout && showPrefilterToggle) || hasColumnFilters) && (
             <div className="voa-grid-toolbar" role="toolbar" aria-label="Table actions">
               <div className="voa-grid-toolbar__left">
-                {useAssignmentLayout ? (
-                  showPrefilterToggle && (
-                    <DefaultButton
-                      className="voa-prefilter-toggle"
-                      text={prefilterToggleText}
-                      iconProps={{ iconName: prefilterExpanded ? 'FilterSolid' : 'Filter' }}
-                      ariaLabel={prefilterToggleText}
-                      title={prefilterToggleText}
-                      aria-expanded={prefilterExpanded}
-                      aria-controls="voa-prefilter-panel"
-                      onClick={togglePrefilters}
-                    />
-                  )
-                ) : (
-                  hasColumnFilters && (
-                    <DefaultButton
-                      text="Clear filters"
-                      iconProps={{ iconName: 'ClearFilter' }}
-                      onClick={() => clearAllColumnFilters()}
-                      disabled={!hasColumnFilters}
-                      ariaLabel="Clear column filters"
-                    />
-                  )
+                {hasColumnFilters && (
+                  <DefaultButton
+                    text="Clear filters"
+                    iconProps={{ iconName: 'ClearFilter' }}
+                    onClick={() => clearAllColumnFilters()}
+                    disabled={!hasColumnFilters}
+                    ariaLabel="Clear column filters"
+                  />
                 )}
               </div>
             </div>
