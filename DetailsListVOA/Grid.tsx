@@ -28,7 +28,6 @@ import {
   DefaultButton,
   MessageBar,
   MessageBarType,
-  Dropdown,
   ComboBox,
   IComboBox,
   IComboBoxOption,
@@ -197,6 +196,31 @@ const sanitizeDigits = (value?: string, maxLength = UPRN_MAX_LENGTH): string =>
   (value ?? '')
     .replace(/\D/g, '')
     .slice(0, maxLength);
+
+const normalizeComboSearchText = (value?: string): string => {
+  if (!value) return '';
+  const trimmed = value.trim();
+  if (!trimmed) return '';
+  const parts = trimmed.split(',');
+  return (parts[parts.length - 1] ?? '').trim();
+};
+
+const filterComboOptions = (
+  options: IComboBoxOption[],
+  query: string,
+  selectedKeys: string[] = [],
+): IComboBoxOption[] => {
+  const term = query.trim().toLowerCase();
+  if (!term) return options;
+  const selected = new Set(selectedKeys.map((key) => String(key)));
+  return options.filter((opt) => {
+    const key = String(opt.key);
+    if (selected.has(key)) return true;
+    if (key.startsWith('__')) return true;
+    const text = String(opt.text ?? opt.key ?? '').toLowerCase();
+    return text.includes(term) || key.toLowerCase().includes(term);
+  });
+};
 
 const SEARCH_FIELD_CONFIGS: Record<SearchByOption, SearchFieldConfig> = {
   manualCheck: {
@@ -464,9 +488,19 @@ export const Grid = React.memo((props: GridProps) => {
   const [menuFilterValue, setMenuFilterValue] = React.useState<ColumnFilterValue>('');
   const [menuFilterText, setMenuFilterText] = React.useState('');
   const [menuFilterError, setMenuFilterError] = React.useState<string | undefined>();
+  const [menuFilterSearch, setMenuFilterSearch] = React.useState('');
   const liveFilterTimer = React.useRef<number | undefined>(undefined);
   const [filters, setFilters] = React.useState<GridFilterState>(searchFilters);
   const autoSearchEnabled = false;
+  const [billingAuthoritySearch, setBillingAuthoritySearch] = React.useState('');
+  const [managerBillingSearch, setManagerBillingSearch] = React.useState('');
+  const [caseworkerSearch, setCaseworkerSearch] = React.useState('');
+  const [searchBySearch, setSearchBySearch] = React.useState('');
+  const [prefilterSearchBySearch, setPrefilterSearchBySearch] = React.useState('');
+  const [prefilterWorkThatSearch, setPrefilterWorkThatSearch] = React.useState('');
+  const [assignTeamSearch, setAssignTeamSearch] = React.useState('');
+  const [assignRoleSearch, setAssignRoleSearch] = React.useState('');
+  const [comboSearchText, setComboSearchText] = React.useState<Record<string, string>>({});
   const [assignPanelOpen, setAssignPanelOpen] = React.useState(false);
   const [assignSearch, setAssignSearch] = React.useState('');
   const [assignTeam, setAssignTeam] = React.useState<string | number | undefined>();
@@ -727,7 +761,7 @@ export const Grid = React.memo((props: GridProps) => {
   }, [parseISODate, prefilters.completedFrom, today]);
 
   const onPrefilterSearchByChange = React.useCallback(
-    (_: React.FormEvent<HTMLDivElement>, option?: IDropdownOption) => {
+    (_: React.FormEvent<IComboBox>, option?: IComboBoxOption) => {
       const next = option?.key === 'caseworker' ? 'caseworker' : 'billingAuthority';
       setPrefilters((prev) => ({
         ...prev,
@@ -769,43 +803,50 @@ export const Grid = React.memo((props: GridProps) => {
     return [{ key: CASEWORKER_ALL_KEY, text: 'All' }, ...normalizedCaseworkerOptions];
   }, [caseworkerOptionsError, caseworkerOptionsLoading, normalizedCaseworkerOptions]);
 
-  const caseworkerOptionKeys = React.useMemo<string[]>(() => {
-    return normalizedCaseworkerOptions
-      .map((opt) => String(opt.key))
-      .filter((key) => key !== CASEWORKER_ALL_KEY && !key.startsWith('__'));
-  }, [normalizedCaseworkerOptions]);
+  const filteredCaseworkerOptionsList = React.useMemo(
+    () => filterComboOptions(caseworkerOptionsList as IComboBoxOption[], caseworkerSearch, prefilters.caseworkers ?? []),
+    [caseworkerOptionsList, caseworkerSearch, prefilters.caseworkers],
+  );
+
+  const setComboSearchTextFor = React.useCallback((key: string, value?: string) => {
+    setComboSearchText((prev) => ({
+      ...prev,
+      [key]: normalizeComboSearchText(value),
+    }));
+  }, []);
 
   const caseworkerSelectedKeys = React.useMemo<string[]>(() => {
     const selected = prefilters.caseworkers ?? [];
     if (selected.length === 0) return [];
-    const allSelected = caseworkerOptionKeys.length > 0
-      && caseworkerOptionKeys.every((key) => selected.includes(key));
-    return allSelected ? [CASEWORKER_ALL_KEY, ...selected] : selected;
-  }, [caseworkerOptionKeys, prefilters.caseworkers]);
+    if (selected.includes(CASEWORKER_ALL_KEY)) {
+      return [CASEWORKER_ALL_KEY];
+    }
+    return selected;
+  }, [prefilters.caseworkers]);
 
   const onPrefilterCaseworkerChange = React.useCallback(
-    (_: React.FormEvent<HTMLDivElement>, option?: IDropdownOption) => {
+    (_: React.FormEvent<IComboBox>, option?: IComboBoxOption) => {
       if (!option || option.disabled) return;
       const key = String(option.key);
-      if (key.startsWith('__')) return;
       if (key === CASEWORKER_ALL_KEY) {
         setPrefilters((prev) => ({
           ...prev,
-          caseworkers: option.selected ? caseworkerOptionKeys : [],
+          caseworkers: option.selected ? [CASEWORKER_ALL_KEY] : [],
         }));
         return;
       }
+      if (key.startsWith('__')) return;
       setPrefilters((prev) => {
-        const current = prev.caseworkers;
+        const current = prev.caseworkers.filter((v) => v !== CASEWORKER_ALL_KEY);
         const next = option.selected ? [...current, key] : current.filter((v) => v !== key);
         return { ...prev, caseworkers: next };
       });
     },
-    [caseworkerOptionKeys],
+    [],
   );
 
   const onPrefilterWorkThatChange = React.useCallback(
-    (_: React.FormEvent<HTMLDivElement>, option?: IDropdownOption) => {
+    (_: React.FormEvent<IComboBox>, option?: IComboBoxOption) => {
       const nextWork = option?.key as ManagerWorkThat | undefined;
       setPrefilters((prev) => ({
         ...prev,
@@ -990,6 +1031,10 @@ export const Grid = React.memo((props: GridProps) => {
     setFilters(searchFilters);
   }, [searchFilters]);
 
+  React.useEffect(() => {
+    setMenuFilterSearch('');
+  }, [menuState]);
+
   const searchByOptions = React.useMemo<IDropdownOption[]>(() => {
     const keys = isSalesSearch ? SALES_SEARCH_OPTIONS : getSearchByOptionsFor(tableKey);
     return keys.map((k) => {
@@ -998,6 +1043,10 @@ export const Grid = React.memo((props: GridProps) => {
       return { key: k, text: label };
     });
   }, [isSalesSearch, tableKey]);
+  const filteredSearchByOptions = React.useMemo(
+    () => filterComboOptions(searchByOptions as IComboBoxOption[], searchBySearch, [String(filters.searchBy)]),
+    [searchByOptions, searchBySearch, filters.searchBy],
+  );
 
   const lengthErrors = React.useMemo(() => getLengthErrors(filters), [filters, getLengthErrors]);
   const addressError = lengthErrors.address;
@@ -1032,6 +1081,11 @@ export const Grid = React.memo((props: GridProps) => {
     return normalizedBillingAuthorityOptions;
   }, [billingAuthorityOptionsError, billingAuthorityOptionsLoading, normalizedBillingAuthorityOptions]);
 
+  const filteredBillingAuthorityOptionsList = React.useMemo(
+    () => filterComboOptions(billingAuthorityOptionsList, billingAuthoritySearch, filters.billingAuthority ?? []),
+    [billingAuthorityOptionsList, billingAuthoritySearch, filters.billingAuthority],
+  );
+
   const managerBillingAuthorityOptions = React.useMemo<IDropdownOption[]>(() => {
     if (billingAuthorityOptionsLoading) {
       return [{ key: '__loading__', text: 'Loading...', disabled: true }];
@@ -1043,39 +1097,48 @@ export const Grid = React.memo((props: GridProps) => {
     return base.length > 0 ? [{ key: BILLING_AUTHORITY_ALL_KEY, text: 'All' }, ...base] : base;
   }, [billingAuthorityOptionsError, billingAuthorityOptionsLoading, normalizedBillingAuthorityOptions]);
 
-  const managerBillingAuthorityKeys = React.useMemo<string[]>(() => {
-    return normalizedBillingAuthorityOptions
-      .map((opt) => String(opt.key))
-      .filter((key) => key !== BILLING_AUTHORITY_ALL_KEY && key !== '__loading__' && key !== '__error__');
-  }, [normalizedBillingAuthorityOptions]);
+  const filteredManagerBillingAuthorityOptions = React.useMemo(
+    () => filterComboOptions(managerBillingAuthorityOptions as IComboBoxOption[], managerBillingSearch, prefilters.billingAuthorities ?? []),
+    [managerBillingAuthorityOptions, managerBillingSearch, prefilters.billingAuthorities],
+  );
+
+  const filteredPrefilterSearchByOptions = React.useMemo(
+    () => filterComboOptions(
+      MANAGER_SEARCH_BY_OPTIONS as IComboBoxOption[],
+      prefilterSearchBySearch,
+      [prefilters.searchBy],
+    ),
+    [prefilterSearchBySearch, prefilters.searchBy],
+  );
 
   const managerBillingSelectedKeys = React.useMemo<string[]>(() => {
     const selected = prefilters.billingAuthorities ?? [];
     if (selected.length === 0) return [];
-    const allSelected = managerBillingAuthorityKeys.length > 0
-      && managerBillingAuthorityKeys.every((key) => selected.includes(key));
-    return allSelected ? [BILLING_AUTHORITY_ALL_KEY, ...selected] : selected;
-  }, [managerBillingAuthorityKeys, prefilters.billingAuthorities]);
+    if (selected.includes(BILLING_AUTHORITY_ALL_KEY)) {
+      return [BILLING_AUTHORITY_ALL_KEY];
+    }
+    return selected;
+  }, [prefilters.billingAuthorities]);
 
   const onPrefilterBillingChange = React.useCallback(
-    (_: React.FormEvent<HTMLDivElement>, option?: IDropdownOption) => {
+    (_: React.FormEvent<IComboBox>, option?: IComboBoxOption) => {
       if (!option) return;
       const key = String(option.key);
       if (key === '__loading__' || key === '__error__') return;
       if (key === BILLING_AUTHORITY_ALL_KEY) {
         setPrefilters((prev) => ({
           ...prev,
-          billingAuthorities: option.selected ? managerBillingAuthorityKeys : [],
+          billingAuthorities: option.selected ? [BILLING_AUTHORITY_ALL_KEY] : [],
         }));
         return;
       }
       setPrefilters((prev) => {
-        const current = prev.billingAuthorities;
+        const current = prev.billingAuthorities.filter((v) => v !== BILLING_AUTHORITY_ALL_KEY);
         const next = option.selected ? [...current, key] : current.filter((v) => v !== key);
         return { ...prev, billingAuthorities: next };
       });
     },
-    [managerBillingAuthorityKeys],
+    [],
   );
   const summaryFlagError = lengthErrors.summaryFlag;
   const searchFieldError = lengthErrors.searchField;
@@ -1088,7 +1151,7 @@ export const Grid = React.memo((props: GridProps) => {
   );
 
   const onSearchByChange = React.useCallback(
-    (_: React.FormEvent<HTMLDivElement>, option?: IDropdownOption) => {
+    (_: React.FormEvent<IComboBox>, option?: IComboBoxOption) => {
       if (!option) {
         return;
       }
@@ -1142,7 +1205,7 @@ export const Grid = React.memo((props: GridProps) => {
   );
 
   const updateMultiSelect = React.useCallback(
-    (key: keyof GridFilterState, option?: IDropdownOption, limit?: number) => {
+    (key: keyof GridFilterState, option?: IComboBoxOption, limit?: number) => {
       if (!option) return;
       setFilters((prev) => {
         const current = (prev[key] as string[] | undefined) ?? [];
@@ -1162,7 +1225,7 @@ export const Grid = React.memo((props: GridProps) => {
   );
 
   const updateSingleSelect = React.useCallback(
-    (key: keyof GridFilterState, option?: IDropdownOption) => {
+    (key: keyof GridFilterState, option?: IComboBoxOption) => {
       setFilters((prev) => ({ ...prev, [key]: (option?.key as string) ?? undefined }));
     },
     [],
@@ -1737,7 +1800,7 @@ export const Grid = React.memo((props: GridProps) => {
               <ComboBox
                 label="Billing Authority"
                 placeholder="Select Billing Authority"
-                options={billingAuthorityOptionsList}
+                options={filteredBillingAuthorityOptionsList}
                 selectedKey={authority}
                 allowFreeform={false}
                 autoComplete="on"
@@ -1746,7 +1809,10 @@ export const Grid = React.memo((props: GridProps) => {
                   if (!opt || opt.key === '__loading__' || opt.key === '__error__') return;
                   const next = String(opt.key ?? '');
                   updateFilters('billingAuthority', next ? [next] : undefined);
+                  setBillingAuthoritySearch('');
                 }}
+                onInputValueChange={(value) => setBillingAuthoritySearch(normalizeComboSearchText(value))}
+                onMenuDismissed={() => setBillingAuthoritySearch('')}
                 errorMessage={billingAuthorityError ?? billingAuthorityOptionsError}
                 styles={{
                   root: { width: '100%' },
@@ -1868,7 +1934,7 @@ export const Grid = React.memo((props: GridProps) => {
       return (
         <Stack horizontal wrap tokens={{ childrenGap: 8 }}>
           <Stack.Item styles={{ root: { minWidth: 140 } }}>
-            <Dropdown
+            <ComboBox
               label="Options"
               options={[
                 { key: '>=', text: 'Greater than or equal to' },
@@ -1876,9 +1942,16 @@ export const Grid = React.memo((props: GridProps) => {
                 { key: 'between', text: 'Between' },
               ]}
               selectedKey={mode}
+              allowFreeform={false}
+              autoComplete="on"
               onChange={(_, o) =>
                 updateNumericFilter(numericKey, 'mode', typeof o?.key === 'string' ? o.key : mode)
               }
+              styles={{
+                root: { width: '100%' },
+                callout: { minWidth: 240 },
+                optionsContainer: { minWidth: 200 },
+              }}
             />
           </Stack.Item>
           <Stack.Item styles={{ root: { minWidth: 140 } }}>
@@ -1936,15 +2009,26 @@ export const Grid = React.memo((props: GridProps) => {
     if (cfg.control === 'singleSelect') {
       const options = buildDropdownOptions(cfg);
       const selectedKey = getFilterField<string>(filters, cfg.stateKey);
+      const searchText = comboSearchText[cfg.key] ?? '';
+      const filteredOptions = filterComboOptions(
+        options,
+        searchText,
+        selectedKey ? [selectedKey] : [],
+      );
       return (
         <Stack.Item styles={{ root: { minWidth: 200 } }}>
           <ComboBox
             label={cfg.label}
-            options={options}
+            options={filteredOptions}
             selectedKey={selectedKey}
             allowFreeform={false}
             autoComplete="on"
-            onChange={(_, opt) => updateSingleSelect(cfg.stateKey, opt as IDropdownOption)}
+            onChange={(_, opt) => {
+              updateSingleSelect(cfg.stateKey, opt);
+              setComboSearchTextFor(cfg.key, '');
+            }}
+            onInputValueChange={(value) => setComboSearchTextFor(cfg.key, value)}
+            onMenuDismissed={() => setComboSearchTextFor(cfg.key, '')}
             styles={{
               root: { width: '100%' },
               callout: { minWidth: 240 },
@@ -1958,14 +2042,18 @@ export const Grid = React.memo((props: GridProps) => {
     if (cfg.control === 'multiSelect') {
       const options = buildDropdownOptions(cfg);
       const selected = getFilterField<string[]>(filters, cfg.stateKey);
+      const searchText = comboSearchText[cfg.key] ?? '';
+      const filteredOptions = filterComboOptions(options, searchText, selected ?? []);
       return (
         <Stack.Item styles={{ root: { minWidth: 200 } }}>
           <ComboBox
             label={cfg.label}
             multiSelect
             allowFreeform={false}
+            allowFreeInput
             autoComplete="on"
-            options={options}
+            persistMenu
+            options={filteredOptions}
             selectedKey={selected ?? []}
             onChange={(_, opt) => {
               if (!opt) return;
@@ -1978,8 +2066,11 @@ export const Grid = React.memo((props: GridProps) => {
                 updateFilters(cfg.stateKey, cfg.multiLimit ? values.slice(Math.max(0, values.length - cfg.multiLimit)) : values);
                 return;
               }
-              updateMultiSelect(cfg.stateKey, opt as IDropdownOption, cfg.multiLimit);
+              updateMultiSelect(cfg.stateKey, opt, cfg.multiLimit);
+              setComboSearchTextFor(cfg.key, '');
             }}
+            onInputValueChange={(value) => setComboSearchTextFor(cfg.key, value)}
+            onMenuDismissed={() => setComboSearchTextFor(cfg.key, '')}
             styles={{
               root: { width: '100%' },
               callout: { minWidth: 240 },
@@ -1996,7 +2087,7 @@ export const Grid = React.memo((props: GridProps) => {
     addressError,
     billingAuthorityError,
     billingAuthorityOptionsError,
-    billingAuthorityOptionsList,
+    filteredBillingAuthorityOptionsList,
     billingAuthorityOptionsLoading,
     billingAuthorityRefError,
     postcodeError,
@@ -2020,6 +2111,8 @@ export const Grid = React.memo((props: GridProps) => {
     normalizeUkPostcode,
     updateSingleSelect,
     updateMultiSelect,
+    comboSearchText,
+    setComboSearchTextFor,
   ]);
 
   const scheduleLiveTextFilter = React.useCallback((fieldName: string, value: string) => {
@@ -2286,6 +2379,28 @@ export const Grid = React.memo((props: GridProps) => {
   }, []);
 
   const assignUsers = React.useMemo(() => assignUsersProp ?? [], [assignUsersProp]);
+  const assignTeamOptions = React.useMemo<IComboBoxOption[]>(
+    () => assignUsers
+      .map((u) => u.team)
+      .filter((v, i, a) => a.indexOf(v) === i)
+      .map((team) => ({ key: team, text: team })),
+    [assignUsers],
+  );
+  const assignRoleOptions = React.useMemo<IComboBoxOption[]>(
+    () => assignUsers
+      .map((u) => u.role)
+      .filter((v, i, a) => a.indexOf(v) === i)
+      .map((role) => ({ key: role, text: role })),
+    [assignUsers],
+  );
+  const filteredAssignTeamOptions = React.useMemo(
+    () => filterComboOptions(assignTeamOptions, assignTeamSearch, assignTeam ? [String(assignTeam)] : []),
+    [assignTeam, assignTeamOptions, assignTeamSearch],
+  );
+  const filteredAssignRoleOptions = React.useMemo(
+    () => filterComboOptions(assignRoleOptions, assignRoleSearch, assignRole ? [String(assignRole)] : []),
+    [assignRole, assignRoleOptions, assignRoleSearch],
+  );
 
   const assignFilteredUsers = React.useMemo(() => {
     const term = assignSearch.trim().toLowerCase();
@@ -2361,20 +2476,17 @@ export const Grid = React.memo((props: GridProps) => {
     () => getManagerWorkThatOptions(prefilters.searchBy),
     [prefilters.searchBy],
   );
+  const filteredPrefilterWorkThatOptions = React.useMemo(
+    () => filterComboOptions(
+      prefilterWorkThatOptions as IComboBoxOption[],
+      prefilterWorkThatSearch,
+      prefilters.workThat ? [prefilters.workThat] : [],
+    ),
+    [prefilterWorkThatOptions, prefilterWorkThatSearch, prefilters.workThat],
+  );
   const caseworkerOptionsDisabled = caseworkerOptionsLoading
     || !!caseworkerOptionsError
     || normalizedCaseworkerOptions.length === 0;
-  const renderPrefilterTitle = React.useCallback((options?: IDropdownOption[]) => {
-    const text = (options ?? [])
-      .map((opt) => String(opt.text ?? opt.key ?? '').trim())
-      .filter((val) => val !== '')
-      .join(', ');
-    return (
-      <span className="voa-prefilter-title" title={text} aria-label={text}>
-        {text}
-      </span>
-    );
-  }, []);
   const prefilterNeedsCompletedDates = isManagerCompletedWorkThat(prefilters.workThat);
   const prefilterHasOwner = prefilters.searchBy === 'billingAuthority'
     ? prefilters.billingAuthorities.length > 0
@@ -2401,6 +2513,17 @@ export const Grid = React.memo((props: GridProps) => {
     const options = cfg?.control === 'multiSelect' || cfg?.control === 'singleSelect'
       ? buildColumnFilterOptions(fieldName, cfg)
       : [];
+    const filteredColumnOptions = cfg?.control === 'multiSelect' || cfg?.control === 'singleSelect'
+      ? filterComboOptions(
+        options,
+        menuFilterSearch,
+        Array.isArray(menuFilterValue)
+          ? menuFilterValue.map((v) => String(v))
+          : typeof menuFilterValue === 'string'
+          ? [menuFilterValue]
+          : [],
+      )
+      : options;
     const textVal = typeof menuFilterValue === 'string' ? menuFilterValue : '';
     const numVal = (menuFilterValue as NumericFilter) ?? { mode: '>=' };
     const dateVal = (menuFilterValue as DateRangeFilter) ?? {};
@@ -2484,16 +2607,21 @@ export const Grid = React.memo((props: GridProps) => {
               <ComboBox
                 label={`Filter ${menuState.column.name}`}
                 placeholder={`Select ${menuState.column.name}`}
-                options={options}
+                options={filteredColumnOptions}
                 allowFreeform={false}
                 autoComplete="on"
-              selectedKey={typeof menuFilterValue === 'string' ? menuFilterValue : undefined}
-              onChange={(_, opt) => setMenuFilterValue((opt?.key as string) ?? '')}
-              styles={{
-                root: { width: '100%' },
-                callout: { minWidth: 240 },
-                optionsContainer: { minWidth: 200 },
-              }}
+                selectedKey={typeof menuFilterValue === 'string' ? menuFilterValue : undefined}
+                onChange={(_, opt) => {
+                  setMenuFilterValue((opt?.key as string) ?? '');
+                  setMenuFilterSearch('');
+                }}
+                onInputValueChange={(value) => setMenuFilterSearch(normalizeComboSearchText(value))}
+                onMenuDismissed={() => setMenuFilterSearch('')}
+                styles={{
+                  root: { width: '100%' },
+                  callout: { minWidth: 240 },
+                  optionsContainer: { minWidth: 200 },
+                }}
             />
           );
           case 'multiSelect':
@@ -2501,15 +2629,18 @@ export const Grid = React.memo((props: GridProps) => {
           <ComboBox
             label={`Filter ${menuState.column.name}`}
             placeholder={`Select ${menuState.column.name}`}
-            options={options}
+            options={filteredColumnOptions}
             multiSelect
             allowFreeform={false}
+            allowFreeInput
             autoComplete="on"
+            persistMenu
             selectedKey={Array.isArray(menuFilterValue) ? menuFilterValue : []}
             onChange={(_, opt) => {
               if (!opt) return;
               if (opt.key === 'all' && cfg.selectAllValues) {
                 setMenuFilterValue(cfg.selectAllValues);
+                setMenuFilterSearch('');
                 return;
               }
               setMenuFilterValue((prev) => {
@@ -2526,7 +2657,10 @@ export const Grid = React.memo((props: GridProps) => {
                   }
                   return current;
                 });
+              setMenuFilterSearch('');
               }}
+              onInputValueChange={(value) => setMenuFilterSearch(normalizeComboSearchText(value))}
+              onMenuDismissed={() => setMenuFilterSearch('')}
               styles={{
                 root: { width: '100%' },
                 callout: { minWidth: 240 },
@@ -2537,7 +2671,7 @@ export const Grid = React.memo((props: GridProps) => {
         case 'numeric':
           return (
             <Stack tokens={{ childrenGap: 8 }}>
-              <Dropdown
+              <ComboBox
                 label="Options"
                 options={[
                   { key: '>=', text: 'Greater than or equal to' },
@@ -2545,6 +2679,8 @@ export const Grid = React.memo((props: GridProps) => {
                   { key: 'between', text: 'Between' },
                 ]}
                 selectedKey={numVal.mode ?? '>='}
+                allowFreeform={false}
+                autoComplete="on"
                 onChange={(_, opt) =>
                   setMenuFilterValue((prev) => {
                     const current = (prev as NumericFilter) ?? { mode: '>=' };
@@ -2552,6 +2688,11 @@ export const Grid = React.memo((props: GridProps) => {
                     return { ...current, mode };
                   })
                 }
+                styles={{
+                  root: { width: '100%' },
+                  callout: { minWidth: 240 },
+                  optionsContainer: { minWidth: 200 },
+                }}
               />
               <TextField
                 label={`${menuState.column.name} ${numVal.mode === '<=' ? 'max' : 'min'}`}
@@ -2658,6 +2799,7 @@ export const Grid = React.memo((props: GridProps) => {
     menuFilterError,
     menuFilterValue,
     menuFilterText,
+    menuFilterSearch,
     handleSort,
     buildColumnFilterOptions,
     applyFilter,
@@ -2782,14 +2924,24 @@ export const Grid = React.memo((props: GridProps) => {
           </Stack.Item>
           <Stack.Item className="voa-prefilter-col voa-prefilter-col-searchby-field">
             <div className="voa-prefilter-field">
-              <Dropdown
+              <ComboBox
                 id="prefilter-searchby"
                 ariaLabel="Search by"
-                options={MANAGER_SEARCH_BY_OPTIONS}
+                options={filteredPrefilterSearchByOptions}
                 selectedKey={prefilters.searchBy}
-                onChange={onPrefilterSearchByChange}
-                onRenderTitle={renderPrefilterTitle}
-                styles={{ dropdown: { width: '100%' } }}
+                onChange={(event, option) => {
+                  onPrefilterSearchByChange(event, option);
+                  setPrefilterSearchBySearch('');
+                }}
+                allowFreeform={false}
+                autoComplete="on"
+                onInputValueChange={(value) => setPrefilterSearchBySearch(normalizeComboSearchText(value))}
+                onMenuDismissed={() => setPrefilterSearchBySearch('')}
+                styles={{
+                  root: { width: '100%' },
+                  callout: { minWidth: 240 },
+                  optionsContainer: { minWidth: 200 },
+                }}
               />
             </div>
           </Stack.Item>
@@ -2802,17 +2954,29 @@ export const Grid = React.memo((props: GridProps) => {
               </Stack.Item>
               <Stack.Item className="voa-prefilter-col voa-prefilter-col-owner-field">
                 <div className="voa-prefilter-field">
-                  <Dropdown
+                  <ComboBox
                     id="prefilter-billing"
                     ariaLabel="Billing Authority"
                     placeholder="Select Billing Authorities"
                     multiSelect
-                    options={managerBillingAuthorityOptions}
-                    selectedKeys={managerBillingSelectedKeys}
-                    onChange={onPrefilterBillingChange}
-                    onRenderTitle={renderPrefilterTitle}
+                    options={filteredManagerBillingAuthorityOptions}
+                    selectedKey={managerBillingSelectedKeys}
+                    onChange={(event, option) => {
+                      onPrefilterBillingChange(event, option);
+                      setManagerBillingSearch('');
+                    }}
                     disabled={billingAuthorityOptionsLoading}
-                    styles={{ dropdown: { width: '100%' } }}
+                    allowFreeform={false}
+                    allowFreeInput
+                    autoComplete="on"
+                    persistMenu
+                    onInputValueChange={(value) => setManagerBillingSearch(normalizeComboSearchText(value))}
+                    onMenuDismissed={() => setManagerBillingSearch('')}
+                    styles={{
+                      root: { width: '100%' },
+                      callout: { minWidth: 240 },
+                      optionsContainer: { minWidth: 240 },
+                    }}
                   />
                 </div>
               </Stack.Item>
@@ -2826,17 +2990,29 @@ export const Grid = React.memo((props: GridProps) => {
               </Stack.Item>
               <Stack.Item className="voa-prefilter-col voa-prefilter-col-owner-field">
                 <div className="voa-prefilter-field">
-                  <Dropdown
+                  <ComboBox
                     id="prefilter-caseworker"
                     ariaLabel="Caseworker"
                     placeholder="Select User"
                     multiSelect
-                    options={caseworkerOptionsList}
-                    selectedKeys={caseworkerSelectedKeys}
-                    onChange={onPrefilterCaseworkerChange}
-                    onRenderTitle={renderPrefilterTitle}
+                    options={filteredCaseworkerOptionsList}
+                    selectedKey={caseworkerSelectedKeys}
+                    onChange={(event, option) => {
+                      onPrefilterCaseworkerChange(event, option);
+                      setCaseworkerSearch('');
+                    }}
                     disabled={caseworkerOptionsDisabled}
-                    styles={{ dropdown: { width: '100%' } }}
+                    allowFreeform={false}
+                    allowFreeInput
+                    autoComplete="on"
+                    persistMenu
+                    onInputValueChange={(value) => setCaseworkerSearch(normalizeComboSearchText(value))}
+                    onMenuDismissed={() => setCaseworkerSearch('')}
+                    styles={{
+                      root: { width: '100%' },
+                      callout: { minWidth: 240 },
+                      optionsContainer: { minWidth: 240 },
+                    }}
                   />
                   {caseworkerOptionsError && (
                     <Text variant="small" styles={{ root: { color: theme.palette.redDark, marginTop: 2 } }}>
@@ -2854,15 +3030,25 @@ export const Grid = React.memo((props: GridProps) => {
           </Stack.Item>
           <Stack.Item className="voa-prefilter-col voa-prefilter-col-workthat-field">
             <div className="voa-prefilter-field">
-              <Dropdown
+              <ComboBox
                 id="prefilter-workthat"
                 ariaLabel="Work that"
                 placeholder="Select a option"
-                options={prefilterWorkThatOptions}
+                options={filteredPrefilterWorkThatOptions}
                 selectedKey={prefilters.workThat}
-                onChange={onPrefilterWorkThatChange}
-                onRenderTitle={renderPrefilterTitle}
-                styles={{ dropdown: { width: '100%' } }}
+                onChange={(event, option) => {
+                  onPrefilterWorkThatChange(event, option);
+                  setPrefilterWorkThatSearch('');
+                }}
+                allowFreeform={false}
+                autoComplete="on"
+                onInputValueChange={(value) => setPrefilterWorkThatSearch(normalizeComboSearchText(value))}
+                onMenuDismissed={() => setPrefilterWorkThatSearch('')}
+                styles={{
+                  root: { width: '100%' },
+                  callout: { minWidth: 240 },
+                  optionsContainer: { minWidth: 200 },
+                }}
               />
             </div>
           </Stack.Item>
@@ -2947,12 +3133,23 @@ export const Grid = React.memo((props: GridProps) => {
           styles={{ root: { marginBottom: 16 } }}
         >
           <Stack.Item styles={{ root: { minWidth: 200 } }}>
-            <Dropdown
+            <ComboBox
               label="Search by"
-              options={searchByOptions}
+              options={filteredSearchByOptions}
               selectedKey={filters.searchBy}
-              onChange={onSearchByChange}
-              styles={{ dropdown: { width: '100%' } }}
+              onChange={(event, option) => {
+                onSearchByChange(event, option);
+                setSearchBySearch('');
+              }}
+              allowFreeform={false}
+              autoComplete="on"
+              onInputValueChange={(value) => setSearchBySearch(normalizeComboSearchText(value))}
+              onMenuDismissed={() => setSearchBySearch('')}
+              styles={{
+                root: { width: '100%' },
+                callout: { minWidth: 240 },
+                optionsContainer: { minWidth: 200 },
+              }}
             />
           </Stack.Item>
           {renderSearchControl()}
@@ -3164,29 +3361,45 @@ export const Grid = React.memo((props: GridProps) => {
                   disabled={assignLoading || assignUsersLoading}
                 />
                 <Stack horizontal tokens={{ childrenGap: 12 }} wrap>
-                  <Dropdown
+                  <ComboBox
                     label="Team"
                     selectedKey={assignTeam}
                     placeholder="Filter by team"
-                    options={assignUsers
-                      .map((u) => u.team)
-                      .filter((v, i, a) => a.indexOf(v) === i)
-                      .map((team) => ({ key: team, text: team }))}
-                    onChange={(_, opt) => setAssignTeam(opt?.key)}
+                    options={filteredAssignTeamOptions}
+                    onChange={(_, opt) => {
+                      setAssignTeam(opt?.key);
+                      setAssignTeamSearch('');
+                    }}
                     disabled={assignLoading || assignUsersLoading}
-                    styles={{ root: { minWidth: 200 } }}
+                    allowFreeform={false}
+                    autoComplete="on"
+                    onInputValueChange={(value) => setAssignTeamSearch(normalizeComboSearchText(value))}
+                    onMenuDismissed={() => setAssignTeamSearch('')}
+                    styles={{
+                      root: { minWidth: 200 },
+                      callout: { minWidth: 240 },
+                      optionsContainer: { minWidth: 200 },
+                    }}
                   />
-                  <Dropdown
+                  <ComboBox
                     label="Role"
                     selectedKey={assignRole}
                     placeholder="Filter by role"
-                    options={assignUsers
-                      .map((u) => u.role)
-                      .filter((v, i, a) => a.indexOf(v) === i)
-                      .map((role) => ({ key: role, text: role }))}
-                    onChange={(_, opt) => setAssignRole(opt?.key)}
+                    options={filteredAssignRoleOptions}
+                    onChange={(_, opt) => {
+                      setAssignRole(opt?.key);
+                      setAssignRoleSearch('');
+                    }}
                     disabled={assignLoading || assignUsersLoading}
-                    styles={{ root: { minWidth: 200 } }}
+                    allowFreeform={false}
+                    autoComplete="on"
+                    onInputValueChange={(value) => setAssignRoleSearch(normalizeComboSearchText(value))}
+                    onMenuDismissed={() => setAssignRoleSearch('')}
+                    styles={{
+                      root: { minWidth: 200 },
+                      callout: { minWidth: 240 },
+                      optionsContainer: { minWidth: 200 },
+                    }}
                   />
                 </Stack>
                 {assignUsersLoading && <Spinner size={SpinnerSize.small} ariaLabel="Loading users" />}

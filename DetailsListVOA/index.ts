@@ -19,6 +19,7 @@ export class DetailsListVOA implements ComponentFramework.ReactControl<IInputs, 
   private backRequestId?: string;
   private actionType?: string;
   private actionRequestId?: string;
+  private actionSequence = 0;
 
   public init(
     context: ComponentFramework.Context<IInputs>,
@@ -141,8 +142,17 @@ export class DetailsListVOA implements ComponentFramework.ReactControl<IInputs, 
   }
 
   private emitAction(type: 'back' | 'viewSale'): void {
+    if (type === 'back') {
+      // Ensure outputs change even when the last action was also "back".
+      this.selectedTaskId = '';
+      this.selectedSaleId = '';
+      this.selectedTaskIdsJson = '[]';
+      this.selectedSaleIdsJson = '[]';
+      this.selectedCount = 0;
+    }
     this.actionType = type;
-    this.actionRequestId = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    this.actionSequence += 1;
+    this.actionRequestId = `${this.actionSequence}-${Date.now()}`;
     this.backRequestId = this.actionRequestId;
     console.log('[DetailsListVOA] Action emitted:', {
       actionType: this.actionType,

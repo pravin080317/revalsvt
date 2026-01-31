@@ -51,13 +51,13 @@ const mapWorkThatToStatuses = (workThat?: ManagerWorkThat): string[] => {
     case 'readyToAllocate':
       return ['New'];
     case 'currentlyAssigned':
-      return ['Assigned QC -Failed', 'Assigned'];
+      return ['Assigned QC Failed', 'Assigned'];
     case 'awaitingQc':
-      return ['QC requested', 'Reassigned to QC', 'Assigned to QC'];
+      return ['QC Requested', 'Reassigned To QC', 'Assigned To QC'];
     case 'assignedToSelected':
-      return ['Assigned QC -Failed', 'Assigned'];
+      return ['Assigned QC Failed', 'Assigned'];
     case 'assignedAwaitingQc':
-      return ['QC requested', 'Reassigned to QC', 'Assigned to QC'];
+      return ['QC Requested', 'Reassigned To QC', 'Assigned To QC'];
     case 'completedBySelected':
     case 'hasBeenComplete':
       return ['Complete Passed QC', 'Complete'];
@@ -70,9 +70,13 @@ export const mapManagerPrefiltersToApi = (prefilters?: ManagerPrefilterState): R
   if (!prefilters) return {};
   const params: Record<string, string> = {};
   const separator = MANAGER_PREFILTER_VALUE_SEPARATOR;
+  const isAllSelected = (values: string[]): boolean => values.some((v) => v.trim() === '__all__');
   const trimList = (values: string[]): string[] =>
     values.map((v) => (typeof v === 'string' ? v.trim() : '')).filter((v) => v.length > 0);
   const joinValues = (values: string[]): string | undefined => {
+    if (isAllSelected(values)) {
+      return 'ALL';
+    }
     const trimmed = trimList(values);
     return trimmed.length > 0 ? trimmed.join(separator) : undefined;
   };
