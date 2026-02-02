@@ -258,6 +258,11 @@ namespace VOA.SVT.Plugins.CustomAPI
                 return "QCA";
             }
 
+            if ((lower.Contains("qc") || lower.Contains("quality")) && lower.Contains("view") && !lower.Contains("assignment"))
+            {
+                return "QCV";
+            }
+
             if (lower.Contains("caseworker"))
             {
                 return "CW";
