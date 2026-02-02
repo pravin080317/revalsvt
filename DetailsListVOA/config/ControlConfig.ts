@@ -10,6 +10,8 @@ export const CONTROL_CONFIG = {
   taskAssignmentApiName: 'voa_SvtTaskAssignment',
   assignableUsersApiName: 'voa_SvtGetAssignableUsers',
   assignableUsersApiType: 'function',
-  emptyStateTitle: "We didn't find anything to show here",
-  emptyStateMessage: 'Try adjusting your filters or search.',
+  taskAssignment: {
+    maxBatchSize: 500,
+    allowedStatuses: ['New', 'Assigned', 'Assigned QC failed', 'QC requested'],
+  },
 };

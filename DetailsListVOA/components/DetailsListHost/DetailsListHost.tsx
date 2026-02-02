@@ -8,6 +8,7 @@ import { getProfileConfigs } from '../../config/ColumnProfiles';
 import { CONTROL_CONFIG } from '../../config/ControlConfig';
 import { getColumnFilterConfigFor, isLookupFieldFor, type TableKey } from '../../config/TableConfigs';
 import { type ManagerPrefilterState } from '../../config/PrefilterConfigs';
+import { SCREEN_TEXT } from '../../constants/ScreenText';
 import { buildColumns } from '../../utils/ColumnsBuilder';
 import { ensureSampleColumns, buildSampleEntityRecords } from '../../utils/SampleHelpers';
 import { loadGridData } from '../../services/GridDataController';
@@ -143,6 +144,36 @@ const resolveScreenConfig = (
   fallbackTableKey: TableKey,
 ): ResolvedScreenConfig => {
   return resolveFromScreenName(canvasScreenName) ?? buildResolvedFromTableKey(explicitTableKey ?? fallbackTableKey);
+};
+
+const normalizeUserId = (value?: string): string => {
+  if (!value) return '';
+  const trimmed = value.trim();
+  if (!trimmed) return '';
+  return trimmed.replace(/^[{(]?(.*?)[)}]?$/, '$1');
+};
+
+const resolveAssignedByUserId = (context: ComponentFramework.Context<IInputs>): string => {
+  const fromContext = (context.userSettings as { userId?: string } | undefined)?.userId;
+  if (fromContext) return normalizeUserId(fromContext);
+  const xrm = (globalThis as {
+    Xrm?: { Utility?: { getGlobalContext?: () => { userSettings?: { userId?: string } } } };
+  }).Xrm;
+  const fromXrm = xrm?.Utility?.getGlobalContext?.()?.userSettings?.userId;
+  return normalizeUserId(fromXrm);
+};
+
+const resolveAssignmentScreenName = (raw: string, kind: ScreenKind): string => {
+  switch (kind) {
+    case 'managerAssign':
+      return 'manager assignment';
+    case 'qcAssign':
+      return 'quality control assignment';
+    default: {
+      const trimmed = raw.trim();
+      return trimmed;
+    }
+  }
 };
 
 const SALES_SEARCH_DEFAULT_FILTERS: GridFilterState = {
@@ -465,6 +496,13 @@ export const DetailsListHost: React.FC<DetailsListHostProps> = ({
     [canvasScreenName, explicitTableKey, fallbackTableKey],
   );
   const { tableKey, profileKey, sourceCode, kind: screenKind } = resolvedScreenConfig;
+  const assignmentScreenName = React.useMemo(
+    () => resolveAssignmentScreenName(canvasScreenName, screenKind),
+    [canvasScreenName, screenKind],
+  );
+  const commonText = SCREEN_TEXT.common;
+  const managerText = SCREEN_TEXT.managerAssignment;
+  const assignTasksText = SCREEN_TEXT.assignTasks;
 
   // Column display names and configs
   const [columnDisplayNames, setColumnDisplayNames] = React.useState<Record<string, string>>({});
@@ -627,23 +665,23 @@ export const DetailsListHost: React.FC<DetailsListHostProps> = ({
 
     const normalizedRaw = rawResult.trim();
     if (!normalizedRaw || normalizedRaw.toLowerCase() === 'null') {
-      return { users: [] as AssignUser[], info: 'No users found.' };
+      return { users: [] as AssignUser[], info: assignTasksText.messages.noUsersFound };
     }
 
     let parsed: AssignableUsersResult | undefined;
     try {
       parsed = JSON.parse(normalizedRaw) as AssignableUsersResult;
     } catch {
-      return { users: [] as AssignUser[], error: 'Unable to parse assignable users response.' };
+      return { users: [] as AssignUser[], error: assignTasksText.messages.assignableUsersParseFailed };
     }
 
     if (!parsed?.success) {
-      return { users: [] as AssignUser[], error: parsed?.message ?? 'Unable to load assignable users.' };
+      return { users: [] as AssignUser[], error: parsed?.message ?? assignTasksText.messages.assignableUsersLoadFailed };
     }
 
     const users = Array.isArray(parsed.users) ? parsed.users : [];
     if (users.length === 0) {
-      const message = parsed?.message?.trim() ? parsed.message : 'No users found.';
+      const message = parsed?.message?.trim() ? parsed.message : assignTasksText.messages.noUsersFound;
       return { users: [] as AssignUser[], info: message };
     }
 
@@ -659,7 +697,7 @@ export const DetailsListHost: React.FC<DetailsListHostProps> = ({
       .filter((u) => u.id);
 
     return { users: normalized };
-  }, []);
+  }, [assignTasksText.messages]);
 
   const getUserDisplayName = React.useCallback((user: AssignUser): string => {
     const first = String(user?.firstName ?? '').trim();
@@ -1092,7 +1130,7 @@ export const DetailsListHost: React.FC<DetailsListHostProps> = ({
     const apiName = resolveAssignableUsersApiName();
     if (!apiName) {
       setAssignUsers([]);
-      setAssignUsersError('Assignable users API name is not configured.');
+      setAssignUsersError(assignTasksText.messages.assignableUsersApiNotConfigured);
       setAssignUsersInfo(undefined);
       setAssignUsersLoading(false);
       return;
@@ -1143,7 +1181,7 @@ export const DetailsListHost: React.FC<DetailsListHostProps> = ({
         setAssignUsersInfo(undefined);
       } catch (err) {
         setAssignUsers([]);
-        setAssignUsersError(err instanceof Error ? err.message : 'Unable to load assignable users.');
+        setAssignUsersError(err instanceof Error ? err.message : assignTasksText.messages.assignableUsersLoadFailed);
         setAssignUsersInfo(undefined);
       } finally {
         if (assignUsersLoadKeyRef.current === requestKey) {
@@ -1151,7 +1189,7 @@ export const DetailsListHost: React.FC<DetailsListHostProps> = ({
         }
       }
     })();
-  }, [assignPanelOpen, assignmentContextKey, canvasScreenName, context, parseAssignableUsersResponse, mergeAssignableUsers]);
+  }, [assignPanelOpen, assignmentContextKey, assignTasksText.messages, canvasScreenName, context, parseAssignableUsersResponse, mergeAssignableUsers]);
 
   React.useEffect(() => {
     if (!isManagerAssign) {
@@ -1165,7 +1203,7 @@ export const DetailsListHost: React.FC<DetailsListHostProps> = ({
     const apiName = resolveAssignableUsersApiName();
     if (!apiName) {
       setCaseworkerOptions([]);
-      setCaseworkerOptionsError('Assignable users API name is not configured.');
+      setCaseworkerOptionsError(managerText.errors.assignableUsersApiNotConfigured);
       setCaseworkerOptionsLoading(false);
       return;
     }
@@ -1212,7 +1250,7 @@ export const DetailsListHost: React.FC<DetailsListHostProps> = ({
         setCaseworkerOptionsError(undefined);
       } catch (err) {
         setCaseworkerOptions([]);
-        setCaseworkerOptionsError(err instanceof Error ? err.message : 'Unable to load caseworkers.');
+        setCaseworkerOptionsError(err instanceof Error ? err.message : managerText.errors.caseworkersLoadFailed);
       } finally {
         if (caseworkerOptionsLoadKeyRef.current === requestKey) {
           setCaseworkerOptionsLoading(false);
@@ -1225,6 +1263,7 @@ export const DetailsListHost: React.FC<DetailsListHostProps> = ({
     canvasScreenName,
     context,
     isManagerAssign,
+    managerText.errors,
     parseAssignableUsersResponse,
     mergeAssignableUsers,
   ]);
@@ -1341,7 +1380,7 @@ export const DetailsListHost: React.FC<DetailsListHostProps> = ({
 
     if (!metadataApiName) {
       setBillingAuthorityOptions([]);
-      setBillingAuthorityOptionsError('Metadata API name is not configured.');
+      setBillingAuthorityOptionsError(commonText.messages.metadataApiNotConfigured);
       setBillingAuthorityOptionsLoading(false);
       return;
     }
@@ -1397,12 +1436,12 @@ export const DetailsListHost: React.FC<DetailsListHostProps> = ({
 
         setBillingAuthorityOptions(normalized);
         if (!record || (!Array.isArray(record?.billingAuthority) && !Array.isArray(record?.billingAuthorities))) {
-          setBillingAuthorityOptionsError('No billing authorities returned.');
+          setBillingAuthorityOptionsError(commonText.messages.billingAuthoritiesMissing);
         }
       } catch {
         if (!active) return;
         setBillingAuthorityOptions([]);
-        setBillingAuthorityOptionsError('Unable to load Billing Authorities.');
+        setBillingAuthorityOptionsError(commonText.messages.billingAuthoritiesLoadFailed);
       } finally {
         if (active) {
           setBillingAuthorityOptionsLoading(false);
@@ -1413,43 +1452,105 @@ export const DetailsListHost: React.FC<DetailsListHostProps> = ({
     return () => {
       active = false;
     };
-  }, [context, isManagerAssign, isSalesSearch, metadataApiName, metadataApiType]);
+  }, [commonText.messages, context, isManagerAssign, isSalesSearch, metadataApiName, metadataApiType]);
 
   const assignTasksToUser = async (user: { id: string; firstName: string; lastName: string }): Promise<boolean> => {
     try {
       const selected = selection.getSelection() as Record<string, unknown>[];
       if (selected.length === 0) {
-        setAssignMessage({ text: 'Please select one or more tasks to assign.', type: MessageBarType.warning });
+        setAssignMessage({ text: assignTasksText.messages.selectTasksWarning, type: MessageBarType.warning });
+        return false;
+      }
+      const assignmentConfig = CONTROL_CONFIG.taskAssignment ?? { maxBatchSize: 500, allowedStatuses: [] as string[] };
+      const maxBatchSize = assignmentConfig.maxBatchSize ?? 500;
+      if (selected.length > maxBatchSize) {
+        const template = assignTasksText.messages.tooManyTasks;
+        const message = template.replace(/\{max\}/g, String(maxBatchSize));
+        setAssignMessage({ text: message, type: MessageBarType.warning });
         return false;
       }
       const apiName = resolveAssignmentApiName();
       if (!apiName) {
-        setAssignMessage({ text: 'Task assignment API name is not configured.', type: MessageBarType.error });
+        setAssignMessage({ text: assignTasksText.messages.apiNotConfigured, type: MessageBarType.error });
         return false;
       }
       const customApiType = resolveCustomApiTypeForAssign();
-      const assignedBy = (context.userSettings as { userId?: string } | undefined)?.userId ?? '';
+      const assignedBy = resolveAssignedByUserId(context);
       const assignedDate = new Date().toISOString();
+      const toNumericTaskId = (value: unknown): string => {
+        const raw = typeof value === 'string' ? value : typeof value === 'number' || typeof value === 'boolean' ? String(value) : '';
+        if (!raw) return '';
+        const digitsOnly = raw.replace(/\D/g, '');
+        return digitsOnly || raw;
+      };
+      const allowedStatuses = (assignmentConfig.allowedStatuses ?? []).map((s) => s.toLowerCase());
       for (const rec of selected) {
-        const saleId = (rec.saleid ?? rec.saleId ?? '') as string;
-        const taskId = (rec.taskid ?? rec.taskId ?? '') as string;
-        const taskStatus = (rec.taskstatus ?? rec.taskStatus ?? '') as string;
-        await executeUnboundCustomApi<Record<string, unknown>>(
-          context,
-          apiName,
-          {
-            assignedToUserId: user.id,
-            taskStatus,
-            saleId,
-            taskId,
-            assignedByUserId: assignedBy,
-            date: assignedDate,
-            screenName,
-          },
-          { operationType: customApiType },
-        );
+        const statusRaw = (rec.taskstatus ?? rec.taskStatus ?? '') as string;
+        const normalized = String(statusRaw ?? '').trim().toLowerCase();
+        if (allowedStatuses.length > 0 && normalized && !allowedStatuses.includes(normalized)) {
+          const message = assignTasksText.messages.invalidStatus;
+          setAssignMessage({ text: message, type: MessageBarType.error });
+          return false;
+        }
       }
-      setAssignMessage({ text: 'The selected tasks have been assigned successfully.', type: MessageBarType.success });
+      const taskIds = selected
+        .map((rec) => toNumericTaskId(rec.taskid ?? rec.taskId ?? ''))
+        .map((value) => value.trim())
+        .filter((value) => value !== '');
+      const uniqueTaskIds = Array.from(new Set(taskIds));
+      if (uniqueTaskIds.length === 0) {
+        setAssignMessage({ text: assignTasksText.messages.noValidTaskIds, type: MessageBarType.error });
+        return false;
+      }
+      const parseAssignmentResult = (payload: unknown): { success?: boolean; message?: string; payload?: string } | null => {
+        if (!payload) return null;
+        if (typeof payload === 'string') {
+          try {
+            return JSON.parse(payload) as { success?: boolean; message?: string; payload?: string };
+          } catch {
+            return { message: payload };
+          }
+        }
+        if (typeof payload === 'object') {
+          const record = payload as Record<string, unknown>;
+          const raw = record.Result ?? record.result;
+          if (typeof raw === 'string') {
+            try {
+              return JSON.parse(raw) as { success?: boolean; message?: string; payload?: string };
+            } catch {
+              return { message: raw };
+            }
+          }
+          if (typeof record.success === 'boolean') {
+            return record as { success?: boolean; message?: string; payload?: string };
+          }
+        }
+        return null;
+      };
+
+      const response = await executeUnboundCustomApi<Record<string, unknown>>(
+        context,
+        apiName,
+        {
+          assignedToUserId: user.id,
+          taskId: JSON.stringify(uniqueTaskIds),
+          assignedByUserId: assignedBy,
+          date: assignedDate,
+          screenName: assignmentScreenName || screenName,
+        },
+        { operationType: customApiType },
+      );
+      const parsed = parseAssignmentResult(response);
+      if (parsed?.success === false) {
+        const fallback = assignTasksText.messages.alreadyAssigned;
+        const message = parsed.message?.trim()
+          ?? parsed.payload?.trim()
+          ?? fallback;
+        setAssignMessage({ text: message, type: MessageBarType.error });
+        return false;
+      }
+      const successMessage = parsed?.message?.trim() ?? assignTasksText.messages.assignedSuccess;
+      setAssignMessage({ text: successMessage, type: MessageBarType.success });
       selection.setAllSelected(false);
       setSelectedCount(0);
       onSelectionCountChange?.(0);
@@ -1461,7 +1562,7 @@ export const DetailsListHost: React.FC<DetailsListHostProps> = ({
       });
     } catch (err) {
       setAssignMessage({
-        text: 'One or more of the selected tasks has already been assigned. Please refresh the page and try again.',
+        text: assignTasksText.messages.alreadyAssigned,
         type: MessageBarType.error,
       });
       if (assignRefreshResolve.current) {

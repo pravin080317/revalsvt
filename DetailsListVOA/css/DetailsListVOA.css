@@ -227,6 +227,84 @@
   font-weight: 600;
 }
 
+.voa-selection-controls {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: nowrap;
+}
+
+.voa-selection-controls__field {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: nowrap;
+}
+
+.voa-selection-controls__label {
+  font-weight: 600;
+}
+
+.voa-selection-controls__field .ms-TextField {
+  min-width: 120px;
+}
+
+.voa-selection-controls__suffix {
+  color: #605e5c;
+  white-space: nowrap;
+}
+
+.voa-sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+@media (max-width: 900px) {
+  .voa-grid-toolbar {
+    grid-template-columns: minmax(0, 1fr);
+    row-gap: 10px;
+    padding: 8px 10px;
+  }
+
+  .voa-grid-toolbar__left,
+  .voa-grid-toolbar__center,
+  .voa-grid-toolbar__right {
+    justify-self: start;
+    width: 100%;
+  }
+
+  .voa-grid-toolbar__right {
+    justify-content: flex-start;
+    padding-right: 0;
+  }
+
+  .voa-selection-controls {
+    width: 100%;
+    flex-wrap: wrap;
+  }
+
+  .voa-selection-controls__field {
+    width: 100%;
+    flex-wrap: wrap;
+  }
+
+  .voa-selection-controls__field .ms-TextField {
+    flex: 1 1 140px;
+  }
+
+  .voa-selection-controls__label,
+  .voa-selection-controls__suffix {
+    padding-bottom: 0;
+  }
+}
+
 .voa-command-bar {
   display: flex;
   align-items: center;
@@ -448,6 +526,16 @@
   min-width: max-content;
   padding-left: 8px;
   padding-right: var(--voa-list-right-pad);
+  transition: background-color 120ms ease, box-shadow 120ms ease;
+}
+
+.PowerCATFluentDetailsList .ms-DetailsRow:hover:not(.is-selected) {
+  background: #f3f2f1;
+  box-shadow: inset 4px 0 0 #1d70b8;
+}
+
+.PowerCATFluentDetailsList .ms-DetailsRow:hover:not(.is-selected) .ms-DetailsRow-fields {
+  background: #f3f2f1;
 }
 
 .PowerCATFluentDetailsList .ms-DetailsRow-fields {
@@ -524,6 +612,18 @@
   background: #ffffff;
   z-index: 2000;
   overflow: auto;
+}
+
+.voa-assign-radio {
+  width: 16px;
+  height: 16px;
+  accent-color: #1d70b8;
+  cursor: pointer;
+}
+
+.voa-assign-radio:disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
 }
 
 .voa-prefilter-bar {

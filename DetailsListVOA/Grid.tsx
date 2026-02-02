@@ -46,13 +46,13 @@ import {
 import * as React from 'react';
 import { NoFields } from '../DetailsListVOA/grid/NoFields';
 import { RecordsColumns } from '../DetailsListVOA/config/ManifestConstants';
-import { CONTROL_CONFIG } from '../DetailsListVOA/config/ControlConfig';
 import { IGridColumn, ColumnConfig, AssignUser } from './Component.types';
 import { GridCell } from '../DetailsListVOA/grid/GridCell';
 import { ClassNames } from '../DetailsListVOA/grid/Grid.styles';
 import { GridFilterState, NumericFilter, NumericFilterMode, createDefaultGridFilters, sanitizeFilters, SearchByOption, DateRangeFilter, isValidUkPostcode, normalizeUkPostcode } from './Filters';
 import { getSearchByOptionsFor, getColumnFilterConfigFor, isLookupFieldFor, isViewSalesRecordEnabledFor, ColumnFilterConfig } from '../DetailsListVOA/config/TableConfigs';
 import { MANAGER_PREFILTER_DEFAULT, MANAGER_SEARCH_BY_OPTIONS, getManagerWorkThatOptions, isManagerCompletedWorkThat, type ManagerPrefilterState, type ManagerSearchBy, type ManagerWorkThat } from './config/PrefilterConfigs';
+import { SCREEN_TEXT } from '../DetailsListVOA/constants/ScreenText';
 
 type DataSet = ComponentFramework.PropertyHelper.DataSetApi.EntityRecord & IObjectWithKey;
 type ColumnFilterValue = string | string[] | NumericFilter | DateRangeFilter;
@@ -204,6 +204,11 @@ const normalizeComboSearchText = (value?: string): string => {
   const parts = trimmed.split(',');
   return (parts[parts.length - 1] ?? '').trim();
 };
+
+const formatTemplate = (template: string, tokens: Record<string, string | number>): string =>
+  template.replace(/\{(\w+)\}/g, (match: string, key: string) => (
+    Object.prototype.hasOwnProperty.call(tokens, key) ? String(tokens[key]) : match
+  ));
 
 const filterComboOptions = (
   options: IComboBoxOption[],
@@ -498,13 +503,11 @@ export const Grid = React.memo((props: GridProps) => {
   const [searchBySearch, setSearchBySearch] = React.useState('');
   const [prefilterSearchBySearch, setPrefilterSearchBySearch] = React.useState('');
   const [prefilterWorkThatSearch, setPrefilterWorkThatSearch] = React.useState('');
-  const [assignTeamSearch, setAssignTeamSearch] = React.useState('');
-  const [assignRoleSearch, setAssignRoleSearch] = React.useState('');
   const [comboSearchText, setComboSearchText] = React.useState<Record<string, string>>({});
   const [assignPanelOpen, setAssignPanelOpen] = React.useState(false);
   const [assignSearch, setAssignSearch] = React.useState('');
-  const [assignTeam, setAssignTeam] = React.useState<string | number | undefined>();
-  const [assignRole, setAssignRole] = React.useState<string | number | undefined>();
+  const [selectFirstInput, setSelectFirstInput] = React.useState('');
+  const [selectFirstError, setSelectFirstError] = React.useState<string | undefined>(undefined);
   const [assignLoading, setAssignLoading] = React.useState(false);
   const [assignSelectedUserId, setAssignSelectedUserId] = React.useState<string | undefined>();
   const [prefilters, setPrefilters] = React.useState<ManagerPrefilterState>(MANAGER_PREFILTER_DEFAULT);
@@ -512,10 +515,12 @@ export const Grid = React.memo((props: GridProps) => {
   const [prefilterContainerWidth, setPrefilterContainerWidth] = React.useState<number | null>(null);
   const [searchPanelExpanded, setSearchPanelExpanded] = React.useState(true);
   const openAssignPanel = React.useCallback(() => {
+    setAssignSelectedUserId(undefined);
     setAssignPanelOpen(true);
     onAssignPanelToggle?.(true);
   }, [onAssignPanelToggle]);
   const closeAssignPanel = React.useCallback(() => {
+    setAssignSelectedUserId(undefined);
     setAssignPanelOpen(false);
     onAssignPanelToggle?.(false);
   }, [onAssignPanelToggle]);
@@ -558,19 +563,25 @@ export const Grid = React.memo((props: GridProps) => {
   const isAssignment = isManagerAssign || isQcAssign;
   const showAssign = isManagerAssign || isQcAssign;
   const useAssignmentLayout = isManagerAssign;
-  const assignActionText = isQcAssign ? 'Assign QC Tasks' : 'Assign Tasks';
-  const assignHeaderText = isQcAssign ? 'QC Assignment' : 'Manager Assignment';
-  const assignUserListTitle = isQcAssign ? 'QC Users' : 'SVT Users';
+  const commonText = SCREEN_TEXT.common;
+  const managerText = SCREEN_TEXT.managerAssignment;
+  const qcText = SCREEN_TEXT.qcAssignment;
+  const assignTasksText = SCREEN_TEXT.assignTasks;
+  const salesSearchText = SCREEN_TEXT.salesSearch;
+  const prefilterText = managerText.prefilter;
+  const assignActionText = isQcAssign ? qcText.assignActionText : managerText.assignActionText;
+  const assignHeaderText = assignTasksText.title;
+  const assignUserListTitle = isQcAssign ? qcText.assignUserListTitle : managerText.assignUserListTitle;
   const pageHeaderText = isManagerAssign
-      ? 'Manager Assignment'
+      ? managerText.title
       : isQcAssign
-        ? 'QC Assignment'
+        ? qcText.title
         : isCaseworkerView
-          ? 'Caseworker View'
+          ? SCREEN_TEXT.caseworkerView.title
           : isQcView
-            ? 'Quality Control View'
+            ? SCREEN_TEXT.qcView.title
             : isSalesSearch
-              ? 'Sales Record Search'
+              ? salesSearchText.title
               : undefined;
   const prefilterStorageKey = React.useMemo(
     () => `voa-prefilters:${tableKey}:${screenName || 'default'}`,
@@ -1502,6 +1513,54 @@ export const Grid = React.memo((props: GridProps) => {
     setIsLoading(false);
     return mapped;
   }, [records, sortedRecordIds]);
+  const pageItemCount = items.length;
+
+  const applySelectionChange = React.useCallback((action: () => void) => {
+    selection.setChangeEvents(false);
+    action();
+    selection.setChangeEvents(true);
+  }, [selection]);
+
+  const clearPageSelection = React.useCallback(() => {
+    applySelectionChange(() => {
+      selection.setItems(items, true);
+    });
+    setSelectFirstError(undefined);
+  }, [applySelectionChange, items]);
+
+  const selectFirstOnPage = React.useCallback(() => {
+    if (pageItemCount === 0) return;
+    const raw = selectFirstInput.trim();
+    const parsed = Number(raw);
+    const max = pageItemCount;
+    if (!raw || Number.isNaN(parsed) || !Number.isFinite(parsed) || parsed <= 0) {
+      const template = commonText.selectionControls.selectFirstErrorText;
+      setSelectFirstError(formatTemplate(template, { max }));
+      return;
+    }
+    const clamped = Math.min(Math.floor(parsed), max);
+    if (clamped !== parsed) {
+      setSelectFirstInput(String(clamped));
+    }
+    setSelectFirstError(undefined);
+    applySelectionChange(() => {
+      selection.setItems(items, true);
+      for (let i = 0; i < clamped; i += 1) {
+        selection.setIndexSelected(i, true, false);
+      }
+    });
+  }, [applySelectionChange, commonText.selectionControls.selectFirstErrorText, items, pageItemCount, selectFirstInput, selection]);
+
+  const lastPageRef = React.useRef(currentPage);
+  React.useEffect(() => {
+    if (lastPageRef.current !== currentPage) {
+      lastPageRef.current = currentPage;
+      applySelectionChange(() => {
+        selection.setItems(items, true);
+      });
+      setSelectFirstError(undefined);
+    }
+  }, [applySelectionChange, currentPage, items, selection]);
 
   const getFilterableText = React.useCallback((raw: unknown): string => {
     if (Array.isArray(raw)) {
@@ -1678,6 +1737,16 @@ export const Grid = React.memo((props: GridProps) => {
     return out;
   }, [columnFiltersState, disableClientFiltering, getFilterableText, items, tableKey]);
 
+  const selectionSummaryText = React.useMemo(() => {
+    const template = commonText.selectionControls.selectionSummaryText;
+    const resultTotal = typeof taskCount === 'number' ? taskCount : filteredItems.length;
+    return formatTemplate(template, {
+      selected: selectedCount,
+      pageTotal: pageItemCount,
+      resultTotal,
+    });
+  }, [commonText.selectionControls.selectionSummaryText, filteredItems.length, pageItemCount, selectedCount, taskCount]);
+
   const clearAllColumnFilters = React.useCallback(() => {
     setColumnFilters(() => {
       const cleared: Record<string, ColumnFilterValue> = {};
@@ -1737,11 +1806,11 @@ export const Grid = React.memo((props: GridProps) => {
       }
       let combined = deduped;
       if (cfg.selectAll) {
-        combined = [{ key: 'all', text: 'Select all' }, ...combined];
+        combined = [{ key: 'all', text: commonText.selectionControls.selectAllText }, ...combined];
       }
       return combined;
     },
-    [getDistinctOptions],
+    [commonText.selectionControls.selectAllText, getDistinctOptions],
   );
 
   const renderSearchControl = React.useCallback(() => {
@@ -1754,7 +1823,7 @@ export const Grid = React.memo((props: GridProps) => {
           <>
             <Stack.Item styles={{ root: { minWidth: 220 } }}>
               <TextField
-                label="Building Name/Number"
+                label={salesSearchText.fields.buildingNameNumber}
                 value={filters.buildingNameNumber ?? ''}
                 onChange={(_, v) => updateFilters('buildingNameNumber', (v ?? '').slice(0, ADDRESS_FIELD_MAX_LENGTH))}
                 errorMessage={addressError}
@@ -1763,7 +1832,7 @@ export const Grid = React.memo((props: GridProps) => {
             </Stack.Item>
             <Stack.Item styles={{ root: { minWidth: 220 } }}>
               <TextField
-                label="Street"
+                label={salesSearchText.fields.street}
                 value={filters.street ?? ''}
                 onChange={(_, v) => updateFilters('street', (v ?? '').slice(0, ADDRESS_FIELD_MAX_LENGTH))}
                 errorMessage={streetError}
@@ -1772,7 +1841,7 @@ export const Grid = React.memo((props: GridProps) => {
             </Stack.Item>
             <Stack.Item styles={{ root: { minWidth: 220 } }}>
               <TextField
-                label="Town/City"
+                label={salesSearchText.fields.townCity}
                 value={filters.townCity ?? ''}
                 onChange={(_, v) => updateFilters('townCity', (v ?? '').slice(0, ADDRESS_FIELD_MAX_LENGTH))}
                 errorMessage={townError}
@@ -1781,7 +1850,7 @@ export const Grid = React.memo((props: GridProps) => {
             </Stack.Item>
             <Stack.Item styles={{ root: { minWidth: 200 } }}>
               <TextField
-                label="Postcode"
+                label={salesSearchText.fields.postcode}
                 value={filters.postcode ?? ''}
                 onChange={(_, v) => updateFilters('postcode', normalizeUkPostcode((v ?? '').slice(0, 12)))}
                 errorMessage={postcodeError}
@@ -1798,8 +1867,8 @@ export const Grid = React.memo((props: GridProps) => {
           <>
             <Stack.Item styles={{ root: { minWidth: 240 } }}>
               <ComboBox
-                label="Billing Authority"
-                placeholder="Select Billing Authority"
+                label={salesSearchText.fields.billingAuthority}
+                placeholder={salesSearchText.placeholders.billingAuthority}
                 options={filteredBillingAuthorityOptionsList}
                 selectedKey={authority}
                 allowFreeform={false}
@@ -1823,7 +1892,7 @@ export const Grid = React.memo((props: GridProps) => {
             </Stack.Item>
             <Stack.Item styles={{ root: { minWidth: 240 } }}>
               <TextField
-                label="Billing Authority Reference"
+                label={salesSearchText.fields.billingAuthorityReference}
                 value={filters.bacode ?? ''}
                 onChange={(_, v) => updateFilters('bacode', (v ?? '').slice(0, ADDRESS_FIELD_MAX_LENGTH))}
                 errorMessage={billingAuthorityRefError}
@@ -1838,7 +1907,7 @@ export const Grid = React.memo((props: GridProps) => {
         return (
           <Stack.Item styles={{ root: { minWidth: 260 } }}>
             <TextField
-              label="Sale ID"
+              label={salesSearchText.fields.saleId}
               value={filters.saleId ?? ''}
               onChange={(_, v) => updateFilters('saleId', sanitizeAlphaNumHyphen(v, ID_FIELD_MAX_LENGTH))}
               errorMessage={saleIdError}
@@ -1852,7 +1921,7 @@ export const Grid = React.memo((props: GridProps) => {
         return (
           <Stack.Item styles={{ root: { minWidth: 260 } }}>
             <TextField
-              label="Task ID"
+              label={salesSearchText.fields.taskId}
               value={filters.taskId ?? ''}
               onChange={(_, v) => updateFilters('taskId', sanitizeDigits(v, ID_FIELD_MAX_LENGTH))}
               errorMessage={taskIdError}
@@ -1867,7 +1936,7 @@ export const Grid = React.memo((props: GridProps) => {
         return (
           <Stack.Item styles={{ root: { minWidth: 260 } }}>
             <TextField
-              label="UPRN"
+              label={salesSearchText.fields.uprn}
               value={filters.uprn ?? ''}
               onChange={(_, v) => updateFilters('uprn', sanitizeDigits(v, UPRN_MAX_LENGTH))}
               errorMessage={uprnError}
@@ -1918,7 +1987,7 @@ export const Grid = React.memo((props: GridProps) => {
           />
           {cfg.key === 'postcode' && showPostcodeHint && (
             <Text variant="small" styles={{ root: { marginTop: 4 } }}>
-              Partial postcodes return all matching entries.
+              {commonText.hints.postcodePartial}
             </Text>
           )}
         </Stack.Item>
@@ -1935,11 +2004,11 @@ export const Grid = React.memo((props: GridProps) => {
         <Stack horizontal wrap tokens={{ childrenGap: 8 }}>
           <Stack.Item styles={{ root: { minWidth: 140 } }}>
             <ComboBox
-              label="Options"
+              label={commonText.labels.options}
               options={[
-                { key: '>=', text: 'Greater than or equal to' },
-                { key: '<=', text: 'Less than or equal to' },
-                { key: 'between', text: 'Between' },
+                { key: '>=', text: commonText.filters.numericModes.gte },
+                { key: '<=', text: commonText.filters.numericModes.lte },
+                { key: 'between', text: commonText.filters.numericModes.between },
               ]}
               selectedKey={mode}
               allowFreeform={false}
@@ -1956,7 +2025,7 @@ export const Grid = React.memo((props: GridProps) => {
           </Stack.Item>
           <Stack.Item styles={{ root: { minWidth: 140 } }}>
             <TextField
-              label={mode === '<=' ? 'Max' : 'Min'}
+              label={mode === '<=' ? commonText.labels.max : commonText.labels.min}
               type="number"
               value={String(minValue ?? '')}
               onChange={(_, v) => updateNumericFilter(numericKey, mode === '<=' ? 'max' : 'min', v ?? '')}
@@ -1965,7 +2034,7 @@ export const Grid = React.memo((props: GridProps) => {
           {mode === 'between' && (
             <Stack.Item styles={{ root: { minWidth: 140 } }}>
               <TextField
-                label="Max"
+                label={commonText.labels.max}
                 type="number"
                 value={String(maxValue ?? '')}
                 onChange={(_, v) => updateNumericFilter(numericKey, 'max', v ?? '')}
@@ -2107,8 +2176,10 @@ export const Grid = React.memo((props: GridProps) => {
     formatDisplayDate,
     updateDateRange,
     buildDropdownOptions,
+    commonText,
     isSalesSearch,
     normalizeUkPostcode,
+    salesSearchText,
     updateSingleSelect,
     updateMultiSelect,
     comboSearchText,
@@ -2379,34 +2450,9 @@ export const Grid = React.memo((props: GridProps) => {
   }, []);
 
   const assignUsers = React.useMemo(() => assignUsersProp ?? [], [assignUsersProp]);
-  const assignTeamOptions = React.useMemo<IComboBoxOption[]>(
-    () => assignUsers
-      .map((u) => u.team)
-      .filter((v, i, a) => a.indexOf(v) === i)
-      .map((team) => ({ key: team, text: team })),
-    [assignUsers],
-  );
-  const assignRoleOptions = React.useMemo<IComboBoxOption[]>(
-    () => assignUsers
-      .map((u) => u.role)
-      .filter((v, i, a) => a.indexOf(v) === i)
-      .map((role) => ({ key: role, text: role })),
-    [assignUsers],
-  );
-  const filteredAssignTeamOptions = React.useMemo(
-    () => filterComboOptions(assignTeamOptions, assignTeamSearch, assignTeam ? [String(assignTeam)] : []),
-    [assignTeam, assignTeamOptions, assignTeamSearch],
-  );
-  const filteredAssignRoleOptions = React.useMemo(
-    () => filterComboOptions(assignRoleOptions, assignRoleSearch, assignRole ? [String(assignRole)] : []),
-    [assignRole, assignRoleOptions, assignRoleSearch],
-  );
-
   const assignFilteredUsers = React.useMemo(() => {
     const term = assignSearch.trim().toLowerCase();
     return assignUsers.filter((u) => {
-      if (assignTeam && u.team !== assignTeam) return false;
-      if (assignRole && u.role !== assignRole) return false;
       if (!term) return true;
       return (
         u.firstName.toLowerCase().includes(term) ||
@@ -2414,12 +2460,12 @@ export const Grid = React.memo((props: GridProps) => {
         u.email.toLowerCase().includes(term)
       );
     });
-  }, [assignUsers, assignSearch, assignRole, assignTeam]);
+  }, [assignUsers, assignSearch]);
   const assignListItems = React.useMemo(() => {
     if (assignUsersLoading) {
       return [{
         id: ASSIGN_LOADING_ROW_ID,
-        firstName: 'Loading users...',
+        firstName: assignTasksText.loadingUsersText,
         lastName: '',
         email: '',
         team: '',
@@ -2427,7 +2473,17 @@ export const Grid = React.memo((props: GridProps) => {
       }];
     }
     return assignFilteredUsers;
-  }, [assignFilteredUsers, assignUsersLoading]);
+  }, [assignFilteredUsers, assignTasksText.loadingUsersText, assignUsersLoading]);
+
+  const selectedAssignUser = React.useMemo(
+    () => assignUsers.find((u) => u.id === assignSelectedUserId),
+    [assignSelectedUserId, assignUsers],
+  );
+
+  const handleAssignUserSelect = React.useCallback((userId: string) => {
+    if (assignLoading) return;
+    setAssignSelectedUserId(userId);
+  }, [assignLoading]);
 
   const handleAssignClick = React.useCallback(async (user: AssignUser) => {
     if (!onAssignTasks || assignLoading) return;
@@ -2440,36 +2496,37 @@ export const Grid = React.memo((props: GridProps) => {
       }
     } finally {
       setAssignLoading(false);
-      setAssignSelectedUserId(undefined);
     }
   }, [assignLoading, closeAssignPanel, onAssignTasks]);
 
   const assignColumns = React.useMemo<IColumn[]>(
     () => [
-      { key: 'firstName', name: 'First Name', fieldName: 'firstName', minWidth: 120, isResizable: true },
-      { key: 'lastName', name: 'Last Name', fieldName: 'lastName', minWidth: 120, isResizable: true },
-      { key: 'email', name: 'Email', fieldName: 'email', minWidth: 220, isResizable: true },
       {
-        key: 'assign',
-        name: 'Action',
-        minWidth: 120,
+        key: 'select',
+        name: '',
+        minWidth: 40,
+        maxWidth: 40,
         onRender: (item: AssignUser) => (
           item.id === ASSIGN_LOADING_ROW_ID
             ? null
             : (
-          <PrimaryButton
-            text="Assign Task"
-            ariaLabel={`Assign task to ${item.firstName} ${item.lastName}`}
-            disabled={assignLoading || (!!assignSelectedUserId && assignSelectedUserId !== item.id)}
-            onClick={() => {
-              void handleAssignClick(item);
-            }}
-          />
+              <input
+                className="voa-assign-radio"
+                type="radio"
+                name="assign-user"
+                aria-label={`Select ${item.firstName} ${item.lastName}`}
+                checked={assignSelectedUserId === item.id}
+                disabled={assignLoading}
+                onChange={() => handleAssignUserSelect(item.id)}
+              />
             )
         ),
       },
+      { key: 'firstName', name: 'First Name', fieldName: 'firstName', minWidth: 140, isResizable: true },
+      { key: 'lastName', name: 'Last Name', fieldName: 'lastName', minWidth: 140, isResizable: true },
+      { key: 'email', name: 'Email', fieldName: 'email', minWidth: 240, isResizable: true },
     ],
-    [assignLoading, assignSelectedUserId, handleAssignClick],
+    [assignLoading, assignSelectedUserId, handleAssignUserSelect],
   );
 
   const prefilterWorkThatOptions = React.useMemo(
@@ -2502,9 +2559,26 @@ export const Grid = React.memo((props: GridProps) => {
   const hasColumnFilters = Object.keys(columnFiltersState).length > 0;
   const showViewSalesRecord = isViewSalesRecordEnabledFor(tableKey);
   const showPrefilterToggle = useAssignmentLayout && !!showResults && !!prefilterApplied;
-  const prefilterToggleText = prefilterExpanded ? 'Hide Prefilter' : 'Show Prefilter';
+  const prefilterToggleText = prefilterExpanded ? commonText.toggles.hidePrefilter : commonText.toggles.showPrefilter;
   const showSearchPanelToggle = showSearchPanel && !useAssignmentLayout;
-  const searchPanelToggleText = searchPanelExpanded ? 'Hide Filters' : 'Show Filters';
+  const searchPanelToggleText = searchPanelExpanded ? commonText.toggles.hideFilters : commonText.toggles.showFilters;
+  const showSelectionControls = !!showResults && selectionType !== SelectionMode.none;
+  const selectionToolbarLabel = commonText.selectionControls.toolbarAriaLabel;
+  const selectionGroupLabel = commonText.selectionControls.groupAriaLabel;
+  const clearSelectionText = commonText.selectionControls.clearSelectionText;
+  const selectFirstLabel = commonText.selectionControls.selectFirstLabel;
+  const selectFirstPlaceholder = commonText.selectionControls.selectFirstPlaceholder;
+  const selectFirstSuffix = commonText.selectionControls.selectFirstSuffix;
+  const selectFirstButtonText = commonText.selectionControls.selectFirstButtonText;
+  const selectFirstHelperText = commonText.selectionControls.selectFirstHelperText;
+  const assignLoadingText = assignTasksText.loadingText;
+  const selectionControlsDisabled = pageItemCount === 0;
+  const showGridToolbar = !!showResults
+    && (showSelectionControls
+      || hasColumnFilters
+      || (useAssignmentLayout && showPrefilterToggle)
+      || showViewSalesRecord
+      || showAssign);
 
   const menuItems = React.useMemo<IContextualMenuItem[]>(() => {
     if (!menuState) return [];
@@ -2672,11 +2746,11 @@ export const Grid = React.memo((props: GridProps) => {
           return (
             <Stack tokens={{ childrenGap: 8 }}>
               <ComboBox
-                label="Options"
+                label={commonText.labels.options}
                 options={[
-                  { key: '>=', text: 'Greater than or equal to' },
-                  { key: '<=', text: 'Less than or equal to' },
-                  { key: 'between', text: 'Between' },
+                  { key: '>=', text: commonText.filters.numericModes.gte },
+                  { key: '<=', text: commonText.filters.numericModes.lte },
+                  { key: 'between', text: commonText.filters.numericModes.between },
                 ]}
                 selectedKey={numVal.mode ?? '>='}
                 allowFreeform={false}
@@ -2764,13 +2838,13 @@ export const Grid = React.memo((props: GridProps) => {
     return [
       {
         key: 'sortAsc',
-        text: 'Sort Ascending',
+        text: commonText.columnMenu.sortAscending,
         iconProps: { iconName: 'SortUp' },
         onClick: () => handleSort(menuState.column, false),
       },
       {
         key: 'sortDesc',
-        text: 'Sort Descending',
+        text: commonText.columnMenu.sortDescending,
         iconProps: { iconName: 'SortDown' },
         onClick: () => handleSort(menuState.column, true),
       },
@@ -2782,12 +2856,12 @@ export const Grid = React.memo((props: GridProps) => {
             {renderControl()}
             <Stack horizontal tokens={{ childrenGap: 8 }} style={{ marginTop: 8 }}>
               <PrimaryButton
-                text="Apply"
+                text={commonText.columnMenu.apply}
                 onClick={applyFilter}
                 disabled={applyDisabled}
                 ariaLabel={`Apply filter for ${columnName}`}
               />
-              <DefaultButton text="Clear" onClick={clearFilter} ariaLabel={`Clear filter for ${columnName}`} />
+              <DefaultButton text={commonText.columnMenu.clear} onClick={clearFilter} ariaLabel={`Clear filter for ${columnName}`} />
             </Stack>
           </div>
         ),
@@ -2796,6 +2870,7 @@ export const Grid = React.memo((props: GridProps) => {
   }, [
     menuState,
     tableKey,
+    commonText,
     menuFilterError,
     menuFilterValue,
     menuFilterText,
@@ -2821,15 +2896,15 @@ export const Grid = React.memo((props: GridProps) => {
         style={{ height, display: 'flex', flexDirection: 'column', width: '100%', minWidth: 0 }}
         ref={topRef}
         tabIndex={-1}
-        aria-label="Results table"
+        aria-label={commonText.aria.resultsTable}
       >
         <div className="voa-skip-links">
-          <a href="#voa-grid-results">Skip to results</a>
-          <a href="#voa-grid-pagination">Skip to pagination</a>
+          <a href="#voa-grid-results">{commonText.aria.skipToResults}</a>
+          <a href="#voa-grid-pagination">{commonText.aria.skipToPagination}</a>
         </div>
         {columnDatasetNotDefined && (
           <MessageBar messageBarType={MessageBarType.error} style={{ marginBottom: 16 }}>
-            One or more column configurations reference fields that do not exist in the dataset.
+            {commonText.messages.columnConfigMissing}
           </MessageBar>
         )}
         {errorMessage && (
@@ -2849,8 +2924,8 @@ export const Grid = React.memo((props: GridProps) => {
                   <IconButton
                     className="voa-back-button"
                     iconProps={{ iconName: 'Back' }}
-                    ariaLabel="Back"
-                    title="Back"
+                    ariaLabel={commonText.aria.back}
+                    title={commonText.buttons.back}
                     onClick={onBackRequested}
                   />
                 )}
@@ -2859,7 +2934,7 @@ export const Grid = React.memo((props: GridProps) => {
                     {pageHeaderText}
                   </Text>
                   <Text variant="small" className="voa-command-bar__meta" role="status" aria-live="polite">
-                    Selected: {selectedCount} of {typeof taskCount === 'number' ? taskCount : filteredItems.length}
+                    {selectionSummaryText}
                   </Text>
                 </div>
               </div>
@@ -2887,24 +2962,6 @@ export const Grid = React.memo((props: GridProps) => {
                     onClick={togglePrefilters}
                   />
                 )}
-                {showResults && showViewSalesRecord && (
-                  <DefaultButton
-                    text="View Sales Record"
-                    iconProps={{ iconName: 'View' }}
-                    onClick={onViewSelected}
-                    disabled={disableViewSalesRecordAction || selectedCount !== 1}
-                    ariaLabel="View selected sales record"
-                  />
-                )}
-                {showAssign && (
-                  <PrimaryButton
-                    text={assignActionText}
-                    iconProps={{ iconName: 'AddFriend' }}
-                    onClick={openAssignPanel}
-                    disabled={selectedCount === 0}
-                    ariaLabel={assignActionText}
-                  />
-                )}
               </div>
             </div>
           )}
@@ -2919,14 +2976,14 @@ export const Grid = React.memo((props: GridProps) => {
         >
           <Stack.Item className="voa-prefilter-col voa-prefilter-col-searchby-label">
             <div className="voa-prefilter-field">
-              <Label htmlFor="prefilter-searchby" className="voa-prefilter-label">Search by</Label>
+              <Label htmlFor="prefilter-searchby" className="voa-prefilter-label">{prefilterText.labels.searchBy}</Label>
             </div>
           </Stack.Item>
           <Stack.Item className="voa-prefilter-col voa-prefilter-col-searchby-field">
             <div className="voa-prefilter-field">
               <ComboBox
                 id="prefilter-searchby"
-                ariaLabel="Search by"
+                ariaLabel={prefilterText.labels.searchBy}
                 options={filteredPrefilterSearchByOptions}
                 selectedKey={prefilters.searchBy}
                 onChange={(event, option) => {
@@ -2949,15 +3006,15 @@ export const Grid = React.memo((props: GridProps) => {
             <>
               <Stack.Item className="voa-prefilter-col voa-prefilter-col-owner-label">
                 <div className="voa-prefilter-field">
-                  <Label htmlFor="prefilter-billing" className="voa-prefilter-label">Billing Authority</Label>
+                  <Label htmlFor="prefilter-billing" className="voa-prefilter-label">{prefilterText.labels.billingAuthority}</Label>
                 </div>
               </Stack.Item>
               <Stack.Item className="voa-prefilter-col voa-prefilter-col-owner-field">
                 <div className="voa-prefilter-field">
                   <ComboBox
                     id="prefilter-billing"
-                    ariaLabel="Billing Authority"
-                    placeholder="Select Billing Authorities"
+                    ariaLabel={prefilterText.labels.billingAuthority}
+                    placeholder={prefilterText.placeholders.billingAuthority}
                     multiSelect
                     options={filteredManagerBillingAuthorityOptions}
                     selectedKey={managerBillingSelectedKeys}
@@ -2985,15 +3042,15 @@ export const Grid = React.memo((props: GridProps) => {
             <>
               <Stack.Item className="voa-prefilter-col voa-prefilter-col-owner-label">
                 <div className="voa-prefilter-field">
-                  <Label htmlFor="prefilter-caseworker" className="voa-prefilter-label">Caseworker</Label>
+                  <Label htmlFor="prefilter-caseworker" className="voa-prefilter-label">{prefilterText.labels.caseworker}</Label>
                 </div>
               </Stack.Item>
               <Stack.Item className="voa-prefilter-col voa-prefilter-col-owner-field">
                 <div className="voa-prefilter-field">
                   <ComboBox
                     id="prefilter-caseworker"
-                    ariaLabel="Caseworker"
-                    placeholder="Select User"
+                    ariaLabel={prefilterText.labels.caseworker}
+                    placeholder={prefilterText.placeholders.caseworker}
                     multiSelect
                     options={filteredCaseworkerOptionsList}
                     selectedKey={caseworkerSelectedKeys}
@@ -3025,15 +3082,15 @@ export const Grid = React.memo((props: GridProps) => {
           )}
           <Stack.Item className="voa-prefilter-col voa-prefilter-col-workthat-label">
             <div className="voa-prefilter-field">
-              <Label htmlFor="prefilter-workthat" className="voa-prefilter-label">Work that</Label>
+              <Label htmlFor="prefilter-workthat" className="voa-prefilter-label">{prefilterText.labels.workThat}</Label>
             </div>
           </Stack.Item>
           <Stack.Item className="voa-prefilter-col voa-prefilter-col-workthat-field">
             <div className="voa-prefilter-field">
               <ComboBox
                 id="prefilter-workthat"
-                ariaLabel="Work that"
-                placeholder="Select a option"
+                ariaLabel={prefilterText.labels.workThat}
+                placeholder={prefilterText.placeholders.workThat}
                 options={filteredPrefilterWorkThatOptions}
                 selectedKey={prefilters.workThat}
                 onChange={(event, option) => {
@@ -3060,7 +3117,7 @@ export const Grid = React.memo((props: GridProps) => {
                     id="voa-prefilter-date-range"
                     className="voa-prefilter-label voa-prefilter-label--daterange"
                   >
-                    Select Completed Date Range
+                    {prefilterText.labels.completedDateRange}
                   </Label>
                 </div>
               </Stack.Item>
@@ -3068,7 +3125,7 @@ export const Grid = React.memo((props: GridProps) => {
                 <div role="group" aria-labelledby="voa-prefilter-date-range" className="voa-prefilter-field">
                   <div className="voa-prefilter-date-fields">
                     <DatePicker
-                      placeholder="Select a From date..."
+                      placeholder={prefilterText.placeholders.completedFrom}
                       firstDayOfWeek={DayOfWeek.Monday}
                       strings={dateStrings}
                       value={parseISODate(prefilters.completedFrom)}
@@ -3076,7 +3133,7 @@ export const Grid = React.memo((props: GridProps) => {
                       onSelectDate={onPrefilterFromDateChange}
                       maxDate={today}
                       styles={{ root: { width: 180 } }}
-                      ariaLabel="From date"
+                      ariaLabel={prefilterText.labels.fromDate}
                     />
                     {prefilterFromDateError && (
                       <Text variant="small" styles={{ root: { color: theme.palette.redDark, marginTop: -2 } }}>
@@ -3084,14 +3141,14 @@ export const Grid = React.memo((props: GridProps) => {
                       </Text>
                     )}
                     <DatePicker
-                      placeholder="Select a To date..."
+                      placeholder={prefilterText.placeholders.completedTo}
                       firstDayOfWeek={DayOfWeek.Monday}
                       strings={dateStrings}
                       value={parseISODate(prefilters.completedTo)}
                       formatDate={formatDisplayDate}
                       disabled
                       styles={{ root: { width: 180 } }}
-                      ariaLabel="To date"
+                      ariaLabel={prefilterText.labels.toDate}
                     />
                   </div>
                 </div>
@@ -3103,17 +3160,17 @@ export const Grid = React.memo((props: GridProps) => {
               <span className="voa-prefilter-label-spacer" aria-hidden="true"></span>
               <Stack horizontal verticalAlign="center" tokens={{ childrenGap: 12 }}>
                 <PrimaryButton
-                  text="Search"
+                  text={prefilterText.buttons.search}
                   iconProps={{ iconName: 'Search' }}
                   onClick={handlePrefilterSearch}
                   disabled={prefilterSearchDisabled}
                 />
                 {!prefilterIsDefault && (
                   <DefaultButton
-                    text="Clear search"
+                    text={prefilterText.buttons.clearSearch}
                     iconProps={{ iconName: 'ClearFilter' }}
                     onClick={handlePrefilterClear}
-                    aria-label="Clear search filters"
+                    aria-label={commonText.aria.clearSearchFilters}
                     className="voa-prefilter-clear"
                   />
                 )}
@@ -3134,7 +3191,7 @@ export const Grid = React.memo((props: GridProps) => {
         >
           <Stack.Item styles={{ root: { minWidth: 200 } }}>
             <ComboBox
-              label="Search by"
+              label={salesSearchText.searchPanel.searchByLabel}
               options={filteredSearchByOptions}
               selectedKey={filters.searchBy}
               onChange={(event, option) => {
@@ -3156,35 +3213,109 @@ export const Grid = React.memo((props: GridProps) => {
           <Stack.Item className="voa-search-panel__actions">
             <Stack horizontal wrap verticalAlign="center" tokens={{ childrenGap: 12 }}>
               {(shimmer || itemsLoading || isComponentLoading) && (
-                <Spinner size={SpinnerSize.small} ariaLabel="Loading filter results" />
+                <Spinner size={SpinnerSize.small} ariaLabel={commonText.aria.loadingFilterResults} />
               )}
               <PrimaryButton
-                text="Search"
+                text={commonText.buttons.search}
                 iconProps={{ iconName: 'Search' }}
                 onClick={handleSearch}
                 disabled={isSearchDisabled}
               />
               <DefaultButton
-                text="Clear all"
+                text={commonText.buttons.clearAll}
                 iconProps={{ iconName: 'ClearFilter' }}
                 onClick={handleClear}
-                ariaLabel="Clear all filters"
+                ariaLabel={commonText.aria.clearAllFilters}
                 className="voa-prefilter-clear"
               />
             </Stack>
           </Stack.Item>
         </Stack>
         )}
-          {showResults && ((useAssignmentLayout && showPrefilterToggle) || hasColumnFilters) && (
-            <div className="voa-grid-toolbar" role="toolbar" aria-label="Table actions">
+          {showGridToolbar && (
+            <div className="voa-grid-toolbar" role="toolbar" aria-label={selectionToolbarLabel}>
               <div className="voa-grid-toolbar__left">
+                {showSelectionControls && (
+                  <div className="voa-selection-controls" role="group" aria-label={selectionGroupLabel}>
+                    <div className="voa-selection-controls__field">
+                      <Label htmlFor="voa-select-first" className="voa-selection-controls__label">
+                        {selectFirstLabel}
+                      </Label>
+                      <TextField
+                        id="voa-select-first"
+                        ariaLabel={selectFirstLabel}
+                        aria-describedby="voa-select-first-help"
+                        value={selectFirstInput}
+                        placeholder={selectFirstPlaceholder}
+                        type="number"
+                        min={1}
+                        max={pageItemCount}
+                        inputMode="numeric"
+                        onChange={(_, value) => {
+                          setSelectFirstInput(value ?? '');
+                          if (selectFirstError) {
+                            setSelectFirstError(undefined);
+                          }
+                        }}
+                        onKeyDown={(ev) => {
+                          if (ev.key === 'Enter') {
+                            ev.preventDefault();
+                            selectFirstOnPage();
+                          }
+                        }}
+                        errorMessage={selectFirstError}
+                        disabled={selectionControlsDisabled}
+                        styles={{ root: { maxWidth: 160 } }}
+                      />
+                      <span id="voa-select-first-help" className="voa-sr-only">
+                        {selectFirstHelperText}
+                      </span>
+                      <Text variant="small" className="voa-selection-controls__suffix">
+                        {selectFirstSuffix}
+                      </Text>
+                    </div>
+                    <DefaultButton
+                      text={selectFirstButtonText}
+                      iconProps={{ iconName: 'Accept' }}
+                      onClick={selectFirstOnPage}
+                      disabled={selectionControlsDisabled}
+                      ariaLabel={selectFirstButtonText}
+                    />
+                    <DefaultButton
+                      text={clearSelectionText}
+                      iconProps={{ iconName: 'Clear' }}
+                      onClick={clearPageSelection}
+                      disabled={selectionControlsDisabled || selectedCount === 0}
+                      ariaLabel={clearSelectionText}
+                    />
+                  </div>
+                )}
                 {hasColumnFilters && (
                   <DefaultButton
-                    text="Clear filters"
+                    text={commonText.buttons.clearFilters}
                     iconProps={{ iconName: 'ClearFilter' }}
                     onClick={() => clearAllColumnFilters()}
-                    disabled={!hasColumnFilters}
-                    ariaLabel="Clear column filters"
+                    ariaLabel={commonText.aria.clearColumnFilters}
+                  />
+                )}
+              </div>
+              <div className="voa-grid-toolbar__right">
+                {showResults && showViewSalesRecord && (
+                  <DefaultButton
+                    text={commonText.tableActions.viewSalesRecord}
+                    iconProps={{ iconName: 'View' }}
+                    onClick={onViewSelected}
+                    disabled={disableViewSalesRecordAction || selectedCount !== 1}
+                    ariaLabel={commonText.aria.viewSelectedSalesRecord}
+                  />
+                )}
+                {showAssign && (
+                  <PrimaryButton
+                    text={assignActionText}
+                    iconProps={{ iconName: 'AddFriend' }}
+                    onClick={openAssignPanel}
+                    disabled={selectedCount === 0}
+                    ariaLabel={assignActionText}
                   />
                 )}
               </div>
@@ -3206,7 +3337,7 @@ export const Grid = React.memo((props: GridProps) => {
                 overflowX: 'auto',
               }}
               role="region"
-              aria-label="Results table scroll region"
+              aria-label={commonText.aria.resultsScrollRegion}
               tabIndex={0}
             >
               <div className="voa-grid-list">
@@ -3239,10 +3370,10 @@ export const Grid = React.memo((props: GridProps) => {
                     <Icon iconName="PageList" />
                   </div>
                   <Text variant="mediumPlus" className="voa-empty-state__title">
-                    {CONTROL_CONFIG.emptyStateTitle}
+                    {commonText.emptyState.title}
                   </Text>
                   <Text variant="small" className="voa-empty-state__text">
-                    {CONTROL_CONFIG.emptyStateMessage}
+                    {commonText.emptyState.message}
                   </Text>
                 </div>
               )}
@@ -3267,11 +3398,11 @@ export const Grid = React.memo((props: GridProps) => {
             style={{ width: '100%' }}
             verticalAlign="center"
             role="navigation"
-            aria-label="Pagination"
+            aria-label={commonText.aria.pagination}
           >
             <DefaultButton
-              aria-label="Previous page"
-              text="Previous"
+              aria-label={commonText.aria.previousPage}
+              text={commonText.buttons.previous}
               iconProps={{ iconName: 'ChevronLeft' }}
               onClick={onPrevPage}
               disabled={!canPrev}
@@ -3313,8 +3444,8 @@ export const Grid = React.memo((props: GridProps) => {
               });
             })()}
             <DefaultButton
-              aria-label="Next page"
-              text="Next"
+              aria-label={commonText.aria.nextPage}
+              text={commonText.buttons.next}
               iconProps={{ iconName: 'ChevronRight' }}
               onClick={onNextPage}
               disabled={!canNext}
@@ -3322,9 +3453,9 @@ export const Grid = React.memo((props: GridProps) => {
             />
             <Stack.Item styles={{ root: { marginLeft: 'auto' } }}>
               <DefaultButton
-                text="Top"
+                text={commonText.buttons.top}
                 iconProps={{ iconName: 'ChevronUp' }}
-                aria-label="Go to top"
+                aria-label={commonText.aria.goToTop}
                 onClick={onGoToTop}
                 styles={paginationButtonStyles}
               />
@@ -3337,10 +3468,10 @@ export const Grid = React.memo((props: GridProps) => {
               <Stack tokens={{ childrenGap: 16 }} styles={{ root: { minHeight: '100%', padding: 20 } }}>
                 <Stack horizontal verticalAlign="center" styles={{ root: { borderBottom: '1px solid #e1e1e1', paddingBottom: 12 } }}>
                   <DefaultButton
-                    text="Back"
+                    text={commonText.buttons.back}
                     iconProps={{ iconName: 'Back' }}
                     onClick={closeAssignPanel}
-                    ariaLabel="Back to manager assignment"
+                    ariaLabel={assignTasksText.aria.backToManager}
                   />
                   <Text as="h2" id="assign-screen-title" variant="xLarge" styles={{ root: { marginLeft: 12, fontWeight: 600 } }}>
                     {assignHeaderText}
@@ -3348,62 +3479,25 @@ export const Grid = React.memo((props: GridProps) => {
                   <Stack.Item styles={{ root: { marginLeft: 'auto' } }}>
                     <IconButton
                       iconProps={{ iconName: 'Cancel' }}
-                      ariaLabel="Close assign tasks screen"
+                      ariaLabel={assignTasksText.aria.closeAssign}
                       onClick={closeAssignPanel}
                     />
                   </Stack.Item>
                 </Stack>
                 <SearchBox
-                  placeholder="Search user"
-                  ariaLabel="Search user"
+                  placeholder={assignTasksText.searchPlaceholder}
+                  ariaLabel={assignTasksText.searchPlaceholder}
                   value={assignSearch}
                   onChange={(_, v) => setAssignSearch(v ?? '')}
                   disabled={assignLoading || assignUsersLoading}
                 />
-                <Stack horizontal tokens={{ childrenGap: 12 }} wrap>
-                  <ComboBox
-                    label="Team"
-                    selectedKey={assignTeam}
-                    placeholder="Filter by team"
-                    options={filteredAssignTeamOptions}
-                    onChange={(_, opt) => {
-                      setAssignTeam(opt?.key);
-                      setAssignTeamSearch('');
-                    }}
-                    disabled={assignLoading || assignUsersLoading}
-                    allowFreeform={false}
-                    autoComplete="on"
-                    onInputValueChange={(value) => setAssignTeamSearch(normalizeComboSearchText(value))}
-                    onMenuDismissed={() => setAssignTeamSearch('')}
-                    styles={{
-                      root: { minWidth: 200 },
-                      callout: { minWidth: 240 },
-                      optionsContainer: { minWidth: 200 },
-                    }}
-                  />
-                  <ComboBox
-                    label="Role"
-                    selectedKey={assignRole}
-                    placeholder="Filter by role"
-                    options={filteredAssignRoleOptions}
-                    onChange={(_, opt) => {
-                      setAssignRole(opt?.key);
-                      setAssignRoleSearch('');
-                    }}
-                    disabled={assignLoading || assignUsersLoading}
-                    allowFreeform={false}
-                    autoComplete="on"
-                    onInputValueChange={(value) => setAssignRoleSearch(normalizeComboSearchText(value))}
-                    onMenuDismissed={() => setAssignRoleSearch('')}
-                    styles={{
-                      root: { minWidth: 200 },
-                      callout: { minWidth: 240 },
-                      optionsContainer: { minWidth: 200 },
-                    }}
-                  />
-                </Stack>
-                {assignUsersLoading && <Spinner size={SpinnerSize.small} ariaLabel="Loading users" />}
-                {assignLoading && <Spinner size={SpinnerSize.small} ariaLabel="Assigning tasks" />}
+                {assignUsersLoading && <Spinner size={SpinnerSize.small} ariaLabel={assignTasksText.loadingUsersText} />}
+                {assignLoading && (
+                  <Stack horizontal verticalAlign="center" tokens={{ childrenGap: 8 }}>
+                    <Spinner size={SpinnerSize.small} ariaLabel={assignTasksText.loadingAssignText} />
+                    <Text>{assignLoadingText}</Text>
+                  </Stack>
+                )}
                 {assignUsersInfo && (
                   <MessageBar messageBarType={MessageBarType.info}>
                     {assignUsersInfo}
@@ -3422,7 +3516,25 @@ export const Grid = React.memo((props: GridProps) => {
                   columns={assignColumns}
                   selectionMode={SelectionMode.none}
                   isHeaderVisible
+                  onItemInvoked={(item) => {
+                    const record = item as AssignUser | undefined;
+                    if (!record || record.id === ASSIGN_LOADING_ROW_ID) return;
+                    handleAssignUserSelect(record.id);
+                  }}
                 />
+                <Stack horizontal horizontalAlign="end" tokens={{ childrenGap: 12 }}>
+                  <PrimaryButton
+                    text={assignActionText}
+                    iconProps={{ iconName: 'AddFriend' }}
+                    onClick={() => {
+                      if (selectedAssignUser) {
+                        void handleAssignClick(selectedAssignUser);
+                      }
+                    }}
+                    disabled={!selectedAssignUser || assignLoading}
+                    ariaLabel={assignActionText}
+                  />
+                </Stack>
               </Stack>
             </FocusTrapZone>
           </div>
