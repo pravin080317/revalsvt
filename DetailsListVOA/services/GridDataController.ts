@@ -68,12 +68,19 @@ const resolveServerDrivenThreshold = (context: ComponentFramework.Context<IInput
   return CONTROL_CONFIG.serverDrivenThreshold;
 };
 
+const isLocalHost = (): boolean => {
+  if (typeof window === 'undefined') return false;
+  const host = window.location?.hostname ?? '';
+  return host === 'localhost' || host === '127.0.0.1' || host === '::1';
+};
+
 export async function loadGridData(
   context: ComponentFramework.Context<IInputs>,
   args: {
     tableKey: string;
     filters: unknown; // GridFilterState but keep loose to avoid circular deps
     source?: string;
+    requestedBy?: string;
     currentPage: number;
     pageSize: number;
     clientSort?: ClientSortState;
@@ -83,6 +90,7 @@ export async function loadGridData(
 ): Promise<LoadResult> {
   const pageSize = args.pageSize ?? (context.parameters as unknown as Record<string, { raw?: number }>).pageSize?.raw ?? 500;
   const source = typeof args.source === 'string' ? args.source.trim() : '';
+  const requestedBy = typeof args.requestedBy === 'string' ? args.requestedBy.trim() : '';
   const baseFilters = (args.filters ?? {}) as Record<string, unknown>;
   const filtersWithSource = source ? { ...baseFilters, source } : baseFilters;
   const apiParamsBase = buildApiParamsFor(args.tableKey, filtersWithSource as never, args.currentPage, pageSize, args.prefilters);
@@ -102,6 +110,7 @@ export async function loadGridData(
     if (normalizedSortField) p.sortField = normalizedSortField;
     if (typeof sortDirection === 'number') p.sortDirection = sortDirection === 1 ? 'desc' : 'asc';
     if (searchQuery) p.SearchQuery = searchQuery;
+    if (requestedBy) p.RequestedBy = requestedBy;
     return p;
   };
 
@@ -117,7 +126,10 @@ export async function loadGridData(
     const firstParams = buildParams(args.currentPage);
     if (!customApiName) {
       // When no custom API is configured, show local sample data (from SampleData)
-      return { items: SAMPLE_RECORDS as unknown as TaskSearchItem[], totalCount: SAMPLE_RECORDS.length, serverDriven: false };
+      if (isLocalHost()) {
+        return { items: SAMPLE_RECORDS as unknown as TaskSearchItem[], totalCount: SAMPLE_RECORDS.length, serverDriven: false };
+      }
+      return { items: [], totalCount: 0, serverDriven: false };
     }
     const firstPayload = await execCustomApi(firstParams);
     const total = Number(firstPayload.totalCount ?? firstPayload.items?.length ?? 0);

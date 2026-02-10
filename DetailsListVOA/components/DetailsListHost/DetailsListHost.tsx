@@ -7,7 +7,11 @@ import { GridFilterState, createDefaultGridFilters, sanitizeFilters, NumericFilt
 import { getProfileConfigs } from '../../config/ColumnProfiles';
 import { CONTROL_CONFIG } from '../../config/ControlConfig';
 import { getColumnFilterConfigFor, isLookupFieldFor, type TableKey } from '../../config/TableConfigs';
-import { type ManagerPrefilterState } from '../../config/PrefilterConfigs';
+import {
+  type ManagerPrefilterState,
+  COLUMN_FILTER_CONDITION_SEPARATOR,
+  COLUMN_FILTER_VALUE_SEPARATOR,
+} from '../../config/PrefilterConfigs';
 import { SCREEN_TEXT, MANAGER_BILLING_AUTHORITY_OPTIONS, MANAGER_CASEWORKER_OPTIONS } from '../../constants/ScreenText';
 import { buildColumns } from '../../utils/ColumnsBuilder';
 import { ensureSampleColumns, buildSampleEntityRecords } from '../../utils/SampleHelpers';
@@ -44,12 +48,30 @@ const KNOWN_TABLE_KEYS: TableKey[] = ['sales', 'allsales', 'myassignment', 'mana
 const SOURCE_CODES: Record<TableKey, string> = {
   sales: 'SRS',
   allsales: 'SRS',
-  myassignment: 'CW',
+  myassignment: 'CWV',
   manager: 'MA',
   qa: 'QCV',
   qaassign: 'QCA',
   qaview: 'QCV',
 };
+
+const QC_TEAM_NAMES = new Set(['svt qa team']);
+const QC_ROLE_NAMES = new Set(['voa - svt qa']);
+const CASEWORKER_TEAM_NAMES = new Set(['svt user team']);
+const CASEWORKER_ROLE_NAMES = new Set(['voa - svt user']);
+const MANAGER_ASSIGNMENT_SCREEN_NAME = 'manager assignment';
+const QC_ASSIGNMENT_SCREEN_NAME = 'quality control assignment';
+
+const normalizeGroupName = (value?: string): string => (value ?? '').trim().toLowerCase();
+const isAssignableUserInGroup = (user: AssignUser, teamNames: Set<string>, roleNames: Set<string>): boolean => {
+  if (!user) return false;
+  const team = normalizeGroupName(user.team);
+  const role = normalizeGroupName(user.role);
+  return (team !== '' && teamNames.has(team)) || (role !== '' && roleNames.has(role));
+};
+
+const buildAssignableUsersCacheKey = (apiName: string, customApiType: number, screenName: string): string =>
+  `${apiName}|${customApiType}|${screenName.trim().toLowerCase()}`;
 
 export type ScreenKind = 'salesSearch' | 'managerAssign' | 'caseworkerView' | 'qcAssign' | 'qcView' | 'unknown';
 
@@ -304,7 +326,7 @@ const buildColumnFilterTokens = (
     const values = value.map((entry) => String(entry ?? '').trim()).filter((entry) => entry !== '');
     if (values.length === 0) return undefined;
     const operator = 'in';
-    return [apiField, operator, values.join(',')];
+    return [apiField, operator, values.join(COLUMN_FILTER_VALUE_SEPARATOR)];
   }
 
   if (cfg.control === 'numeric' && isNumericFilterValue(value)) {
@@ -354,7 +376,7 @@ const buildColumnFilterQuery = (tableKey: TableKey, filters: Record<string, Colu
     .filter((tokens): tokens is string[] => !!tokens && tokens.length > 0)
     .map((tokens) => {
       const encoded = tokens.map((token) => encodeURIComponent(token));
-      return `columnFilter=${encoded.join('~')}`;
+      return `columnFilter=${encoded.join(COLUMN_FILTER_CONDITION_SEPARATOR)}`;
     });
 
   return expressions.join('&');
@@ -505,6 +527,7 @@ export const DetailsListHost: React.FC<DetailsListHostProps> = ({
   );
   const commonText = SCREEN_TEXT.common;
   const managerText = SCREEN_TEXT.managerAssignment;
+  const qcText = SCREEN_TEXT.qcAssignment;
   const assignTasksText = SCREEN_TEXT.assignTasks;
   const isLocalHost = React.useMemo(() => {
     if (typeof window === 'undefined') return false;
@@ -527,6 +550,7 @@ export const DetailsListHost: React.FC<DetailsListHostProps> = ({
       : []),
     [isLocalHost],
   );
+  const fallbackQcUserOptions = React.useMemo(() => fallbackCaseworkerOptions, [fallbackCaseworkerOptions]);
 
   // Column display names and configs
   const [columnDisplayNames, setColumnDisplayNames] = React.useState<Record<string, string>>({});
@@ -611,6 +635,9 @@ export const DetailsListHost: React.FC<DetailsListHostProps> = ({
   const [caseworkerOptions, setCaseworkerOptions] = React.useState<string[]>([]);
   const [caseworkerOptionsLoading, setCaseworkerOptionsLoading] = React.useState(false);
   const [caseworkerOptionsError, setCaseworkerOptionsError] = React.useState<string | undefined>(undefined);
+  const [qcUserOptions, setQcUserOptions] = React.useState<string[]>([]);
+  const [qcUserOptionsLoading, setQcUserOptionsLoading] = React.useState(false);
+  const [qcUserOptionsError, setQcUserOptionsError] = React.useState<string | undefined>(undefined);
   const [apimItems, setApimItems] = React.useState<unknown[]>([]);
   const [totalCount, setTotalCount] = React.useState(0);
   const [serverDriven, setServerDriven] = React.useState(false);
@@ -629,6 +656,7 @@ export const DetailsListHost: React.FC<DetailsListHostProps> = ({
   const assignUsersLoadKeyRef = React.useRef<string>('');
   const caseworkerOptionsLoadKeyRef = React.useRef<string>('');
   const assignableUsersCacheLoadKeyRef = React.useRef<string>('');
+  const assignableUsersCacheContextsRef = React.useRef<Set<string>>(new Set());
   const handleAssignPanelToggle = React.useCallback((isOpen: boolean) => {
     setAssignPanelOpen(isOpen);
     if (isOpen) {
@@ -644,14 +672,24 @@ export const DetailsListHost: React.FC<DetailsListHostProps> = ({
     String((context.parameters as unknown as Record<string, { raw?: string | boolean }>).allowColumnReorder?.raw ?? '').toLowerCase() === 'true';
   const isManagerAssign = screenKind === 'managerAssign';
   const isQcAssign = screenKind === 'qcAssign';
+  const isCaseworkerView = screenKind === 'caseworkerView';
+  const isQcView = screenKind === 'qcView';
   const isSalesSearch = screenKind === 'salesSearch';
   const isAssignment = isManagerAssign || isQcAssign;
+  const isPrefilterScreen = isManagerAssign || isCaseworkerView || isQcAssign || isQcView;
   const assignmentContextKey = isManagerAssign ? 'manager' : isQcAssign ? 'qa' : '';
+  const assignmentContextScreenName = React.useMemo(() => {
+    if (screenKind === 'managerAssign') return MANAGER_ASSIGNMENT_SCREEN_NAME;
+    if (screenKind === 'qcAssign') return QC_ASSIGNMENT_SCREEN_NAME;
+    return canvasScreenName ?? '';
+  }, [canvasScreenName, screenKind]);
+  const userMappingScreenName = QC_ASSIGNMENT_SCREEN_NAME;
+  const currentUserId = React.useMemo(() => resolveAssignedByUserId(context), [context]);
   const [salesSearchApplied, setSalesSearchApplied] = React.useState(!isSalesSearch);
   const handlePrefilterDirty = React.useCallback(() => {
-    if (!isManagerAssign) return;
+    if (!isPrefilterScreen) return;
     setPrefilterApplied(false);
-  }, [isManagerAssign]);
+  }, [isPrefilterScreen]);
   const handleSalesSearchDirty = React.useCallback(() => {
     if (!isSalesSearch) return;
     setSalesSearchApplied(false);
@@ -738,6 +776,15 @@ export const DetailsListHost: React.FC<DetailsListHostProps> = ({
     return String(user?.id ?? '').trim();
   }, []);
 
+  const isQcAssignableUser = React.useCallback(
+    (user: AssignUser) => isAssignableUserInGroup(user, QC_TEAM_NAMES, QC_ROLE_NAMES),
+    [],
+  );
+  const isCaseworkerAssignableUser = React.useCallback(
+    (user: AssignUser) => isAssignableUserInGroup(user, CASEWORKER_TEAM_NAMES, CASEWORKER_ROLE_NAMES),
+    [],
+  );
+
   const caseworkerNameToIdMap = React.useMemo(() => {
     const map: Record<string, string> = {};
     assignableUsersCache.forEach((user) => {
@@ -764,6 +811,24 @@ export const DetailsListHost: React.FC<DetailsListHostProps> = ({
       }),
     [caseworkerNameToIdMap],
   );
+
+  const caseworkerIdList = React.useMemo(
+    () => assignableUsersCache
+      .filter(isCaseworkerAssignableUser)
+      .map((user) => String(user?.id ?? '').trim())
+      .filter((id) => id.length > 0),
+    [assignableUsersCache, isCaseworkerAssignableUser],
+  );
+
+  const resolveTaskSearchCaseworkers = React.useCallback((): string[] => {
+    if (caseworkerIdList.length > 0) {
+      return caseworkerIdList;
+    }
+    if (caseworkerOptions.length > 0) {
+      return mapCaseworkerNamesToIds(caseworkerOptions);
+    }
+    return [];
+  }, [caseworkerIdList, caseworkerOptions, mapCaseworkerNamesToIds]);
 
   const mapUserValueToId = React.useCallback((value: string): string => {
     const raw = String(value ?? '').trim();
@@ -861,6 +926,7 @@ export const DetailsListHost: React.FC<DetailsListHostProps> = ({
     });
     return map;
   }, [assignableUsersCache, getUserDisplayName]);
+  const hasUserDisplayNameMap = React.useMemo(() => Object.keys(userDisplayNameMap).length > 0, [userDisplayNameMap]);
 
   // Persist header filters per table for consistent UX across reloads
   const storageKey = React.useMemo(() => `voa-grid-filters:${tableKey}`, [tableKey]);
@@ -873,10 +939,10 @@ export const DetailsListHost: React.FC<DetailsListHostProps> = ({
   const storageKeyPageNC = React.useMemo(() => storageKeyPage.replace(':', ''), [storageKeyPage]);
 
   React.useEffect(() => {
-    if (isManagerAssign) {
+    if (isManagerAssign || isQcAssign) {
       setSearchFilters(createDefaultGridFilters());
     }
-  }, [isManagerAssign]);
+  }, [isManagerAssign, isQcAssign]);
   // Hydrate from localStorage on table change (URL persistence disabled by policy)
   React.useEffect(() => {
     try {
@@ -974,6 +1040,7 @@ export const DetailsListHost: React.FC<DetailsListHostProps> = ({
     if (hasLoadedApim && apimItems.length > 0) {
       const mapUserIdsToNames = (value: unknown): string[] | undefined => {
         if (!value) return undefined;
+        if (!hasUserDisplayNameMap) return undefined;
         const ids = Array.isArray(value)
           ? value.map((v) => String(v ?? '').trim()).filter((v) => v !== '')
           : typeof value === 'string'
@@ -1020,7 +1087,7 @@ export const DetailsListHost: React.FC<DetailsListHostProps> = ({
         all.push(id);
         recs[id] = r;
       });
-    } else {
+    } else if (isLocalHost) {
       ensureSampleColumns(datasetColumns, columnDisplayNames);
       const sample = buildSampleEntityRecords();
       Object.assign(recs, sample.records);
@@ -1029,7 +1096,7 @@ export const DetailsListHost: React.FC<DetailsListHostProps> = ({
     const t1 = performance.now();
     logPerf('[Grid Perf] Map records (ms):', Math.round(t1 - t0), 'count:', all.length);
     return { records: recs, ids: all };
-  }, [apimItems, clientUrl, columnDisplayNames, datasetColumns, hasLoadedApim, userDisplayNameMap]);
+  }, [apimItems, clientUrl, columnDisplayNames, datasetColumns, hasLoadedApim, isLocalHost, userDisplayNameMap]);
 
   const disableClientFiltering = hasLoadedApim;
 
@@ -1134,10 +1201,13 @@ export const DetailsListHost: React.FC<DetailsListHostProps> = ({
     const prevKind = lastScreenKindRef.current;
     const screenKindChanged = prevKind !== screenKind;
     const switchedSalesToManager = screenKindChanged && prevKind === 'salesSearch' && isManagerAssign;
+    const switchedToCaseworker = screenKindChanged && isCaseworkerView;
+    const switchedToQcAssign = screenKindChanged && isQcAssign;
+    const switchedToQcView = screenKindChanged && isQcView;
     lastScreenKindRef.current = screenKind;
 
-    if (switchedSalesToManager) {
-      // Force a clean slate when moving from Sales Search into Manager Assignment.
+    if (switchedSalesToManager || switchedToCaseworker || switchedToQcAssign || switchedToQcView) {
+      // Force a clean slate when entering a prefilter-driven screen.
       setPrefilters(undefined);
       setPrefilterApplied(false);
       setCurrentPage(0);
@@ -1154,11 +1224,6 @@ export const DetailsListHost: React.FC<DetailsListHostProps> = ({
       setSelectedCount(0);
       onSelectionCountChange?.(0);
       onSelectionChange?.({ selectedTaskIds: [], selectedSaleIds: [] });
-      try {
-        localStorage.removeItem(prefilterStorageKey);
-      } catch {
-        // ignore storage failures
-      }
       return;
     }
 
@@ -1176,7 +1241,7 @@ export const DetailsListHost: React.FC<DetailsListHostProps> = ({
       setLoadErrorMessage(undefined);
       return;
     }
-    if (isManagerAssign && !prefilterApplied) {
+    if (isPrefilterScreen && !prefilterApplied) {
       setApimLoading(false);
       setHasLoadedApim(false);
       setApimItems([]);
@@ -1209,10 +1274,12 @@ export const DetailsListHost: React.FC<DetailsListHostProps> = ({
     setLoadErrorMessage(undefined);
     setApimLoading(true);
     void (async () => {
+      const requestedBy = isCaseworkerView && currentUserId ? currentUserId.toLowerCase() : undefined;
       const res = await loadGridData(context, {
         tableKey,
         filters: sanitizeFilters(mapSearchFiltersForApi(searchFilters)),
         source: sourceCode,
+        requestedBy,
         currentPage,
         pageSize,
         clientSort,
@@ -1232,7 +1299,7 @@ export const DetailsListHost: React.FC<DetailsListHostProps> = ({
       }
       setApiFilterOptions(normalizeFilterOptions(res.filters));
     })();
-  }, [context, tableKey, sourceCode, searchFilters, currentPage, pageSize, clientSort, searchNonce, hasLoadedApim, prefilters, prefilterApplied, isManagerAssign, isSalesSearch, salesSearchApplied, prefilterStorageKey, screenKind, columnFilterQuery, mapSearchFiltersForApi]);
+  }, [context, tableKey, sourceCode, searchFilters, currentPage, pageSize, clientSort, searchNonce, hasLoadedApim, prefilters, prefilterApplied, isCaseworkerView, currentUserId, isPrefilterScreen, isSalesSearch, salesSearchApplied, prefilterStorageKey, screenKind, columnFilterQuery, mapSearchFiltersForApi]);
 
   React.useEffect(() => {
     if (!assignPanelOpen || !assignmentContextKey) {
@@ -1256,7 +1323,8 @@ export const DetailsListHost: React.FC<DetailsListHostProps> = ({
     }
 
     const customApiType = resolveCustomApiTypeForAssignableUsers();
-    const requestKey = `${assignmentContextKey}|${apiName}|${customApiType}|${canvasScreenName}`;
+    const cacheContextKey = buildAssignableUsersCacheKey(apiName, customApiType, assignmentContextScreenName);
+    const requestKey = `${assignmentContextKey}|${cacheContextKey}`;
     if (assignUsersLoadKeyRef.current === requestKey) {
       return;
     }
@@ -1272,7 +1340,7 @@ export const DetailsListHost: React.FC<DetailsListHostProps> = ({
         const response = await executeUnboundCustomApi<{ Result?: string; result?: string }>(
           context,
           apiName,
-          { screenName: canvasScreenName ?? '' },
+          { screenName: assignmentContextScreenName },
           { operationType: customApiType },
         );
         const parsed = parseAssignableUsersResponse(response);
@@ -1288,14 +1356,25 @@ export const DetailsListHost: React.FC<DetailsListHostProps> = ({
         }
 
         if (parsed.info) {
+          assignableUsersCacheContextsRef.current.add(cacheContextKey);
           setAssignUsers([]);
           setAssignUsersError(undefined);
           setAssignUsersInfo(parsed.info);
           return;
         }
 
-        setAssignUsers(parsed.users);
-        setAssignableUsersCache((prev) => mergeAssignableUsers(prev, parsed.users));
+        const filteredUsers = isQcAssign ? parsed.users.filter(isQcAssignableUser) : parsed.users;
+        if (parsed.users.length > 0) {
+          setAssignableUsersCache((prev) => mergeAssignableUsers(prev, parsed.users));
+          assignableUsersCacheContextsRef.current.add(cacheContextKey);
+        }
+        if (isQcAssign && filteredUsers.length === 0) {
+          setAssignUsers([]);
+          setAssignUsersError(undefined);
+          setAssignUsersInfo(assignTasksText.messages.noUsersFound);
+          return;
+        }
+        setAssignUsers(filteredUsers);
         setAssignUsersError(undefined);
         setAssignUsersInfo(undefined);
       } catch (err) {
@@ -1308,33 +1387,63 @@ export const DetailsListHost: React.FC<DetailsListHostProps> = ({
         }
       }
     })();
-  }, [assignPanelOpen, assignmentContextKey, assignTasksText.messages, canvasScreenName, context, parseAssignableUsersResponse, mergeAssignableUsers]);
+  }, [
+    assignPanelOpen,
+    assignmentContextKey,
+    assignTasksText.messages,
+    assignmentContextScreenName,
+    context,
+    isQcAssign,
+    isQcAssignableUser,
+    parseAssignableUsersResponse,
+    mergeAssignableUsers,
+  ]);
 
   React.useEffect(() => {
-    if (!isManagerAssign) {
+    const shouldLoad = isManagerAssign || isQcAssign;
+    if (!shouldLoad) {
       caseworkerOptionsLoadKeyRef.current = '';
       setCaseworkerOptions([]);
       setCaseworkerOptionsLoading(false);
       setCaseworkerOptionsError(undefined);
+      setQcUserOptions([]);
+      setQcUserOptionsLoading(false);
+      setQcUserOptionsError(undefined);
       return;
     }
 
+    const prefilterErrors = isQcAssign ? qcText.errors : managerText.errors;
     const apiName = resolveAssignableUsersApiName();
     if (!apiName) {
       if (fallbackCaseworkerOptions.length > 0) {
         setCaseworkerOptions(fallbackCaseworkerOptions);
         setCaseworkerOptionsError(undefined);
-        setCaseworkerOptionsLoading(false);
-        return;
+      } else {
+        setCaseworkerOptions([]);
+        setCaseworkerOptionsError(prefilterErrors.assignableUsersApiNotConfigured);
       }
-      setCaseworkerOptions([]);
-      setCaseworkerOptionsError(managerText.errors.assignableUsersApiNotConfigured);
       setCaseworkerOptionsLoading(false);
+
+      if (isQcAssign) {
+        if (fallbackQcUserOptions.length > 0) {
+          setQcUserOptions(fallbackQcUserOptions);
+          setQcUserOptionsError(undefined);
+        } else {
+          setQcUserOptions([]);
+          setQcUserOptionsError(prefilterErrors.assignableUsersApiNotConfigured);
+        }
+        setQcUserOptionsLoading(false);
+      } else {
+        setQcUserOptions([]);
+        setQcUserOptionsError(undefined);
+        setQcUserOptionsLoading(false);
+      }
       return;
     }
 
     const customApiType = resolveCustomApiTypeForAssignableUsers();
-    const requestKey = `caseworkers|${assignmentContextKey}|${apiName}|${customApiType}|${canvasScreenName}`;
+    const cacheContextKey = buildAssignableUsersCacheKey(apiName, customApiType, assignmentContextScreenName);
+    const requestKey = `caseworkers|${assignmentContextKey}|${cacheContextKey}`;
     if (caseworkerOptionsLoadKeyRef.current === requestKey) {
       return;
     }
@@ -1343,13 +1452,18 @@ export const DetailsListHost: React.FC<DetailsListHostProps> = ({
     setCaseworkerOptions([]);
     setCaseworkerOptionsLoading(true);
     setCaseworkerOptionsError(undefined);
+    if (isQcAssign) {
+      setQcUserOptions([]);
+      setQcUserOptionsLoading(true);
+      setQcUserOptionsError(undefined);
+    }
 
     void (async () => {
       try {
         const response = await executeUnboundCustomApi<{ Result?: string; result?: string }>(
           context,
           apiName,
-          { screenName: canvasScreenName ?? '' },
+          { screenName: assignmentContextScreenName },
           { operationType: customApiType },
         );
 
@@ -1366,10 +1480,20 @@ export const DetailsListHost: React.FC<DetailsListHostProps> = ({
             setCaseworkerOptions([]);
             setCaseworkerOptionsError(parsed.error);
           }
+          if (isQcAssign) {
+            if (fallbackQcUserOptions.length > 0) {
+              setQcUserOptions(fallbackQcUserOptions);
+              setQcUserOptionsError(undefined);
+            } else {
+              setQcUserOptions([]);
+              setQcUserOptionsError(parsed.error);
+            }
+          }
           return;
         }
 
         if (parsed.info) {
+          assignableUsersCacheContextsRef.current.add(cacheContextKey);
           if (fallbackCaseworkerOptions.length > 0) {
             setCaseworkerOptions(fallbackCaseworkerOptions);
             setCaseworkerOptionsError(undefined);
@@ -1377,35 +1501,70 @@ export const DetailsListHost: React.FC<DetailsListHostProps> = ({
             setCaseworkerOptions([]);
             setCaseworkerOptionsError(undefined);
           }
+          if (isQcAssign) {
+            if (fallbackQcUserOptions.length > 0) {
+              setQcUserOptions(fallbackQcUserOptions);
+              setQcUserOptionsError(undefined);
+            } else {
+              setQcUserOptions([]);
+              setQcUserOptionsError(undefined);
+            }
+          }
           return;
         }
 
-        const normalized = buildCaseworkerNames(parsed.users);
-        setCaseworkerOptions(normalized.length > 0 ? normalized : fallbackCaseworkerOptions);
+        const caseworkerUsers = parsed.users.filter(isCaseworkerAssignableUser);
+        const qcUsers = parsed.users.filter(isQcAssignableUser);
+        const caseworkerSource = isQcAssign
+          ? caseworkerUsers
+          : (caseworkerUsers.length > 0 ? caseworkerUsers : parsed.users);
+        const caseworkerNames = buildCaseworkerNames(caseworkerSource);
+        setCaseworkerOptions(caseworkerNames.length > 0 ? caseworkerNames : fallbackCaseworkerOptions);
+        if (isQcAssign) {
+          const qcNames = buildCaseworkerNames(qcUsers);
+          setQcUserOptions(qcNames.length > 0 ? qcNames : fallbackQcUserOptions);
+        }
         setAssignableUsersCache((prev) => mergeAssignableUsers(prev, parsed.users));
+        assignableUsersCacheContextsRef.current.add(cacheContextKey);
         setCaseworkerOptionsError(undefined);
+        setQcUserOptionsError(undefined);
       } catch (err) {
         if (fallbackCaseworkerOptions.length > 0) {
           setCaseworkerOptions(fallbackCaseworkerOptions);
           setCaseworkerOptionsError(undefined);
         } else {
           setCaseworkerOptions([]);
-          setCaseworkerOptionsError(err instanceof Error ? err.message : managerText.errors.caseworkersLoadFailed);
+          setCaseworkerOptionsError(err instanceof Error ? err.message : prefilterErrors.caseworkersLoadFailed);
+        }
+        if (isQcAssign) {
+          if (fallbackQcUserOptions.length > 0) {
+            setQcUserOptions(fallbackQcUserOptions);
+            setQcUserOptionsError(undefined);
+          } else {
+            setQcUserOptions([]);
+            setQcUserOptionsError(err instanceof Error ? err.message : prefilterErrors.caseworkersLoadFailed);
+          }
         }
       } finally {
         if (caseworkerOptionsLoadKeyRef.current === requestKey) {
           setCaseworkerOptionsLoading(false);
+          setQcUserOptionsLoading(false);
         }
       }
     })();
   }, [
     assignmentContextKey,
     buildCaseworkerNames,
-    canvasScreenName,
+    assignmentContextScreenName,
     context,
     fallbackCaseworkerOptions,
+    fallbackQcUserOptions,
+    isCaseworkerAssignableUser,
     isManagerAssign,
+    isQcAssign,
+    isQcAssignableUser,
     managerText.errors,
+    qcText.errors,
     parseAssignableUsersResponse,
     mergeAssignableUsers,
   ]);
@@ -1416,30 +1575,62 @@ export const DetailsListHost: React.FC<DetailsListHostProps> = ({
     return !!assignedCfg || !!qcCfg;
   }, [tableKey]);
 
+  const hasGuidAssignments = React.useMemo(() => {
+    if (apimItems.length === 0) return false;
+    const sample = apimItems.slice(0, 50);
+    const toIdList = (value: unknown): string[] => {
+      if (!value) return [];
+      if (Array.isArray(value)) {
+        return value.map((v) => String(v ?? '').trim()).filter((v) => v !== '');
+      }
+      if (typeof value === 'string') {
+        return value.split(',').map((v) => v.trim()).filter((v) => v !== '');
+      }
+      return [];
+    };
+    for (const item of sample) {
+      const record = item as Record<string, unknown>;
+      const assignedValues = toIdList(record.assignedto ?? record.assignedTo);
+      const qcAssignedValues = toIdList(record.qcassignedto ?? record.qcAssignedTo);
+      for (const value of [...assignedValues, ...qcAssignedValues]) {
+        const normalized = normalizeUserId(value);
+        if (normalized && isGuidValue(normalized)) {
+          return true;
+        }
+      }
+    }
+    return false;
+  }, [apimItems]);
+
   React.useEffect(() => {
-    if (!requiresUserMapping || isManagerAssign) return;
-    if (assignableUsersCache.length > 0) return;
+    if (!requiresUserMapping) return;
+    if (!hasGuidAssignments) return;
     const apiName = resolveAssignableUsersApiName();
     if (!apiName) return;
     const customApiType = resolveCustomApiTypeForAssignableUsers();
-    const requestKey = `assignable-users-cache|${apiName}|${customApiType}|${canvasScreenName}`;
-    if (assignableUsersCacheLoadKeyRef.current === requestKey) {
+    const cacheContextKey = buildAssignableUsersCacheKey(apiName, customApiType, userMappingScreenName);
+    if (assignableUsersCacheContextsRef.current.has(cacheContextKey)) return;
+    if (assignableUsersCacheLoadKeyRef.current === cacheContextKey) {
       return;
     }
-    assignableUsersCacheLoadKeyRef.current = requestKey;
+    assignableUsersCacheLoadKeyRef.current = cacheContextKey;
 
     void (async () => {
       try {
         const response = await executeUnboundCustomApi<{ Result?: string; result?: string }>(
           context,
           apiName,
-          { screenName: canvasScreenName ?? '' },
+          { screenName: userMappingScreenName },
           { operationType: customApiType },
         );
         const parsed = parseAssignableUsersResponse(response);
-        if (assignableUsersCacheLoadKeyRef.current !== requestKey) {
+        if (assignableUsersCacheLoadKeyRef.current !== cacheContextKey) {
           return;
         }
+        if (parsed.error) {
+          return;
+        }
+        assignableUsersCacheContextsRef.current.add(cacheContextKey);
         if (parsed.users && parsed.users.length > 0) {
           setAssignableUsersCache((prev) => mergeAssignableUsers(prev, parsed.users));
         }
@@ -1448,15 +1639,14 @@ export const DetailsListHost: React.FC<DetailsListHostProps> = ({
       }
     })();
   }, [
-    assignableUsersCache.length,
-    canvasScreenName,
     context,
-    isManagerAssign,
+    hasGuidAssignments,
     mergeAssignableUsers,
     parseAssignableUsersResponse,
     requiresUserMapping,
     resolveAssignableUsersApiName,
     resolveCustomApiTypeForAssignableUsers,
+    userMappingScreenName,
   ]);
 
   // Handlers
@@ -1671,7 +1861,12 @@ export const DetailsListHost: React.FC<DetailsListHostProps> = ({
         setAssignMessage({ text: assignTasksText.messages.selectTasksWarning, type: MessageBarType.warning });
         return false;
       }
-      const assignmentConfig = CONTROL_CONFIG.taskAssignment ?? { maxBatchSize: 500, allowedStatuses: [] as string[] };
+      const assignmentConfig = CONTROL_CONFIG.taskAssignment ?? {
+        maxBatchSize: 500,
+        allowedStatusesManager: [] as string[],
+        allowedStatusesQc: [] as string[],
+        allowedStatuses: [] as string[],
+      };
       const maxBatchSize = assignmentConfig.maxBatchSize ?? 500;
       if (selected.length > maxBatchSize) {
         const template = assignTasksText.messages.tooManyTasks;
@@ -1693,15 +1888,46 @@ export const DetailsListHost: React.FC<DetailsListHostProps> = ({
         const digitsOnly = raw.replace(/\D/g, '');
         return digitsOnly || raw;
       };
-      const allowedStatuses = (assignmentConfig.allowedStatuses ?? []).map((s) => s.toLowerCase());
+      const allowedStatuses = (
+        screenKind === 'managerAssign'
+          ? assignmentConfig.allowedStatusesManager
+          : screenKind === 'qcAssign'
+            ? assignmentConfig.allowedStatusesQc
+            : assignmentConfig.allowedStatuses
+      ).map((s) => s.toLowerCase());
+      const normalizedStatuses: string[] = [];
       for (const rec of selected) {
         const statusRaw = (rec.taskstatus ?? rec.taskStatus ?? '') as string;
         const normalized = String(statusRaw ?? '').trim().toLowerCase();
+        if (normalized) {
+          normalizedStatuses.push(normalized);
+        }
         if (allowedStatuses.length > 0 && normalized && !allowedStatuses.includes(normalized)) {
           const message = assignTasksText.messages.invalidStatus;
           setAssignMessage({ text: message, type: MessageBarType.error });
           return false;
         }
+      }
+      let assignmentTaskStatus: string | undefined;
+      if (screenKind === 'managerAssign') {
+        const hasNew = normalizedStatuses.includes('new');
+        const hasNonNew = normalizedStatuses.some((status) => status !== 'new');
+        if (hasNew && hasNonNew) {
+          const message = assignTasksText.messages.invalidStatus;
+          setAssignMessage({ text: message, type: MessageBarType.error });
+          return false;
+        }
+        assignmentTaskStatus = hasNew ? 'New' : 'NULL';
+      }
+      if (screenKind === 'qcAssign') {
+        const hasQcRequested = normalizedStatuses.includes('qc requested');
+        const hasNonQcRequested = normalizedStatuses.some((status) => status !== 'qc requested');
+        if (hasQcRequested && hasNonQcRequested) {
+          const message = assignTasksText.messages.invalidStatus;
+          setAssignMessage({ text: message, type: MessageBarType.error });
+          return false;
+        }
+        assignmentTaskStatus = hasQcRequested ? 'QC Requested' : 'NULL';
       }
       const taskIds = selected
         .map((rec) => toNumericTaskId(rec.taskid ?? rec.taskId ?? ''))
@@ -1782,6 +2008,9 @@ export const DetailsListHost: React.FC<DetailsListHostProps> = ({
         assignedByUserId: assignedBy,
         screenName: assignmentScreenName || screenName,
       };
+      if (assignmentTaskStatus) {
+        assignmentParams.taskStatus = assignmentTaskStatus;
+      }
       if (screenKind !== 'managerAssign') {
         assignmentParams.date = assignedDate;
       }
@@ -1803,7 +2032,19 @@ export const DetailsListHost: React.FC<DetailsListHostProps> = ({
         setSearchNonce((n) => n + 1);
         return false;
       }
-      setAssignMessage({ text: assignTasksText.messages.assignedSuccess, type: MessageBarType.success });
+      const assignedCount = uniqueTaskIds.length;
+      const rawUserName = [user.firstName, user.lastName].map((v) => (v ?? '').trim()).filter((v) => v !== '');
+      const userName = rawUserName.length > 0 ? rawUserName.join(' ') : 'selected user';
+      const formatTemplate = (template: string): string =>
+        template.replace(/\{count\}/g, String(assignedCount)).replace(/\{user\}/g, userName);
+      const assignedTemplate = assignedCount === 1
+        ? assignTasksText.messages.assignedSuccessWithUserSingle
+          ?? assignTasksText.messages.assignedSuccessSingle
+          ?? assignTasksText.messages.assignedSuccess
+        : assignTasksText.messages.assignedSuccessWithUserMultiple
+          ?? assignTasksText.messages.assignedSuccessMultiple
+          ?? assignTasksText.messages.assignedSuccess;
+      setAssignMessage({ text: formatTemplate(assignedTemplate), type: MessageBarType.success });
       selection.setAllSelected(false);
       setSelectedCount(0);
       onSelectionCountChange?.(0);
@@ -1829,7 +2070,7 @@ export const DetailsListHost: React.FC<DetailsListHostProps> = ({
   };
 
   const props: GridProps = {
-    showSearchPanel: !isManagerAssign,
+    showSearchPanel: !isManagerAssign && !isCaseworkerView && !isQcAssign && !isQcView,
     screenKind,
     tableKey,
     datasetColumns,
@@ -1840,6 +2081,9 @@ export const DetailsListHost: React.FC<DetailsListHostProps> = ({
     caseworkerOptions,
     caseworkerOptionsLoading,
     caseworkerOptionsError,
+    qcUserOptions,
+    qcUserOptionsLoading,
+    qcUserOptionsError,
     records,
     sortedRecordIds: pageIds,
     shimmer: apimLoading,
@@ -1885,7 +2129,7 @@ export const DetailsListHost: React.FC<DetailsListHostProps> = ({
     canNext,
     canPrev,
     searchFilters,
-    showResults: (!isManagerAssign || prefilterApplied) && (!isSalesSearch || salesSearchApplied),
+    showResults: (!isPrefilterScreen || prefilterApplied) && (!isSalesSearch || salesSearchApplied),
     selectedCount,
     allowColumnReorder,
     statusMessage: assignMessage,
@@ -1896,6 +2140,7 @@ export const DetailsListHost: React.FC<DetailsListHostProps> = ({
     assignUsersError,
     assignUsersInfo,
     onAssignPanelToggle: handleAssignPanelToggle,
+    currentUserId,
     onAssignTasks: assignTasksToUser,
     onLoadFilterOptions: (field, query) => {
       const key = String(field ?? '').toLowerCase();
@@ -1947,9 +2192,16 @@ export const DetailsListHost: React.FC<DetailsListHostProps> = ({
     onPrefilterDirty: handlePrefilterDirty,
     onSearchDirty: handleSalesSearchDirty,
     onPrefilterApply: (next) => {
-      const resolved = next.searchBy === 'caseworker'
-        ? { ...next, caseworkers: mapCaseworkerNamesToIds(next.caseworkers ?? []) }
-        : next;
+      let resolved = next;
+      if (isQcAssign) {
+        if (next.searchBy === 'task') {
+          resolved = { ...next, caseworkers: resolveTaskSearchCaseworkers() };
+        } else if (next.searchBy === 'caseworker' || next.searchBy === 'qcUser') {
+          resolved = { ...next, caseworkers: mapCaseworkerNamesToIds(next.caseworkers ?? []) };
+        }
+      } else if (next.searchBy === 'caseworker') {
+        resolved = { ...next, caseworkers: mapCaseworkerNamesToIds(next.caseworkers ?? []) };
+      }
       setPrefilters(resolved);
       setPrefilterApplied(true);
       setCurrentPage(0);

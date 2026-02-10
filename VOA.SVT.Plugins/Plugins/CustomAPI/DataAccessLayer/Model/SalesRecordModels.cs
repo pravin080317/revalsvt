@@ -11,6 +11,7 @@ namespace VOA.SVT.Plugins.CustomAPI.DataAccessLayer.Model
         public string Source { get; set; }
         public string SearchBy { get; set; }
         public string PreFilter { get; set; }
+        public string RequestedBy { get; set; }
         public string FromDate { get; set; }
         public string ToDate { get; set; }
         public string SaleId { get; set; }
@@ -51,13 +52,18 @@ namespace VOA.SVT.Plugins.CustomAPI.DataAccessLayer.Model
             var sortField = NormalizeSortField(SortField);
             var sortDirection = NormalizeSortDirection(SortDirection);
             var normalizedTaskStatus = NormalizeTaskStatus(TaskStatus);
+            var requestedBy = string.IsNullOrWhiteSpace(RequestedBy) ? null : RequestedBy.Trim().ToLowerInvariant();
+            var useRequestedBy = !string.IsNullOrWhiteSpace(requestedBy);
+            var preFilter = useRequestedBy ? null : PreFilter;
+            var searchBy = useRequestedBy ? null : SearchBy;
             var parameters = new Dictionary<string, string>
             {
                 ["page-number"] = PageNumber,
                 ["page-size"] = PageSize,
                 ["source"] = Source,
-                ["searchBy"] = SearchBy,
-                ["preFilter"] = PreFilter,
+                ["searchBy"] = searchBy,
+                ["preFilter"] = preFilter,
+                ["RequestedBy"] = requestedBy,
                 ["fromDate"] = FromDate,
                 ["toDate"] = ToDate,
                 ["saleId"] = SaleId,

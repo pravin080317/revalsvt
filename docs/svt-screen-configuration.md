@@ -9,6 +9,7 @@ The control derives behavior primarily from `canvasScreenName`. Resolution order
 3. `CONTROL_CONFIG.tableKey` default
 
 Important: assignment and manager prefilter behavior still depends on `canvasScreenName` tokens, so keep those tokens accurate even if you set `tableKey`.
+Note: the control now uses canonical screen names when calling the Assignable Users API. Assignment panels and prefilter dropdowns use the appropriate assignment context, while row display-name mapping uses the Quality Control assignment context (QA + SVT users) to resolve GUIDs consistently across all screens.
 
 ## Valid `tableKey` values
 Use one of the following values:
@@ -27,7 +28,7 @@ Use these recommended `canvasScreenName` values so the control can reliably deri
 | --- | --- | --- | --- | --- |
 | Sales Record Search | `SalesRecordSearch` | `sales` | `SRS` |
 | Manager Assignment | `ManagerAssignment` | `manager` | `MA` |
-| Caseworker View | `CaseworkerView` | `myassignment` | `CW` |
+| Caseworker View | `CaseworkerView` | `myassignment` | `CWV` |
 | Quality Control Assignment | `QualityControlAssignment` | `qaassign` | `QCA` |
 | Quality Control View | `QualityControlView` | `qaview` | `QCV` |
 
@@ -52,9 +53,14 @@ Validation rules:
 The control now sends a default `source` parameter on the sales API request based on the screen:
 - SalesRecordSearch -> `SRS`
 - ManagerAssignment -> `MA`
-- CaseworkerView -> `CW`
+- CaseworkerView -> `CWV`
 - QualityControlAssignment -> `QCA`
 - QualityControlView -> `QCV`
+
+## Other backend source codes
+- `MAT` -> Manager assignment task (batch task-assignment endpoint).
+- `QCAT` -> Quality control assignment task (batch task-assignment endpoint).
+- `VSRT` -> Modify SVT Task (backend stored procedure / task update workflow).
 
 ## Implementation references
 Key implementation points:
