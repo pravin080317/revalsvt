@@ -91,7 +91,7 @@ export interface GridProps {
   itemsLoading: boolean;
   selectionType: SelectionMode;
   selection: ISelection<IObjectWithKey>;
-  onNavigate: (item?: ComponentFramework.PropertyHelper.DataSetApi.EntityRecord) => void;
+  onNavigate: (item?: ComponentFramework.PropertyHelper.DataSetApi.EntityRecord) => void | Promise<void>;
   onSort: (name: string, desc: boolean) => void;
   sorting: ComponentFramework.PropertyHelper.DataSetApi.SortStatus[];
   componentRef: IRefObject<IDetailsList>;
@@ -131,7 +131,7 @@ export interface GridProps {
   statusMessage?: { text: string; type: MessageBarType };
   onStatusMessageDismiss?: () => void;
   prefilterApplied?: boolean;
-  onPrefilterApply?: (prefilters: ManagerPrefilterState) => void;
+  onPrefilterApply?: (prefilters: ManagerPrefilterState, options?: { source?: 'auto' | 'user' }) => void;
   onPrefilterClear?: () => void;
   onPrefilterDirty?: () => void;
   onSearchDirty?: () => void;
@@ -142,7 +142,7 @@ export interface GridProps {
   assignUsersLoading?: boolean;
   assignUsersError?: string;
   assignUsersInfo?: string;
-  onAssignPanelToggle?: (isOpen: boolean) => void;
+  onAssignPanelToggle?: (isOpen: boolean) => boolean | void;
   currentUserId?: string;
 }
 
@@ -190,6 +190,7 @@ interface SearchFieldConfig {
   stateKey: keyof GridFilterState;
   minLength?: number;
   placeholder?: string;
+  tooltip?: string;
   inputMode?: 'numeric';
   transform?: (value?: string) => string;
   optionFields?: string[];
@@ -199,13 +200,24 @@ interface SearchFieldConfig {
   multiLimit?: number;
 }
 
+interface PrefilterTooltips {
+  searchBy?: string;
+  billingAuthority?: string;
+  caseworker?: string;
+  qcUser?: string;
+  workThat?: string;
+  fromDate?: string;
+  toDate?: string;
+}
+
 const SALES_SEARCH_OPTIONS: SearchByOption[] = ['address', 'saleId', 'taskId', 'uprn', 'billingAuthority'];
 const ID_FIELD_MAX_LENGTH = 15;
 const UPRN_MAX_LENGTH = 12;
 const ADDRESS_FIELD_MAX_LENGTH = 150;
 const MIN_ADDRESS_TEXT_LENGTH = 3;
 const SALE_ID_REGEX = /^S-\d+$/i;
-const TASK_ID_REGEX = /^\d+$/i;
+const TASK_ID_REGEX = /^(?:\d+|[AM]-\d+)$/i;
+const TASK_ID_MIN_LENGTH = 3;
 const BILLING_AUTHORITY_ALL_KEY = '__all__';
 const CASEWORKER_ALL_KEY = '__all__';
 const SELECT_ALL_KEY = '__select_all__';
@@ -233,6 +245,10 @@ const resolveAllOptionKey = (options: IComboBoxOption[]): string | undefined => 
   const match = options.find((opt) => isAllToken(opt.key) || isAllToken(opt.text ?? opt.key));
   return match ? String(match.key) : undefined;
 };
+const buildAriaDescribedBy = (...ids: (string | undefined)[]): string | undefined => {
+  const values = ids.filter((id): id is string => typeof id === 'string' && id.trim().length > 0);
+  return values.length > 0 ? values.join(' ') : undefined;
+};
 const normalizePrefilterSearchBy = (value: unknown, kind: GridScreenKind): ManagerSearchBy => {
   const raw = typeof value === 'string' ? value : '';
   if (kind === 'caseworkerView') return 'caseworker';
@@ -249,6 +265,12 @@ const sanitizeAlphaNumHyphen = (value?: string, maxLength = ID_FIELD_MAX_LENGTH)
   (value ?? '')
     .toUpperCase()
     .replace(/[^A-Z0-9-]/g, '')
+    .slice(0, maxLength);
+
+const sanitizeTaskIdInput = (value?: string, maxLength = ID_FIELD_MAX_LENGTH): string =>
+  (value ?? '')
+    .toUpperCase()
+    .replace(/[^AM0-9-]/g, '')
     .slice(0, maxLength);
 
 const sanitizeDigits = (value?: string, maxLength = UPRN_MAX_LENGTH): string =>
@@ -286,6 +308,27 @@ const normalizeMultiSelectSearchText = (
       .filter((text) => text !== '')
       .join(', ');
     if (selectedText && trimmed === selectedText) {
+      return '';
+    }
+  }
+  return normalizeComboSearchText(raw);
+};
+
+const normalizeSingleSelectSearchText = (
+  value: string | undefined,
+  options: IComboBoxOption[],
+  selectedKey: string | number | boolean | undefined,
+): string => {
+  const raw = value ?? '';
+  const trimmed = raw.trim();
+  if (!trimmed) return '';
+  if (selectedKey !== undefined) {
+    const selected = options.find((opt) => String(opt.key) === String(selectedKey));
+    const selectedText = String(selected?.text ?? selected?.key ?? '');
+    const selectedTextLower = selectedText.trim().toLowerCase();
+    const trimmedLower = trimmed.toLowerCase();
+    if ((selectedTextLower && trimmedLower === selectedTextLower)
+      || trimmedLower === String(selectedKey).trim().toLowerCase()) {
       return '';
     }
   }
@@ -341,6 +384,29 @@ const resolveComboKeyFromSearch = (
   return undefined;
 };
 
+const getOptionText = (options: IComboBoxOption[], key: string): string => {
+  const match = options.find((opt) => String(opt.key) === key);
+  return String(match?.text ?? match?.key ?? key);
+};
+
+const buildSelectedTooltip = (
+  selectedKeys: string[],
+  options: IComboBoxOption[],
+  emptyHint?: string,
+): string | undefined => {
+  if (!selectedKeys || selectedKeys.length === 0) return emptyHint;
+  const labels = selectedKeys.map((key) => getOptionText(options, key)).filter((text) => text.trim().length > 0);
+  if (labels.length === 0) return emptyHint;
+  const prefix = labels.length > 1 ? `Selected (${labels.length}): ` : 'Selected: ';
+  return `${prefix}${labels.join(', ')}`;
+};
+
+const buildValueTooltip = (value: string | undefined, emptyHint?: string): string | undefined => {
+  const trimmed = (value ?? '').trim();
+  if (!trimmed) return emptyHint;
+  return `Selected: ${trimmed}`;
+};
+
 const COMBO_DISAMBIGUATION_HINT = 'Type more or use arrow keys to choose.';
 
 const getComboDisambiguationHint = (options: IComboBoxOption[], value?: string): string | undefined => {
@@ -378,31 +444,52 @@ const SEARCH_FIELD_CONFIGS: Record<SearchByOption, SearchFieldConfig> = {
     selectAll: true,
     selectAllValues: ['Outlier', 'Key sale'],
   },
-  saleId: { key: 'saleId', label: 'Sale ID', control: 'text', stateKey: 'saleId', placeholder: 'S-1000001' },
+  saleId: {
+    key: 'saleId',
+    label: 'Sale ID',
+    control: 'text',
+    stateKey: 'saleId',
+    placeholder: 'S-1000001',
+    tooltip: 'Format: S-1234567.',
+    transform: (v) => sanitizeAlphaNumHyphen(v, ID_FIELD_MAX_LENGTH),
+  },
   taskId: {
     key: 'taskId',
     label: 'Task ID',
     control: 'text',
     stateKey: 'taskId',
-    placeholder: '1000001',
-    inputMode: 'numeric',
-    transform: (v) => (v ?? '').replace(/\D/g, ''),
+    placeholder: 'A-1000001 or 1000001',
+    minLength: TASK_ID_MIN_LENGTH,
+    tooltip: 'Use A- or M- prefix (e.g. A-1000001) or numbers only.',
+    transform: (v) => sanitizeTaskIdInput(v, ID_FIELD_MAX_LENGTH),
   },
   uprn: {
     key: 'uprn',
     label: 'UPRN',
     control: 'text',
     stateKey: 'uprn',
+    placeholder: '12345678',
+    tooltip: 'Digits only.',
     inputMode: 'numeric',
-    transform: (v) => (v ?? '').replace(/\D/g, ''),
+    transform: (v) => sanitizeDigits(v, UPRN_MAX_LENGTH),
   },
-  address: { key: 'address', label: 'Address', control: 'textContains', stateKey: 'address', minLength: 3 },
+  address: {
+    key: 'address',
+    label: 'Address',
+    control: 'textContains',
+    stateKey: 'address',
+    minLength: 3,
+    placeholder: 'Enter address',
+    tooltip: 'Enter at least 3 characters.',
+  },
   postcode: {
     key: 'postcode',
     label: 'Post code',
     control: 'textPrefix',
     stateKey: 'postcode',
     minLength: 2,
+    placeholder: 'CF10 1AA',
+    tooltip: 'Enter a full or partial UK postcode.',
     transform: (v) => (v ?? '').toUpperCase(),
   },
   billingAuthority: {
@@ -639,6 +726,8 @@ export const Grid = React.memo((props: GridProps) => {
   const [selectFirstError, setSelectFirstError] = React.useState<string | undefined>(undefined);
   const [assignLoading, setAssignLoading] = React.useState(false);
   const [assignSelectedUserId, setAssignSelectedUserId] = React.useState<string | undefined>();
+  const [viewSaleLoading, setViewSaleLoading] = React.useState(false);
+  const viewSaleRequestSeq = React.useRef(0);
   const [prefilters, setPrefilters] = React.useState<ManagerPrefilterState>(MANAGER_PREFILTER_DEFAULT);
   const [prefilterExpanded, setPrefilterExpanded] = React.useState(true);
   const [prefilterContainerWidth, setPrefilterContainerWidth] = React.useState<number | null>(null);
@@ -670,11 +759,19 @@ export const Grid = React.memo((props: GridProps) => {
   const setComboIgnoreNextChange = React.useCallback((key: string) => {
     comboIgnoreNextChangeRef.current[key] = true;
   }, []);
-  const consumeComboIgnoreNextChange = React.useCallback((key: string) => {
-    if (comboIgnoreNextChangeRef.current[key]) {
-      comboIgnoreNextChangeRef.current[key] = false;
+  const consumeComboIgnoreNextChange = React.useCallback((key: string, option?: IComboBoxOption) => {
+    if (!comboIgnoreNextChangeRef.current[key]) return false;
+    comboIgnoreNextChangeRef.current[key] = false;
+    const expected = comboExpectedSelectionRef.current[key];
+    const optKey = option?.key !== undefined ? String(option.key) : '';
+    if (!expected) {
+      return optKey === '';
+    }
+    if (optKey === '' || optKey === expected.key) {
+      delete comboExpectedSelectionRef.current[key];
       return true;
     }
+    delete comboExpectedSelectionRef.current[key];
     return false;
   }, []);
   const setComboExpectedSelection = React.useCallback((key: string, expectedKey: string) => {
@@ -695,7 +792,11 @@ export const Grid = React.memo((props: GridProps) => {
       delete comboExpectedSelectionRef.current[key];
       return true;
     }
-    return true;
+    if (!optKey) {
+      return true;
+    }
+    delete comboExpectedSelectionRef.current[key];
+    return false;
   }, []);
   const commitPrefilterMultiSelect = React.useCallback(
     (
@@ -774,10 +875,21 @@ export const Grid = React.memo((props: GridProps) => {
   React.useEffect(() => {
     setDismissedAssignUsersError(false);
   }, [assignUsersError]);
+
+  const dismissResultMessages = React.useCallback(() => {
+    if (statusMessage) {
+      onStatusMessageDismiss?.();
+    }
+    if (errorMessage && !dismissedErrorMessage) {
+      setDismissedErrorMessage(true);
+    }
+  }, [dismissedErrorMessage, errorMessage, onStatusMessageDismiss, statusMessage]);
+
   const openAssignPanel = React.useCallback(() => {
+    const allowOpen = onAssignPanelToggle?.(true);
+    if (allowOpen === false) return;
     setAssignSelectedUserId(undefined);
     setAssignPanelOpen(true);
-    onAssignPanelToggle?.(true);
   }, [onAssignPanelToggle]);
   const closeAssignPanel = React.useCallback(() => {
     setAssignSelectedUserId(undefined);
@@ -828,9 +940,15 @@ export const Grid = React.memo((props: GridProps) => {
   const qcText = SCREEN_TEXT.qcAssignment;
   const qcViewText = SCREEN_TEXT.qcView;
   const assignTasksText = SCREEN_TEXT.assignTasks;
+  const viewSaleLoadingText = commonText.messages.loadingSaleRecord ?? assignTasksText.loadingText;
   const salesSearchText = SCREEN_TEXT.salesSearch;
   const caseworkerText = SCREEN_TEXT.caseworkerView;
   const prefilterText = isQcAssign ? qcText.prefilter : isQcView ? qcViewText.prefilter : managerText.prefilter;
+  const prefilterTooltips: PrefilterTooltips = isQcAssign
+    ? qcText.prefilter.tooltips
+    : isQcView
+      ? qcViewText.prefilter.tooltips
+      : managerText.prefilter.tooltips;
   const assignActionText = isQcAssign ? qcText.assignActionText : managerText.assignActionText;
   const assignHeaderText = assignTasksText.title;
   const assignUserListTitle = isQcAssign ? qcText.assignUserListTitle : managerText.assignUserListTitle;
@@ -857,8 +975,10 @@ export const Grid = React.memo((props: GridProps) => {
     [screenName, tableKey],
   );
   const prefilterAutoAppliedRef = React.useRef<string>('');
+  const prefilterDirtyRef = React.useRef(false);
   React.useEffect(() => {
     prefilterAutoAppliedRef.current = '';
+    prefilterDirtyRef.current = false;
   }, [prefilterStorageKey]);
 
   React.useEffect(() => {
@@ -941,6 +1061,7 @@ export const Grid = React.memo((props: GridProps) => {
 
   React.useEffect(() => {
     if (!useAssignmentLayout) return;
+    if (prefilterDirtyRef.current) return;
     try {
       const raw = localStorage.getItem(prefilterStorageKey);
       if (!raw) return;
@@ -976,7 +1097,7 @@ export const Grid = React.memo((props: GridProps) => {
         const autoKey = `${prefilterStorageKey}|${derivedScreenKind}`;
         if (prefilterAutoAppliedRef.current !== autoKey) {
           prefilterAutoAppliedRef.current = autoKey;
-          onPrefilterApply(next);
+          onPrefilterApply(next, { source: 'auto' });
         }
       }
     } catch {
@@ -1211,6 +1332,7 @@ export const Grid = React.memo((props: GridProps) => {
       }
       setComboEditingFor('prefilterWorkThat', false);
       setPrefilterWorkThatSearch('');
+      prefilterDirtyRef.current = true;
       onPrefilterDirty?.();
     },
     [isQcAssign, onPrefilterDirty, setComboEditingFor],
@@ -1254,8 +1376,8 @@ export const Grid = React.memo((props: GridProps) => {
     if (normalizedCaseworkerOptions.length === 0) {
       return [{ key: '__empty__', text: 'No caseworkers found', disabled: true }];
     }
-    return isQcAssign ? normalizedCaseworkerOptions : [{ key: CASEWORKER_ALL_KEY, text: 'All' }, ...normalizedCaseworkerOptions];
-  }, [caseworkerOptionsError, caseworkerOptionsLoading, isQcAssign, normalizedCaseworkerOptions]);
+    return [{ key: CASEWORKER_ALL_KEY, text: 'All' }, ...normalizedCaseworkerOptions];
+  }, [caseworkerOptionsError, caseworkerOptionsLoading, normalizedCaseworkerOptions]);
 
   const qcUserOptionsList = React.useMemo<IDropdownOption[]>(() => {
     if (qcUserOptionsLoading) {
@@ -1267,8 +1389,10 @@ export const Grid = React.memo((props: GridProps) => {
     if (normalizedQcUserOptions.length === 0) {
       return [{ key: '__empty__', text: 'No QC users found', disabled: true }];
     }
-    return normalizedQcUserOptions;
-  }, [normalizedQcUserOptions, qcUserOptionsError, qcUserOptionsLoading]);
+    return isQcAssign
+      ? [{ key: CASEWORKER_ALL_KEY, text: 'All' }, ...normalizedQcUserOptions]
+      : normalizedQcUserOptions;
+  }, [isQcAssign, normalizedQcUserOptions, qcUserOptionsError, qcUserOptionsLoading]);
 
   const filteredCaseworkerOptionsList = React.useMemo(
     () => filterComboOptions(caseworkerOptionsList as IComboBoxOption[], caseworkerSearch),
@@ -1306,6 +1430,7 @@ export const Grid = React.memo((props: GridProps) => {
           ...prev,
           caseworkers: option.selected ? [CASEWORKER_ALL_KEY] : [],
         }));
+        prefilterDirtyRef.current = true;
         onPrefilterDirty?.();
         return;
       }
@@ -1315,6 +1440,7 @@ export const Grid = React.memo((props: GridProps) => {
         const next = option.selected ? [...current, key] : current.filter((v) => v !== key);
         return { ...prev, caseworkers: next };
       });
+      prefilterDirtyRef.current = true;
       onPrefilterDirty?.();
     },
     [onPrefilterDirty],
@@ -1340,6 +1466,7 @@ export const Grid = React.memo((props: GridProps) => {
         completedFrom: needsCompleted ? prev.completedFrom : undefined,
         completedTo: needsCompleted ? prev.completedTo : undefined,
       }));
+      prefilterDirtyRef.current = true;
       onPrefilterDirty?.();
     },
     [isCaseworkerView, isQcAssign, isQcView, onPrefilterDirty, prefilters.searchBy],
@@ -1354,6 +1481,7 @@ export const Grid = React.memo((props: GridProps) => {
         completedFrom: fromIso,
         completedTo: toIso,
       }));
+      prefilterDirtyRef.current = true;
       onPrefilterDirty?.();
     },
     [computeCompletedToDate, onPrefilterDirty, toISODateString],
@@ -1369,13 +1497,23 @@ export const Grid = React.memo((props: GridProps) => {
       completedFrom: needsCompleted ? prefilters.completedFrom : undefined,
       completedTo: needsCompleted ? prefilters.completedTo : undefined,
     };
-    onPrefilterApply(normalized);
+    dismissResultMessages();
+    onPrefilterApply(normalized, { source: 'user' });
+    prefilterDirtyRef.current = false;
+    comboIgnoreNextInputRef.current = {};
+    comboIgnoreNextChangeRef.current = {};
+    comboExpectedSelectionRef.current = {};
     if (isPrefilterNarrow) {
       setPrefilterExpanded(false);
     }
-  }, [isPrefilterNarrow, onPrefilterApply, prefilters]);
+  }, [dismissResultMessages, isPrefilterNarrow, onPrefilterApply, prefilters]);
 
   const handlePrefilterClear = React.useCallback(() => {
+    dismissResultMessages();
+    prefilterDirtyRef.current = true;
+    comboIgnoreNextInputRef.current = {};
+    comboIgnoreNextChangeRef.current = {};
+    comboExpectedSelectionRef.current = {};
     if (isCaseworkerView) {
       setPrefilters(caseworkerPrefilterDefaults);
     } else if (isQcView) {
@@ -1385,14 +1523,29 @@ export const Grid = React.memo((props: GridProps) => {
     } else {
       setPrefilters(MANAGER_PREFILTER_DEFAULT);
     }
+    setComboEditingFor('prefilterSearchBy', false);
+    setComboEditingFor('prefilterWorkThat', false);
+    setPrefilterSearchBySearch('');
+    setPrefilterWorkThatSearch('');
+    setManagerBillingSearch('');
+    setCaseworkerSearch('');
     onPrefilterClear?.();
-  }, [caseworkerPrefilterDefaults, isCaseworkerView, isQcAssign, isQcView, onPrefilterClear, qcViewPrefilterDefaults]);
+  }, [
+    caseworkerPrefilterDefaults,
+    dismissResultMessages,
+    isCaseworkerView,
+    isQcAssign,
+    isQcView,
+    onPrefilterClear,
+    qcViewPrefilterDefaults,
+    setComboEditingFor,
+  ]);
 
   const getLengthErrors = React.useCallback(
     (fs: GridFilterState) => {
       if (isSalesSearch) {
         const saleId = sanitizeAlphaNumHyphen(fs.saleId, ID_FIELD_MAX_LENGTH).trim();
-        const taskId = sanitizeDigits(fs.taskId, ID_FIELD_MAX_LENGTH).trim();
+        const taskId = sanitizeTaskIdInput(fs.taskId, ID_FIELD_MAX_LENGTH).trim();
         const uprn = sanitizeDigits(fs.uprn, UPRN_MAX_LENGTH).trim();
         const building = (fs.buildingNameNumber ?? '').trim();
         const street = (fs.street ?? '').trim();
@@ -1406,8 +1559,12 @@ export const Grid = React.memo((props: GridProps) => {
             ? 'Please enter a valid Sale ID'
             : undefined;
         const taskIdError =
-          fs.searchBy === 'taskId' && taskId.length > 0 && !TASK_ID_REGEX.test(taskId)
-            ? 'Please enter a valid Task ID'
+          fs.searchBy === 'taskId' && taskId.length > 0
+            ? taskId.length < TASK_ID_MIN_LENGTH
+              ? `Enter at least ${TASK_ID_MIN_LENGTH} characters`
+              : !TASK_ID_REGEX.test(taskId)
+                ? 'Use A- or M- prefix (e.g. A-1000001) or numbers only.'
+                : undefined
             : undefined;
         const uprnError =
           fs.searchBy === 'uprn' && (fs.uprn ?? '').trim().length > 0 && uprn.length === 0
@@ -1472,6 +1629,24 @@ export const Grid = React.memo((props: GridProps) => {
           searchField = `Enter at least ${cfg.minLength} characters`;
         }
       }
+      const saleId = sanitizeAlphaNumHyphen(fs.saleId, ID_FIELD_MAX_LENGTH).trim();
+      const saleIdError =
+        fs.searchBy === 'saleId' && saleId.length > 0
+          ? saleId.length < 3
+            ? 'Enter at least 3 characters'
+            : !SALE_ID_REGEX.test(saleId)
+              ? 'Please enter a valid Sale ID'
+              : undefined
+          : undefined;
+      const taskId = sanitizeTaskIdInput(fs.taskId, ID_FIELD_MAX_LENGTH).trim();
+      const taskIdError =
+        fs.searchBy === 'taskId' && taskId.length > 0
+          ? taskId.length < TASK_ID_MIN_LENGTH
+            ? `Enter at least ${TASK_ID_MIN_LENGTH} characters`
+            : !TASK_ID_REGEX.test(taskId)
+              ? 'Use A- or M- prefix (e.g. A-1000001) or numbers only.'
+              : undefined
+          : undefined;
       const address = (fs.address ?? '').trim();
       const postcode = normalizeUkPostcode(fs.postcode ?? '');
       const summary = (fs.summaryFlag ?? '').trim();
@@ -1486,6 +1661,8 @@ export const Grid = React.memo((props: GridProps) => {
         address: fs.searchBy === 'address' && address.length > 0 && address.length < 3 ? 'Enter at least 3 characters' : undefined,
         postcode: postcodeError,
         summaryFlag: fs.searchBy === 'summaryFlag' && summary.length > 0 && summary.length < 3 ? 'Enter at least 3 characters' : undefined,
+        saleId: saleIdError,
+        taskId: taskIdError,
         searchField,
       };
     },
@@ -1546,6 +1723,14 @@ export const Grid = React.memo((props: GridProps) => {
     () => filterComboOptions(searchByOptions as IComboBoxOption[], searchBySearch),
     [searchByOptions, searchBySearch],
   );
+  const searchByHint = comboEditing.searchBy
+    ? getComboDisambiguationHint(filteredSearchByOptions, searchBySearch)
+    : undefined;
+  const searchByTitle = buildSelectedTooltip(
+    [String(filters.searchBy)],
+    searchByOptions as IComboBoxOption[],
+    isSalesSearch ? salesSearchText.searchPanel.searchByLabel : commonText.labels.searchBy,
+  );
 
   const lengthErrors = React.useMemo(() => getLengthErrors(filters), [filters, getLengthErrors]);
   const addressError = lengthErrors.address;
@@ -1600,6 +1785,9 @@ export const Grid = React.memo((props: GridProps) => {
     () => filterComboOptions(managerBillingAuthorityOptions as IComboBoxOption[], managerBillingSearch),
     [managerBillingAuthorityOptions, managerBillingSearch],
   );
+  const prefilterBillingHint = managerBillingSearch.trim()
+    ? getComboDisambiguationHint(filteredManagerBillingAuthorityOptions, managerBillingSearch)
+    : undefined;
 
   const prefilterSearchByOptions = React.useMemo(
     () => (isQcAssign ? QC_SEARCH_BY_OPTIONS : MANAGER_SEARCH_BY_OPTIONS),
@@ -1611,6 +1799,14 @@ export const Grid = React.memo((props: GridProps) => {
       prefilterSearchBySearch,
     ),
     [prefilterSearchByOptions, prefilterSearchBySearch],
+  );
+  const prefilterSearchByHint = comboEditing.prefilterSearchBy
+    ? getComboDisambiguationHint(filteredPrefilterSearchByOptions, prefilterSearchBySearch)
+    : undefined;
+  const prefilterSearchByTitle = buildSelectedTooltip(
+    [String(prefilters.searchBy)],
+    prefilterSearchByOptions as IComboBoxOption[],
+    prefilterTooltips.searchBy,
   );
 
   const managerBillingSelectedKeys = React.useMemo<string[]>(() => {
@@ -1651,6 +1847,7 @@ export const Grid = React.memo((props: GridProps) => {
           ...prev,
           billingAuthorities: option.selected ? [BILLING_AUTHORITY_ALL_KEY] : [],
         }));
+        prefilterDirtyRef.current = true;
         onPrefilterDirty?.();
         return;
       }
@@ -1659,6 +1856,7 @@ export const Grid = React.memo((props: GridProps) => {
         const next = option.selected ? [...current, key] : current.filter((v) => v !== key);
         return { ...prev, billingAuthorities: next };
       });
+      prefilterDirtyRef.current = true;
       onPrefilterDirty?.();
     },
     [onPrefilterDirty],
@@ -1772,7 +1970,7 @@ export const Grid = React.memo((props: GridProps) => {
   const salesSearchCanSearch = React.useMemo(() => {
     if (!isSalesSearch) return true;
     const saleId = sanitizeAlphaNumHyphen(filters.saleId, ID_FIELD_MAX_LENGTH).trim();
-    const taskId = sanitizeDigits(filters.taskId, ID_FIELD_MAX_LENGTH).trim();
+    const taskId = sanitizeTaskIdInput(filters.taskId, ID_FIELD_MAX_LENGTH).trim();
     const uprn = sanitizeDigits(filters.uprn, UPRN_MAX_LENGTH).trim();
     const billingAuthority = (filters.billingAuthority?.[0] ?? '').trim();
     const billingAuthorityReference = (filters.bacode ?? '').trim();
@@ -1785,7 +1983,7 @@ export const Grid = React.memo((props: GridProps) => {
       case 'saleId':
         return saleId.length >= 3 && SALE_ID_REGEX.test(saleId);
       case 'taskId':
-        return taskId.length > 0 && TASK_ID_REGEX.test(taskId);
+        return taskId.length >= TASK_ID_MIN_LENGTH && TASK_ID_REGEX.test(taskId);
       case 'uprn':
         return uprn.length > 0 && uprn.length <= UPRN_MAX_LENGTH;
       case 'billingAuthority':
@@ -1838,16 +2036,18 @@ export const Grid = React.memo((props: GridProps) => {
       if (isSalesSearch) {
         return salesSearchHasErrors || !salesSearchCanSearch;
       }
-      return !!uprnError || !!addressError || !!postcodeError || !!summaryFlagError || !!searchFieldError;
+      return !!uprnError || !!addressError || !!postcodeError || !!summaryFlagError || !!saleIdError || !!taskIdError || !!searchFieldError;
     },
     [
       addressError,
       isSalesSearch,
       postcodeError,
+      saleIdError,
       salesSearchCanSearch,
       salesSearchHasErrors,
       searchFieldError,
       summaryFlagError,
+      taskIdError,
       uprnError,
     ],
   );
@@ -1866,7 +2066,7 @@ export const Grid = React.memo((props: GridProps) => {
         next.saleId = sanitizeAlphaNumHyphen(filters.saleId, ID_FIELD_MAX_LENGTH).trim() || undefined;
       }
       if (filters.searchBy === 'taskId') {
-        next.taskId = sanitizeDigits(filters.taskId, ID_FIELD_MAX_LENGTH).trim() || undefined;
+        next.taskId = sanitizeTaskIdInput(filters.taskId, ID_FIELD_MAX_LENGTH).trim() || undefined;
       }
       if (filters.searchBy === 'uprn') {
         next.uprn = sanitizeDigits(filters.uprn, UPRN_MAX_LENGTH).trim() || undefined;
@@ -1883,11 +2083,12 @@ export const Grid = React.memo((props: GridProps) => {
         next.postcode = normalizeUkPostcode(filters.postcode ?? '').trim() || undefined;
       }
       setFilters(next);
+      dismissResultMessages();
       onSearch(next);
       return;
     }
 
-    if (uprnError || addressError || postcodeError || summaryFlagError || searchFieldError) {
+    if (uprnError || addressError || postcodeError || summaryFlagError || saleIdError || taskIdError || searchFieldError) {
       return;
     }
     const sanitized = sanitizeFilters(filters);
@@ -1895,18 +2096,22 @@ export const Grid = React.memo((props: GridProps) => {
       return;
     }
     setFilters(sanitized);
+    dismissResultMessages();
     onSearch(sanitized);
   }, [
     addressError,
+    dismissResultMessages,
     filters,
     isSalesSearch,
     normalizeUkPostcode,
     onSearch,
     postcodeError,
+    saleIdError,
     salesSearchCanSearch,
     salesSearchHasErrors,
     searchFieldError,
     summaryFlagError,
+    taskIdError,
     uprnError,
   ]);
 
@@ -1915,8 +2120,9 @@ export const Grid = React.memo((props: GridProps) => {
       ? { ...createDefaultGridFilters(), searchBy: 'address' as SearchByOption }
       : createDefaultGridFilters();
     setFilters(defaults);
+    dismissResultMessages();
     onSearch(defaults);
-  }, [isSalesSearch, onSearch]);
+  }, [dismissResultMessages, isSalesSearch, onSearch]);
 
   const showPostcodeHint = React.useMemo(() => {
     if (isSalesSearch) {
@@ -1927,6 +2133,36 @@ export const Grid = React.memo((props: GridProps) => {
     }
     return filters.searchBy === 'postcode' || filters.searchBy === 'address';
   }, [filters.postcode, filters.searchBy, isSalesSearch]);
+
+  const handleNavigate = React.useCallback(
+    async (
+      item?: ComponentFramework.PropertyHelper.DataSetApi.EntityRecord,
+      column?: IColumn,
+      forceLoader = false,
+    ) => {
+      if (!item) return;
+      const rec = item as { saleid?: string; saleId?: string };
+      const saleId = rec.saleid ?? rec.saleId;
+      const rawField = (column?.fieldName ?? column?.key ?? '').toString();
+      const normalizedField = rawField.replace(/[^a-z0-9]/gi, '').toLowerCase();
+      const isSaleIdColumn = normalizedField === 'saleid';
+      const shouldShowLoader = forceLoader ? true : (isSaleIdColumn && !!saleId);
+      let requestId = 0;
+      if (shouldShowLoader) {
+        viewSaleRequestSeq.current += 1;
+        requestId = viewSaleRequestSeq.current;
+        setViewSaleLoading(true);
+      }
+      try {
+        await Promise.resolve(onNavigate(item));
+      } finally {
+        if (shouldShowLoader && viewSaleRequestSeq.current === requestId) {
+          setViewSaleLoading(false);
+        }
+      }
+    },
+    [onNavigate],
+  );
 
   React.useEffect(() => {
     setColumns(
@@ -1994,13 +2230,13 @@ export const Grid = React.memo((props: GridProps) => {
             _?: number,
             column?: IColumn,
           ) => (
-            <GridCell item={item} column={column} onCellAction={(i) => onNavigate(i)} />
+            <GridCell item={item} column={column} onCellAction={(i, col) => void handleNavigate(i, col)} />
           );
         }
         return col;
       }),
     );
-  }, [datasetColumns, sorting, columnConfigs, onNavigate]);
+  }, [datasetColumns, sorting, columnConfigs, handleNavigate]);
 
   const handleColumnReorder = React.useCallback((draggedIndex: number, targetIndex: number) => {
     setColumns((prev) => {
@@ -2333,11 +2569,17 @@ export const Grid = React.memo((props: GridProps) => {
 
     if (isSalesSearch) {
       if (filters.searchBy === 'address') {
+        const buildingTitle = buildValueTooltip(filters.buildingNameNumber, salesSearchText.tooltips?.buildingNameNumber);
+        const streetTitle = buildValueTooltip(filters.street, salesSearchText.tooltips?.street);
+        const townTitle = buildValueTooltip(filters.townCity, salesSearchText.tooltips?.townCity);
+        const postcodeTitle = buildValueTooltip(filters.postcode, salesSearchText.tooltips?.postcode);
         return (
           <>
             <Stack.Item styles={{ root: { minWidth: 220 } }}>
               <TextField
                 label={salesSearchText.fields.buildingNameNumber}
+                placeholder={salesSearchText.placeholders.buildingNameNumber}
+                title={buildingTitle}
                 value={filters.buildingNameNumber ?? ''}
                 onChange={(_, v) => updateFilters('buildingNameNumber', (v ?? '').slice(0, ADDRESS_FIELD_MAX_LENGTH))}
                 errorMessage={addressError}
@@ -2347,6 +2589,8 @@ export const Grid = React.memo((props: GridProps) => {
             <Stack.Item styles={{ root: { minWidth: 220 } }}>
               <TextField
                 label={salesSearchText.fields.street}
+                placeholder={salesSearchText.placeholders.street}
+                title={streetTitle}
                 value={filters.street ?? ''}
                 onChange={(_, v) => updateFilters('street', (v ?? '').slice(0, ADDRESS_FIELD_MAX_LENGTH))}
                 errorMessage={streetError}
@@ -2356,6 +2600,8 @@ export const Grid = React.memo((props: GridProps) => {
             <Stack.Item styles={{ root: { minWidth: 220 } }}>
               <TextField
                 label={salesSearchText.fields.townCity}
+                placeholder={salesSearchText.placeholders.townCity}
+                title={townTitle}
                 value={filters.townCity ?? ''}
                 onChange={(_, v) => updateFilters('townCity', (v ?? '').slice(0, ADDRESS_FIELD_MAX_LENGTH))}
                 errorMessage={townError}
@@ -2365,8 +2611,13 @@ export const Grid = React.memo((props: GridProps) => {
             <Stack.Item styles={{ root: { minWidth: 200 } }}>
               <TextField
                 label={salesSearchText.fields.postcode}
+                placeholder={salesSearchText.placeholders.postcode}
+                title={postcodeTitle}
                 value={filters.postcode ?? ''}
-                onChange={(_, v) => updateFilters('postcode', normalizeUkPostcode((v ?? '').slice(0, 12)))}
+                onChange={(_, v) => {
+                  const next = (v ?? '').toUpperCase().slice(0, 12);
+                  updateFilters('postcode', next);
+                }}
                 errorMessage={postcodeError}
                 maxLength={12}
               />
@@ -2375,38 +2626,68 @@ export const Grid = React.memo((props: GridProps) => {
         );
       }
 
-    if (filters.searchBy === 'billingAuthority') {
-      const authority = filters.billingAuthority?.[0] ?? '';
-      const billingAuthorityHint = comboEditing.salesBillingAuthority
-        ? getComboDisambiguationHint(filteredBillingAuthorityOptionsList, billingAuthoritySearch)
-        : undefined;
-      return (
-        <>
-          <Stack.Item styles={{ root: { minWidth: 240 } }}>
-            <ComboBox
+      if (filters.searchBy === 'billingAuthority') {
+        const authority = filters.billingAuthority?.[0] ?? '';
+        const billingAuthorityHint = comboEditing.salesBillingAuthority
+          ? getComboDisambiguationHint(filteredBillingAuthorityOptionsList, billingAuthoritySearch)
+          : undefined;
+        const billingAuthorityHintId = 'voa-sales-billingauthority-hint';
+        const billingAuthorityTitle = buildSelectedTooltip(
+          authority ? [authority] : [],
+          billingAuthorityOptionsList,
+          salesSearchText.tooltips?.billingAuthority,
+        );
+        const billingAuthorityRefTitle = buildValueTooltip(filters.bacode, salesSearchText.tooltips?.billingAuthorityReference);
+        return (
+          <>
+            <Stack.Item styles={{ root: { minWidth: 240 } }}>
+              <ComboBox
                 label={salesSearchText.fields.billingAuthority}
+                aria-describedby={buildAriaDescribedBy(billingAuthorityHint ? billingAuthorityHintId : undefined)}
                 placeholder={salesSearchText.placeholders.billingAuthority}
+                title={billingAuthorityTitle}
                 options={filteredBillingAuthorityOptionsList}
-                selectedKey={comboEditing.salesBillingAuthority ? undefined : authority}
+                selectedKey={comboEditing.salesBillingAuthority ? null : authority}
                 allowFreeform={false}
                 allowFreeInput
-                autoComplete="on"
+                autoComplete="off"
                 text={comboEditing.salesBillingAuthority ? billingAuthoritySearch : undefined}
                 disabled={billingAuthorityOptionsLoading}
-                onChange={(_, opt) => {
-                  if (consumeComboIgnoreNextChange('salesBillingAuthority')) return;
+                onChange={(event, opt, _index, value) => {
+                  if (consumeComboIgnoreNextChange('salesBillingAuthority', opt)) return;
                   if (shouldIgnoreComboChange('salesBillingAuthority', opt)) return;
-                  const resolvedKey = comboEditing.salesBillingAuthority
-                    ? resolveComboKeyFromSearch(filteredBillingAuthorityOptionsList, billingAuthoritySearch)
-                    : opt?.key;
+                  const searchValue = typeof value === 'string' ? value : billingAuthoritySearch;
+                  const resolvedOptions = filterComboOptions(billingAuthorityOptionsList, searchValue);
+                  const resolvedKey = opt?.key ?? resolveComboKeyFromSearch(resolvedOptions, searchValue, authority);
                   if (!resolvedKey || resolvedKey === '__loading__' || resolvedKey === '__error__') return;
                   const next = String(resolvedKey ?? '');
                   updateFilters('billingAuthority', next ? [next] : undefined);
                   setComboEditingFor('salesBillingAuthority', false);
                   setBillingAuthoritySearch('');
                 }}
+                onKeyDownCapture={(event) => {
+                  const isEnter = event.key === 'Enter' || event.key === 'NumpadEnter';
+                  if (!isEnter) return;
+                  const inputValue = getComboInputValue(event) || billingAuthoritySearch;
+                  if (!inputValue.trim()) return;
+                  const resolvedOptions = filterComboOptions(billingAuthorityOptionsList, inputValue);
+                  commitComboSingleSelect(
+                    event,
+                    inputValue,
+                    resolvedOptions,
+                    authority,
+                    (opt) => {
+                      if (!opt || opt.key === '__loading__' || opt.key === '__error__') return;
+                      const next = String(opt.key ?? '');
+                      updateFilters('billingAuthority', next ? [next] : undefined);
+                      setComboEditingFor('salesBillingAuthority', false);
+                      setBillingAuthoritySearch('');
+                    },
+                    'salesBillingAuthority',
+                  );
+                }}
                 onInputValueChange={(value) => {
-                  const next = normalizeComboSearchText(value);
+                  const next = normalizeSingleSelectSearchText(value, billingAuthorityOptionsList, authority);
                   if (!next) {
                     setComboEditingFor('salesBillingAuthority', false);
                     setBillingAuthoritySearch('');
@@ -2416,12 +2697,14 @@ export const Grid = React.memo((props: GridProps) => {
                   setBillingAuthoritySearch(next);
                 }}
                 onKeyDown={(event) => {
-                  if (!billingAuthoritySearch.trim()) return;
+                  if (event.defaultPrevented) return;
                   const inputValue = getComboInputValue(event) || billingAuthoritySearch;
+                  if (!inputValue.trim()) return;
+                  const resolvedOptions = filterComboOptions(billingAuthorityOptionsList, inputValue);
                   commitComboSingleSelect(
                     event,
                     inputValue,
-                    filteredBillingAuthorityOptionsList,
+                    resolvedOptions,
                     authority,
                     (opt) => {
                       if (!opt || opt.key === '__loading__' || opt.key === '__error__') return;
@@ -2445,7 +2728,7 @@ export const Grid = React.memo((props: GridProps) => {
                 }}
               />
               {billingAuthorityHint && (
-                <Text variant="small" styles={{ root: { marginTop: 4 } }}>
+                <Text id={billingAuthorityHintId} variant="small" styles={{ root: { marginTop: 4 } }}>
                   {billingAuthorityHint}
                 </Text>
               )}
@@ -2453,6 +2736,8 @@ export const Grid = React.memo((props: GridProps) => {
             <Stack.Item styles={{ root: { minWidth: 240 } }}>
               <TextField
                 label={salesSearchText.fields.billingAuthorityReference}
+                placeholder={salesSearchText.placeholders.billingAuthorityReference}
+                title={billingAuthorityRefTitle}
                 value={filters.bacode ?? ''}
                 onChange={(_, v) => updateFilters('bacode', (v ?? '').slice(0, ADDRESS_FIELD_MAX_LENGTH))}
                 errorMessage={billingAuthorityRefError}
@@ -2464,10 +2749,13 @@ export const Grid = React.memo((props: GridProps) => {
       }
 
       if (filters.searchBy === 'saleId') {
+        const saleIdTitle = buildValueTooltip(filters.saleId, salesSearchText.tooltips?.saleId);
         return (
           <Stack.Item styles={{ root: { minWidth: 260 } }}>
             <TextField
               label={salesSearchText.fields.saleId}
+              placeholder={salesSearchText.placeholders.saleId}
+              title={saleIdTitle}
               value={filters.saleId ?? ''}
               onChange={(_, v) => updateFilters('saleId', sanitizeAlphaNumHyphen(v, ID_FIELD_MAX_LENGTH))}
               errorMessage={saleIdError}
@@ -2478,25 +2766,30 @@ export const Grid = React.memo((props: GridProps) => {
       }
 
       if (filters.searchBy === 'taskId') {
+        const taskIdTitle = buildValueTooltip(filters.taskId, salesSearchText.tooltips?.taskId);
         return (
           <Stack.Item styles={{ root: { minWidth: 260 } }}>
             <TextField
               label={salesSearchText.fields.taskId}
+              placeholder={salesSearchText.placeholders.taskId}
+              title={taskIdTitle}
               value={filters.taskId ?? ''}
-              onChange={(_, v) => updateFilters('taskId', sanitizeDigits(v, ID_FIELD_MAX_LENGTH))}
+              onChange={(_, v) => updateFilters('taskId', sanitizeTaskIdInput(v, ID_FIELD_MAX_LENGTH))}
               errorMessage={taskIdError}
               maxLength={ID_FIELD_MAX_LENGTH}
-              inputMode="numeric"
             />
           </Stack.Item>
         );
       }
 
       if (filters.searchBy === 'uprn') {
+        const uprnTitle = buildValueTooltip(filters.uprn, salesSearchText.tooltips?.uprn);
         return (
           <Stack.Item styles={{ root: { minWidth: 260 } }}>
             <TextField
               label={salesSearchText.fields.uprn}
+              placeholder={salesSearchText.placeholders.uprn}
+              title={uprnTitle}
               value={filters.uprn ?? ''}
               onChange={(_, v) => updateFilters('uprn', sanitizeDigits(v, UPRN_MAX_LENGTH))}
               errorMessage={uprnError}
@@ -2530,10 +2823,14 @@ export const Grid = React.memo((props: GridProps) => {
     if (cfg.control === 'text' || cfg.control === 'textContains' || cfg.control === 'textPrefix') {
       const val = getFilterField(filters, cfg.stateKey);
       const value = typeof val === 'string' ? val : '';
+      const hintText = cfg.tooltip ?? cfg.placeholder ?? cfg.label;
+      const tooltip = buildValueTooltip(value, hintText);
       return (
         <Stack.Item styles={{ root: { minWidth: cfg.control === 'textContains' ? 260 : 200 } }}>
           <TextField
             label={cfg.label}
+            placeholder={cfg.placeholder}
+            title={tooltip}
             value={value}
             onChange={(_, v) => {
               const next = cfg.transform ? cfg.transform(v) : v ?? '';
@@ -2560,19 +2857,25 @@ export const Grid = React.memo((props: GridProps) => {
       const mode = numericFilter.mode ?? '>=';
       const minValue = mode === '<=' ? numericFilter.max : numericFilter.min;
       const maxValue = numericFilter.max;
+      const numericModeOptions: IComboBoxOption[] = [
+        { key: '>=', text: commonText.filters.numericModes.gte },
+        { key: '<=', text: commonText.filters.numericModes.lte },
+        { key: 'between', text: commonText.filters.numericModes.between },
+      ];
+      const modeTitle = buildSelectedTooltip([mode], numericModeOptions, commonText.labels.options);
+      const minLabel = mode === '<=' ? commonText.labels.max : commonText.labels.min;
+      const minTitle = buildValueTooltip(minValue === undefined ? '' : String(minValue), minLabel);
+      const maxTitle = buildValueTooltip(maxValue === undefined ? '' : String(maxValue), commonText.labels.max);
       return (
         <Stack horizontal wrap tokens={{ childrenGap: 8 }}>
           <Stack.Item styles={{ root: { minWidth: 140 } }}>
             <ComboBox
               label={commonText.labels.options}
-              options={[
-                { key: '>=', text: commonText.filters.numericModes.gte },
-                { key: '<=', text: commonText.filters.numericModes.lte },
-                { key: 'between', text: commonText.filters.numericModes.between },
-              ]}
+              options={numericModeOptions}
+              title={modeTitle}
               selectedKey={mode}
               allowFreeform={false}
-              autoComplete="on"
+              autoComplete="off"
               onChange={(_, o) =>
                 updateNumericFilter(numericKey, 'mode', typeof o?.key === 'string' ? o.key : mode)
               }
@@ -2585,8 +2888,9 @@ export const Grid = React.memo((props: GridProps) => {
           </Stack.Item>
           <Stack.Item styles={{ root: { minWidth: 140 } }}>
             <TextField
-              label={mode === '<=' ? commonText.labels.max : commonText.labels.min}
+              label={minLabel}
               type="number"
+              title={minTitle}
               value={String(minValue ?? '')}
               onChange={(_, v) => updateNumericFilter(numericKey, mode === '<=' ? 'max' : 'min', v ?? '')}
             />
@@ -2596,6 +2900,7 @@ export const Grid = React.memo((props: GridProps) => {
               <TextField
                 label={commonText.labels.max}
                 type="number"
+                title={maxTitle}
                 value={String(maxValue ?? '')}
                 onChange={(_, v) => updateNumericFilter(numericKey, 'max', v ?? '')}
               />
@@ -2609,6 +2914,8 @@ export const Grid = React.memo((props: GridProps) => {
       const dateVal = getFilterField<{ from?: string; to?: string }>(filters, cfg.stateKey);
       const from = parseISODate(dateVal?.from);
       const to = parseISODate(dateVal?.to);
+      const fromTitle = buildValueTooltip(from ? formatDisplayDate(from) : '', `${cfg.label} start`);
+      const toTitle = buildValueTooltip(to ? formatDisplayDate(to) : '', `${cfg.label} end`);
       return (
         <Stack horizontal tokens={{ childrenGap: 8 }} wrap>
           <Stack.Item styles={{ root: { minWidth: 160 } }}>
@@ -2618,6 +2925,7 @@ export const Grid = React.memo((props: GridProps) => {
               strings={dateStrings}
               value={from}
               formatDate={formatDisplayDate}
+              title={fromTitle}
               onSelectDate={(d) => updateDateRange(cfg.stateKey as 'transactionDate', 'from', d)}
             />
           </Stack.Item>
@@ -2628,6 +2936,7 @@ export const Grid = React.memo((props: GridProps) => {
               strings={dateStrings}
               value={to}
               formatDate={formatDisplayDate}
+              title={toTitle}
               onSelectDate={(d) => updateDateRange(cfg.stateKey as 'transactionDate', 'to', d)}
             />
           </Stack.Item>
@@ -2645,29 +2954,49 @@ export const Grid = React.memo((props: GridProps) => {
         searchText,
       );
       const disambiguationHint = isEditing ? getComboDisambiguationHint(filteredOptions, searchText) : undefined;
+      const hintId = `voa-search-${cfg.key}-hint`;
+      const singleSelectTitle = buildSelectedTooltip(
+        selectedKey ? [String(selectedKey)] : [],
+        options,
+        cfg.tooltip ?? cfg.placeholder ?? cfg.label,
+      );
       return (
         <Stack.Item styles={{ root: { minWidth: 200 } }}>
           <ComboBox
             label={cfg.label}
+            aria-describedby={buildAriaDescribedBy(disambiguationHint ? hintId : undefined)}
+            title={singleSelectTitle}
             options={filteredOptions}
-            selectedKey={isEditing ? undefined : selectedKey}
+            selectedKey={isEditing ? null : selectedKey}
             allowFreeform={false}
             allowFreeInput
-            autoComplete="on"
+            autoComplete="off"
             text={isEditing ? searchText : undefined}
-            onChange={(_, opt) => {
-              if (consumeComboIgnoreNextChange(cfg.key)) return;
+            onChange={(event, opt, _index, value) => {
+              if (consumeComboIgnoreNextChange(cfg.key, opt)) return;
               if (shouldIgnoreComboChange(cfg.key, opt)) return;
-              const resolvedKey = isEditing
-                ? resolveComboKeyFromSearch(filteredOptions, searchText)
-                : opt?.key;
+              const searchValue = typeof value === 'string' ? value : searchText;
+              const resolvedOptions = filterComboOptions(options, searchValue);
+              const resolvedKey = opt?.key ?? resolveComboKeyFromSearch(resolvedOptions, searchValue, selectedKey);
               if (!resolvedKey) return;
               updateFilters(cfg.stateKey, String(resolvedKey));
               setComboEditingFor(cfg.key, false);
               setComboSearchTextFor(cfg.key, '');
             }}
+            onKeyDownCapture={(event) => {
+              const isEnter = event.key === 'Enter' || event.key === 'NumpadEnter';
+              if (!isEnter) return;
+              const inputValue = getComboInputValue(event) || searchText;
+              if (!inputValue.trim()) return;
+              const resolvedOptions = filterComboOptions(options, inputValue);
+              commitComboSingleSelect(event, inputValue, resolvedOptions, selectedKey, (opt) => {
+                updateSingleSelect(cfg.stateKey, opt);
+                setComboEditingFor(cfg.key, false);
+                setComboSearchTextFor(cfg.key, '');
+              }, cfg.key);
+            }}
             onInputValueChange={(value) => {
-              const next = normalizeComboSearchText(value);
+              const next = normalizeSingleSelectSearchText(value, options, selectedKey);
               if (!next) {
                 setComboEditingFor(cfg.key, false);
                 setComboSearchTextFor(cfg.key, '');
@@ -2677,9 +3006,11 @@ export const Grid = React.memo((props: GridProps) => {
               setComboSearchTextFor(cfg.key, next);
             }}
             onKeyDown={(event) => {
-              if (!searchText.trim()) return;
+              if (event.defaultPrevented) return;
               const inputValue = getComboInputValue(event) || searchText;
-              commitComboSingleSelect(event, inputValue, filteredOptions, selectedKey, (opt) => {
+              if (!inputValue.trim()) return;
+              const resolvedOptions = filterComboOptions(options, inputValue);
+              commitComboSingleSelect(event, inputValue, resolvedOptions, selectedKey, (opt) => {
                 updateSingleSelect(cfg.stateKey, opt);
                 setComboEditingFor(cfg.key, false);
                 setComboSearchTextFor(cfg.key, '');
@@ -2696,7 +3027,7 @@ export const Grid = React.memo((props: GridProps) => {
             }}
           />
           {disambiguationHint && (
-            <Text variant="small" styles={{ root: { marginTop: 4 } }}>
+            <Text id={hintId} variant="small" styles={{ root: { marginTop: 4 } }}>
               {disambiguationHint}
             </Text>
           )}
@@ -2714,6 +3045,12 @@ export const Grid = React.memo((props: GridProps) => {
       const disambiguationHint = searchText.trim()
         ? getComboDisambiguationHint(filteredOptions, searchText)
         : undefined;
+      const hintId = `voa-search-${cfg.key}-hint`;
+      const multiSelectTitle = buildSelectedTooltip(
+        selectedKeys,
+        options,
+        cfg.tooltip ?? cfg.placeholder ?? cfg.label,
+      );
       const handleMultiSelectChange = (opt?: IComboBoxOption) => {
         if (!opt) return;
         if (hasSelectAll && String(opt.key) === SELECT_ALL_KEY) {
@@ -2735,6 +3072,7 @@ export const Grid = React.memo((props: GridProps) => {
         <Stack.Item styles={{ root: { minWidth: 200 } }}>
           <ComboBox
             label={cfg.label}
+            aria-describedby={buildAriaDescribedBy(disambiguationHint ? hintId : undefined)}
             multiSelect
             allowFreeform={false}
             allowFreeInput
@@ -2743,6 +3081,7 @@ export const Grid = React.memo((props: GridProps) => {
             persistMenu
             options={filteredOptions}
             selectedKey={selectedKeys}
+            title={multiSelectTitle}
             onChange={(_, opt) => handleMultiSelectChange(opt)}
             onInputValueChange={(value) => {
               if (consumeComboIgnoreNextInput(cfg.key)) {
@@ -2777,7 +3116,7 @@ export const Grid = React.memo((props: GridProps) => {
             }}
           />
           {disambiguationHint && (
-            <Text variant="small" styles={{ root: { marginTop: 4 } }}>
+            <Text id={hintId} variant="small" styles={{ root: { marginTop: 4 } }}>
               {disambiguationHint}
             </Text>
           )}
@@ -2792,6 +3131,7 @@ export const Grid = React.memo((props: GridProps) => {
     billingAuthorityError,
     billingAuthorityOptionsError,
     filteredBillingAuthorityOptionsList,
+    billingAuthorityOptionsList,
     billingAuthorityOptionsLoading,
     billingAuthorityRefError,
     postcodeError,
@@ -2862,15 +3202,15 @@ export const Grid = React.memo((props: GridProps) => {
     if (selected.length !== 1) return;
     const first = selected[0] as ComponentFramework.PropertyHelper.DataSetApi.EntityRecord | undefined;
     if (first) {
-      onNavigate(first);
+      void handleNavigate(first, undefined, true);
     }
-  }, [disableViewSalesRecordAction, onNavigate, selection]);
+  }, [disableViewSalesRecordAction, handleNavigate, selection]);
 
   const onItemInvoked = React.useCallback(
     (item?: ComponentFramework.PropertyHelper.DataSetApi.EntityRecord) => {
-      onNavigate(item);
+      void handleNavigate(item);
     },
-    [onNavigate],
+    [handleNavigate],
   );
 
   const handleSort = React.useCallback(
@@ -2879,10 +3219,11 @@ export const Grid = React.memo((props: GridProps) => {
         return;
       }
       const sortField = column.sortBy ?? column.key;
+      dismissResultMessages();
       onSort(sortField, descending);
       setMenuState(undefined);
     },
-    [onSort],
+    [dismissResultMessages, onSort],
   );
 
   const buildColumnFilterOptions = React.useCallback(
@@ -2924,6 +3265,7 @@ export const Grid = React.memo((props: GridProps) => {
         return;
       }
       const fieldName = (gridCol.fieldName ?? gridCol.key) ?? '';
+      const menuFilterKey = `menuFilter-${gridCol.key ?? gridCol.fieldName ?? 'column'}`;
       const cfg = getColumnFilterConfigFor(tableKey, fieldName);
       const existing = columnFiltersState[fieldName];
       let initialValue: ColumnFilterValue = '';
@@ -2955,6 +3297,10 @@ export const Grid = React.memo((props: GridProps) => {
       }
       setMenuFilterValue(initialValue);
       setMenuFilterText(typeof initialValue === 'string' ? initialValue : '');
+      setMenuFilterSearch('');
+      comboIgnoreNextInputRef.current[menuFilterKey] = false;
+      comboIgnoreNextChangeRef.current[menuFilterKey] = false;
+      delete comboExpectedSelectionRef.current[menuFilterKey];
       setMenuFilterError(undefined);
       setMenuState({ target, column: gridCol });
     },
@@ -2999,6 +3345,18 @@ export const Grid = React.memo((props: GridProps) => {
         return;
       }
     }
+    if (normalizedField === 'taskid') {
+      const trimmed = sanitizeTaskIdInput(menuFilterText, ID_FIELD_MAX_LENGTH).trim();
+      if (trimmed && trimmed.length < TASK_ID_MIN_LENGTH) {
+        setMenuFilterError(`Enter at least ${TASK_ID_MIN_LENGTH} characters`);
+        return;
+      }
+      if (trimmed && !TASK_ID_REGEX.test(trimmed)) {
+        setMenuFilterError('Use A- or M- prefix (e.g. A-1000001) or numbers only.');
+        return;
+      }
+    }
+    dismissResultMessages();
     const cfg: ColumnFilterConfig | undefined = getColumnFilterConfigFor(tableKey, fieldName);
     if (menuFilterError) {
       setMenuFilterError(undefined);
@@ -3017,8 +3375,10 @@ export const Grid = React.memo((props: GridProps) => {
         case 'textPrefix':
         case 'textContains': {
           const trimmed = normalizedField === 'taskid'
-            ? sanitizeDigits(menuFilterText, ID_FIELD_MAX_LENGTH).trim()
-            : String(menuFilterText ?? '').trim();
+            ? sanitizeTaskIdInput(menuFilterText, ID_FIELD_MAX_LENGTH).trim()
+            : normalizedField === 'postcode'
+              ? normalizeUkPostcode(String(menuFilterText ?? ''))
+              : String(menuFilterText ?? '').trim();
           if (trimmed === '') delete updated[fieldName];
           else updated[fieldName] = trimmed;
           break;
@@ -3078,7 +3438,17 @@ export const Grid = React.memo((props: GridProps) => {
     });
     setMenuState(undefined);
     menuState.target?.focus?.();
-  }, [isValidUkPostcode, menuFilterError, menuFilterText, menuFilterValue, menuState, normalizeUkPostcode, onColumnFiltersChange, tableKey]);
+  }, [
+    dismissResultMessages,
+    isValidUkPostcode,
+    menuFilterError,
+    menuFilterText,
+    menuFilterValue,
+    menuState,
+    normalizeUkPostcode,
+    onColumnFiltersChange,
+    tableKey,
+  ]);
 
   const clearFilter = React.useCallback(() => {
     if (!menuState) {
@@ -3237,6 +3607,9 @@ export const Grid = React.memo((props: GridProps) => {
     ),
     [prefilterWorkThatOptions, prefilterWorkThatSearch],
   );
+  const prefilterWorkThatHint = comboEditing.prefilterWorkThat
+    ? getComboDisambiguationHint(filteredPrefilterWorkThatOptions, prefilterWorkThatSearch)
+    : undefined;
   React.useEffect(() => {
     if ((!isManagerAssign && !isCaseworkerView && !isQcAssign && !isQcView) || prefilters.workThat) return;
     const firstOption = prefilterWorkThatOptions.find((opt) => opt?.key !== undefined);
@@ -3265,6 +3638,9 @@ export const Grid = React.memo((props: GridProps) => {
   const prefilterUserOptionsFiltered = isQcAssign && prefilters.searchBy === 'qcUser'
     ? filteredQcUserOptionsList
     : filteredCaseworkerOptionsList;
+  const prefilterUserHint = caseworkerSearch.trim()
+    ? getComboDisambiguationHint(prefilterUserOptionsFiltered, caseworkerSearch)
+    : undefined;
   const prefilterUserOptionsDisabled = isQcAssign && prefilters.searchBy === 'qcUser'
     ? qcUserOptionsDisabled
     : caseworkerOptionsDisabled;
@@ -3277,6 +3653,28 @@ export const Grid = React.memo((props: GridProps) => {
   const prefilterUserPlaceholder = isQcAssign && prefilters.searchBy === 'qcUser'
     ? qcText.prefilter.placeholders.qcUser
     : prefilterText.placeholders.caseworker;
+  const prefilterUserTooltip = isQcAssign && prefilters.searchBy === 'qcUser'
+    ? prefilterTooltips.qcUser
+    : prefilterTooltips.caseworker;
+  const prefilterUserTitle = buildSelectedTooltip(caseworkerSelectedKeys, prefilterUserOptions as IComboBoxOption[], prefilterUserTooltip);
+  const prefilterWorkThatTitle = buildSelectedTooltip(
+    prefilters.workThat ? [String(prefilters.workThat)] : [],
+    prefilterWorkThatOptions as IComboBoxOption[],
+    prefilterTooltips.workThat,
+  );
+  const prefilterBillingTitle = buildSelectedTooltip(
+    managerBillingSelectedKeys,
+    managerBillingAuthorityOptions as IComboBoxOption[],
+    prefilterTooltips.billingAuthority,
+  );
+  const prefilterFromTitle = buildValueTooltip(
+    formatDisplayDate(parseISODate(prefilters.completedFrom)),
+    prefilterTooltips.fromDate,
+  );
+  const prefilterToTitle = buildValueTooltip(
+    formatDisplayDate(parseISODate(prefilters.completedTo)),
+    prefilterTooltips.toDate,
+  );
   const prefilterUserId = isQcAssign && prefilters.searchBy === 'qcUser' ? 'prefilter-qcuser' : 'prefilter-caseworker';
   const prefilterOwnerHidden = isQcView || (isQcAssign && prefilters.searchBy === 'task');
   const prefilterNeedsCompletedDates = (isQcAssign || isQcView)
@@ -3285,8 +3683,9 @@ export const Grid = React.memo((props: GridProps) => {
   const taskCaseworkersReady = !caseworkerOptionsLoading
     && !caseworkerOptionsError
     && caseworkerOptions.length > 0;
+  const hasImplicitOwner = !!currentUserId?.trim();
   const prefilterHasOwner = (isCaseworkerView || isQcView)
-    ? prefilters.caseworkers.length > 0
+    ? prefilters.caseworkers.length > 0 || hasImplicitOwner
     : isQcAssign
       ? (prefilters.searchBy === 'task' ? true : prefilters.caseworkers.length > 0)
       : prefilters.searchBy === 'billingAuthority'
@@ -3307,7 +3706,7 @@ export const Grid = React.memo((props: GridProps) => {
   const prefilterToggleText = prefilterExpanded ? commonText.toggles.hidePrefilter : commonText.toggles.showPrefilter;
   const showSearchPanelToggle = showSearchPanel && !useAssignmentLayout;
   const searchPanelToggleText = searchPanelExpanded ? commonText.toggles.hideFilters : commonText.toggles.showFilters;
-  const showSelectionControls = !!showResults && selectionType !== SelectionMode.none;
+  const showSelectionControls = !!showResults && selectionType === SelectionMode.multiple;
   const selectionToolbarLabel = commonText.selectionControls.toolbarAriaLabel;
   const selectionGroupLabel = commonText.selectionControls.groupAriaLabel;
   const clearSelectionText = commonText.selectionControls.clearSelectionText;
@@ -3368,14 +3767,18 @@ export const Grid = React.memo((props: GridProps) => {
 
     const isApplyDisabled = () => {
       if (!cfg) {
-        const len = (menuFilterText ?? '').trim().length;
+        const len = isPostcodeField
+          ? normalizeUkPostcode(String(menuFilterText ?? '')).length
+          : (menuFilterText ?? '').trim().length;
         return len < minLen && !hasExistingFilter;
       }
       switch (cfg.control) {
         case 'textEq':
         case 'textPrefix':
         case 'textContains': {
-          const len = (menuFilterText ?? '').trim().length;
+          const len = isPostcodeField
+            ? normalizeUkPostcode(String(menuFilterText ?? '')).length
+            : (menuFilterText ?? '').trim().length;
           return len < minLen && !hasExistingFilter;
         }
         case 'singleSelect': {
@@ -3413,17 +3816,16 @@ export const Grid = React.memo((props: GridProps) => {
               placeholder={`Filter ${menuState.column.name}`}
               value={textVal}
               onChange={(_, v) => {
-                const next = isTaskIdField ? sanitizeDigits(v, ID_FIELD_MAX_LENGTH) : (v ?? '');
+                const next = isTaskIdField ? sanitizeTaskIdInput(v, ID_FIELD_MAX_LENGTH) : (v ?? '');
                 setMenuFilterValue(next);
                 setMenuFilterText(next);
                 if (menuFilterError) setMenuFilterError(undefined);
               }}
-              errorMessage={isPostcodeField ? menuFilterError : undefined}
-              inputMode={isTaskIdField ? 'numeric' : undefined}
+              errorMessage={(isPostcodeField || isTaskIdField) ? menuFilterError : undefined}
             />
             {isTaskIdField && (
               <Text variant="small" styles={{ root: { marginTop: 4 } }}>
-                Please enter only numeric.
+                Use A- or M- prefix (e.g. A-1000001) or numbers only.
               </Text>
             )}
           </>
@@ -3440,17 +3842,16 @@ export const Grid = React.memo((props: GridProps) => {
                   placeholder={`Filter ${menuState.column.name}`}
                   value={textVal}
                   onChange={(_, v) => {
-                    const next = isTaskIdField ? sanitizeDigits(v, ID_FIELD_MAX_LENGTH) : (v ?? '');
+                    const next = isTaskIdField ? sanitizeTaskIdInput(v, ID_FIELD_MAX_LENGTH) : (v ?? '');
                     setMenuFilterValue(next);
                     setMenuFilterText(next);
                     if (menuFilterError) setMenuFilterError(undefined);
                   }}
-                  errorMessage={isPostcodeField ? menuFilterError : undefined}
-                  inputMode={isTaskIdField ? 'numeric' : undefined}
+                  errorMessage={(isPostcodeField || isTaskIdField) ? menuFilterError : undefined}
                 />
                 {isTaskIdField && (
                   <Text variant="small" styles={{ root: { marginTop: 4 } }}>
-                    Please enter only numeric.
+                    Use A- or M- prefix (e.g. A-1000001) or numbers only.
                   </Text>
                 )}
               </>
@@ -3459,30 +3860,61 @@ export const Grid = React.memo((props: GridProps) => {
             return (() => {
               const menuFilterKey = `menuFilter-${menuState.column.key ?? menuState.column.fieldName ?? 'column'}`;
               const isEditing = comboEditing[menuFilterKey] === true;
+              const menuHint = isEditing ? getComboDisambiguationHint(filteredColumnOptions, menuFilterSearch) : undefined;
+              const menuHintId = `${menuFilterKey}-hint`;
               return (
                 <>
                   <ComboBox
                     label={`Filter ${menuState.column.name}`}
                     placeholder={`Select ${menuState.column.name}`}
+                    aria-describedby={buildAriaDescribedBy(menuHint ? menuHintId : undefined)}
                     options={filteredColumnOptions}
                     allowFreeform={false}
                     allowFreeInput
                     autoComplete="off"
                     text={isEditing ? menuFilterSearch : undefined}
-                    selectedKey={isEditing ? undefined : typeof menuFilterValue === 'string' ? menuFilterValue : undefined}
-                    onChange={(_, opt) => {
-                      if (consumeComboIgnoreNextChange(menuFilterKey)) return;
+                    selectedKey={isEditing ? null : typeof menuFilterValue === 'string' ? menuFilterValue : undefined}
+                    calloutProps={{ directionalHint: DirectionalHint.bottomLeftEdge, directionalHintFixed: true }}
+                    onChange={(event, opt, _index, value) => {
+                      if (consumeComboIgnoreNextChange(menuFilterKey, opt)) return;
                       if (shouldIgnoreComboChange(menuFilterKey, opt)) return;
-                      const resolvedKey = isEditing
-                        ? resolveComboKeyFromSearch(filteredColumnOptions, menuFilterSearch)
-                        : opt?.key;
+                      const searchValue = typeof value === 'string' ? value : menuFilterSearch;
+                      const resolvedOptions = filterComboOptions(options, searchValue);
+                      const resolvedKey = opt?.key ?? resolveComboKeyFromSearch(
+                        resolvedOptions,
+                        searchValue,
+                        typeof menuFilterValue === 'string' ? menuFilterValue : undefined,
+                      );
                       if (!resolvedKey) return;
                       setMenuFilterValue(String(resolvedKey));
                       setComboEditingFor(menuFilterKey, false);
                       setMenuFilterSearch('');
                     }}
+                    onKeyDownCapture={(event) => {
+                      const isEnter = event.key === 'Enter' || event.key === 'NumpadEnter';
+                      if (!isEnter) return;
+                      const inputValue = getComboInputValue(event) || menuFilterSearch;
+                      if (!inputValue.trim()) return;
+                      const resolvedOptions = filterComboOptions(options, inputValue);
+                      commitComboSingleSelect(
+                        event,
+                        inputValue,
+                        resolvedOptions,
+                        typeof menuFilterValue === 'string' ? menuFilterValue : undefined,
+                        (opt) => {
+                          setMenuFilterValue((opt?.key as string) ?? '');
+                          setComboEditingFor(menuFilterKey, false);
+                          setMenuFilterSearch('');
+                        },
+                        menuFilterKey,
+                      );
+                    }}
                     onInputValueChange={(value) => {
-                      const next = normalizeComboSearchText(value);
+                      const next = normalizeSingleSelectSearchText(
+                        value,
+                        options,
+                        typeof menuFilterValue === 'string' ? menuFilterValue : undefined,
+                      );
                       if (!next) {
                         setComboEditingFor(menuFilterKey, false);
                         setMenuFilterSearch('');
@@ -3492,12 +3924,14 @@ export const Grid = React.memo((props: GridProps) => {
                       setMenuFilterSearch(next);
                     }}
                     onKeyDown={(event) => {
-                      if (!menuFilterSearch.trim()) return;
+                      if (event.defaultPrevented) return;
                       const inputValue = getComboInputValue(event) || menuFilterSearch;
+                      if (!inputValue.trim()) return;
+                      const resolvedOptions = filterComboOptions(options, inputValue);
                       commitComboSingleSelect(
                         event,
                         inputValue,
-                        filteredColumnOptions,
+                        resolvedOptions,
                         typeof menuFilterValue === 'string' ? menuFilterValue : undefined,
                         (opt) => {
                           setMenuFilterValue((opt?.key as string) ?? '');
@@ -3511,17 +3945,15 @@ export const Grid = React.memo((props: GridProps) => {
                     setComboEditingFor(menuFilterKey, false);
                     setMenuFilterSearch('');
                   }}
-                  styles={{
-                    root: { width: '100%' },
-                    callout: { minWidth: 240 },
-                    optionsContainer: { minWidth: 200 },
-                  }}
-                />
-                {isEditing
-                  && getComboDisambiguationHint(filteredColumnOptions, menuFilterSearch)
-                  && (
-                    <Text variant="small" styles={{ root: { marginTop: 4 } }}>
-                      {getComboDisambiguationHint(filteredColumnOptions, menuFilterSearch)}
+                    styles={{
+                      root: { width: '100%' },
+                      callout: { minWidth: 240 },
+                      optionsContainer: { minWidth: 200 },
+                    }}
+                  />
+                  {menuHint && (
+                    <Text id={menuHintId} variant="small" styles={{ root: { marginTop: 4 } }}>
+                      {menuHint}
                     </Text>
                   )}
                 </>
@@ -3542,6 +3974,44 @@ export const Grid = React.memo((props: GridProps) => {
                   : '';
                 const menuFilterKey = `menuFilter-${menuState.column.key ?? menuState.column.fieldName ?? 'column'}`;
                 const selectedKeys = Array.isArray(menuFilterValue) ? menuFilterValue.map((key) => String(key)) : [];
+                const rawSearch = menuFilterSearch ?? '';
+                const normalizedSearch = normalizeMultiSelectSearchText(
+                  rawSearch,
+                  options,
+                  selectedKeys,
+                );
+                const filteredMultiOptions = filterComboOptions(
+                  options,
+                  normalizedSearch,
+                );
+                const exactMatchKey = normalizedSearch.trim()
+                  ? resolveComboOptionKey(options, normalizedSearch)
+                  : undefined;
+                const highlightBorder = theme.semanticColors.focusBorder ?? theme.palette.themePrimary;
+                const exactMatchOptions = exactMatchKey
+                  ? filteredMultiOptions.map((opt) => {
+                    if (String(opt.key) !== String(exactMatchKey)) return opt;
+                    const highlight = {
+                      backgroundColor: theme.semanticColors.menuItemBackgroundHovered,
+                      outline: `1px solid ${highlightBorder}`,
+                      outlineOffset: '-1px',
+                    };
+                    return {
+                      ...opt,
+                      styles: {
+                        ...opt.styles,
+                        root: [opt.styles?.root, highlight],
+                        rootHovered: [opt.styles?.rootHovered, highlight],
+                        rootFocused: [opt.styles?.rootFocused, highlight],
+                        rootPressed: [opt.styles?.rootPressed, highlight],
+                      },
+                    };
+                  })
+                  : filteredMultiOptions;
+                const menuHint = normalizedSearch.trim()
+                  ? getComboDisambiguationHint(filteredMultiOptions, normalizedSearch)
+                  : undefined;
+                const menuHintId = `${menuFilterKey}-hint`;
                 const handleMenuFilterMultiChange = (opt?: IComboBoxOption) => {
                   if (!opt) return;
                   if (hasSelectAll && String(opt.key) === selectAllKey) {
@@ -3574,33 +4044,34 @@ export const Grid = React.memo((props: GridProps) => {
                     <ComboBox
                       label={`Filter ${menuState.column.name}`}
                       placeholder={`Select ${menuState.column.name}`}
-                      options={filteredColumnOptions}
+                      aria-describedby={buildAriaDescribedBy(menuHint ? menuHintId : undefined)}
+                      options={exactMatchOptions}
                       multiSelect
                       allowFreeform={false}
                       allowFreeInput
                       autoComplete="off"
-                      text={menuFilterSearch.trim() ? menuFilterSearch : undefined}
+                      text={normalizedSearch.trim() ? normalizedSearch : undefined}
                       persistMenu
                       selectedKey={selectedKeys}
+                      calloutProps={{ directionalHint: DirectionalHint.bottomLeftEdge, directionalHintFixed: true }}
                       onChange={(_, opt) => handleMenuFilterMultiChange(opt)}
                       onInputValueChange={(value) => {
                         if (consumeComboIgnoreNextInput(menuFilterKey)) {
                           return;
                         }
-                        setMenuFilterSearch(
-                          normalizeMultiSelectSearchText(
-                            value,
-                            options,
-                            selectedKeys,
-                          ),
+                        const next = normalizeMultiSelectSearchText(
+                          value,
+                          options,
+                          selectedKeys,
                         );
+                        setMenuFilterSearch(next);
                       }}
                       onKeyDown={(event) => {
-                        if (!menuFilterSearch.trim()) return;
+                        if (!normalizedSearch.trim()) return;
                         commitPrefilterMultiSelect(
                           event,
-                          menuFilterSearch,
-                          filteredColumnOptions,
+                          normalizedSearch,
+                          filteredMultiOptions,
                           selectedKeys,
                           (_, opt) => handleMenuFilterMultiChange(opt),
                           menuFilterKey,
@@ -3614,13 +4085,11 @@ export const Grid = React.memo((props: GridProps) => {
                         optionsContainer: { minWidth: 200 },
                       }}
                     />
-                    {menuFilterSearch.trim()
-                      && getComboDisambiguationHint(filteredColumnOptions, menuFilterSearch)
-                      && (
-                        <Text variant="small" styles={{ root: { marginTop: 4 } }}>
-                          {getComboDisambiguationHint(filteredColumnOptions, menuFilterSearch)}
-                        </Text>
-                      )}
+                    {menuHint && (
+                      <Text id={menuHintId} variant="small" styles={{ root: { marginTop: 4 } }}>
+                        {menuHint}
+                      </Text>
+                    )}
                   </>
                 );
               })()
@@ -3637,7 +4106,7 @@ export const Grid = React.memo((props: GridProps) => {
                 ]}
                 selectedKey={numVal.mode ?? '>='}
                 allowFreeform={false}
-                autoComplete="on"
+                autoComplete="off"
                 onChange={(_, opt) =>
                   setMenuFilterValue((prev) => {
                     const current = (prev as NumericFilter) ?? { mode: '>=' };
@@ -3789,11 +4258,17 @@ export const Grid = React.memo((props: GridProps) => {
         ref={topRef}
         tabIndex={-1}
         aria-label={commonText.aria.resultsTable}
+        data-view-sale-loading={viewSaleLoading ? 'true' : 'false'}
       >
         <div className="voa-skip-links">
           <a href="#voa-grid-results">{commonText.aria.skipToResults}</a>
           <a href="#voa-grid-pagination">{commonText.aria.skipToPagination}</a>
         </div>
+        {viewSaleLoading && (
+          <div className="voa-view-sale-overlay" role="status" aria-live="polite" aria-label={viewSaleLoadingText}>
+            <Spinner size={SpinnerSize.large} label={viewSaleLoadingText} />
+          </div>
+        )}
         {columnDatasetNotDefined && !dismissedColumnConfigMessage && (
           <MessageBar
             messageBarType={MessageBarType.error}
@@ -3893,28 +4368,57 @@ export const Grid = React.memo((props: GridProps) => {
                   <ComboBox
                     id="prefilter-searchby"
                     ariaLabel={prefilterText.labels.searchBy}
+                    aria-describedby={buildAriaDescribedBy(prefilterSearchByHint ? 'prefilter-searchby-hint' : undefined)}
+                    placeholder={prefilterText.placeholders.searchBy}
+                    title={prefilterSearchByTitle}
                     options={filteredPrefilterSearchByOptions}
-                    selectedKey={comboEditing.prefilterSearchBy ? undefined : prefilters.searchBy}
-                    onChange={(event, option) => {
-                      if (consumeComboIgnoreNextChange('prefilterSearchBy')) return;
+                    selectedKey={comboEditing.prefilterSearchBy ? null : prefilters.searchBy}
+                    onChange={(event, option, _index, value) => {
+                      if (consumeComboIgnoreNextChange('prefilterSearchBy', option)) return;
                       if (shouldIgnoreComboChange('prefilterSearchBy', option)) return;
-                      const resolvedKey = comboEditing.prefilterSearchBy
-                        ? resolveComboKeyFromSearch(
-                          prefilterSearchByOptions as IComboBoxOption[],
-                          prefilterSearchBySearch,
-                        )
-                        : option?.key;
+                      const searchValue = typeof value === 'string' ? value : prefilterSearchBySearch;
+                      const resolvedOptions = filterComboOptions(
+                        prefilterSearchByOptions as IComboBoxOption[],
+                        searchValue,
+                      );
+                      const resolvedKey = option?.key ?? resolveComboKeyFromSearch(resolvedOptions, searchValue, prefilters.searchBy);
                       if (!resolvedKey) return;
                       onPrefilterSearchByChange(event, { key: resolvedKey } as IComboBoxOption);
                       setComboEditingFor('prefilterSearchBy', false);
                       setPrefilterSearchBySearch('');
                     }}
+                    onKeyDownCapture={(event) => {
+                      const isEnter = event.key === 'Enter' || event.key === 'NumpadEnter';
+                      if (!isEnter) return;
+                      const inputValue = getComboInputValue(event) || prefilterSearchBySearch;
+                      if (!inputValue.trim()) return;
+                      const resolvedOptions = filterComboOptions(
+                        prefilterSearchByOptions as IComboBoxOption[],
+                        inputValue,
+                      );
+                      commitComboSingleSelect(
+                        event,
+                        inputValue,
+                        resolvedOptions,
+                        prefilters.searchBy,
+                        (opt) => {
+                          onPrefilterSearchByChange(event as unknown as React.FormEvent<IComboBox>, opt);
+                          setComboEditingFor('prefilterSearchBy', false);
+                          setPrefilterSearchBySearch('');
+                        },
+                        'prefilterSearchBy',
+                      );
+                    }}
                     allowFreeform={false}
                     allowFreeInput
-                    autoComplete="on"
+                    autoComplete="off"
                     text={comboEditing.prefilterSearchBy ? prefilterSearchBySearch : undefined}
                     onInputValueChange={(value) => {
-                      const next = normalizeComboSearchText(value);
+                      const next = normalizeSingleSelectSearchText(
+                        value,
+                        prefilterSearchByOptions as IComboBoxOption[],
+                        prefilters.searchBy,
+                      );
                       if (!next) {
                         setComboEditingFor('prefilterSearchBy', false);
                         setPrefilterSearchBySearch('');
@@ -3924,12 +4428,17 @@ export const Grid = React.memo((props: GridProps) => {
                       setPrefilterSearchBySearch(next);
                     }}
                     onKeyDown={(event) => {
-                      if (!prefilterSearchBySearch.trim()) return;
+                      if (event.defaultPrevented) return;
                       const inputValue = getComboInputValue(event) || prefilterSearchBySearch;
+                      if (!inputValue.trim()) return;
+                      const resolvedOptions = filterComboOptions(
+                        prefilterSearchByOptions as IComboBoxOption[],
+                        inputValue,
+                      );
                       commitComboSingleSelect(
                         event,
                         inputValue,
-                        prefilterSearchByOptions as IComboBoxOption[],
+                        resolvedOptions,
                         prefilters.searchBy,
                         (opt) => {
                           onPrefilterSearchByChange(event as unknown as React.FormEvent<IComboBox>, opt);
@@ -3949,13 +4458,11 @@ export const Grid = React.memo((props: GridProps) => {
                       optionsContainer: { minWidth: 200 },
                     }}
                   />
-                  {comboEditing.prefilterSearchBy
-                    && getComboDisambiguationHint(filteredPrefilterSearchByOptions, prefilterSearchBySearch)
-                    && (
-                      <Text variant="small" styles={{ root: { marginTop: 4 } }}>
-                        {getComboDisambiguationHint(filteredPrefilterSearchByOptions, prefilterSearchBySearch)}
-                      </Text>
-                    )}
+                  {prefilterSearchByHint && (
+                    <Text id="prefilter-searchby-hint" variant="small" styles={{ root: { marginTop: 4 } }}>
+                      {prefilterSearchByHint}
+                    </Text>
+                  )}
                 </div>
               </Stack.Item>
               {isManagerAssign && prefilters.searchBy === 'billingAuthority' && (
@@ -3970,7 +4477,9 @@ export const Grid = React.memo((props: GridProps) => {
                       <ComboBox
                         id="prefilter-billing"
                         ariaLabel={managerText.prefilter.labels.billingAuthority}
+                        aria-describedby={buildAriaDescribedBy(prefilterBillingHint ? 'prefilter-billing-hint' : undefined)}
                         placeholder={managerText.prefilter.placeholders.billingAuthority}
+                        title={prefilterBillingTitle}
                         multiSelect
                         options={filteredManagerBillingAuthorityOptions}
                         selectedKey={managerBillingSelectedKeys}
@@ -4017,19 +4526,11 @@ export const Grid = React.memo((props: GridProps) => {
                           optionsContainer: { minWidth: 240 },
                         }}
                       />
-                      {managerBillingSearch.trim()
-                        && getComboDisambiguationHint(
-                          filteredManagerBillingAuthorityOptions,
-                          managerBillingSearch,
-                        )
-                        && (
-                          <Text variant="small" styles={{ root: { marginTop: 4 } }}>
-                            {getComboDisambiguationHint(
-                              filteredManagerBillingAuthorityOptions,
-                              managerBillingSearch,
-                            )}
-                          </Text>
-                        )}
+                      {prefilterBillingHint && (
+                        <Text id="prefilter-billing-hint" variant="small" styles={{ root: { marginTop: 4 } }}>
+                          {prefilterBillingHint}
+                        </Text>
+                      )}
                     </div>
                   </Stack.Item>
                 </>
@@ -4046,7 +4547,12 @@ export const Grid = React.memo((props: GridProps) => {
                       <ComboBox
                         id={prefilterUserId}
                         ariaLabel={prefilterUserLabel}
+                        aria-describedby={buildAriaDescribedBy(
+                          prefilterUserHint ? 'prefilter-user-hint' : undefined,
+                          prefilterUserOptionsError ? 'prefilter-user-error' : undefined,
+                        )}
                         placeholder={prefilterUserPlaceholder}
+                        title={prefilterUserTitle}
                         multiSelect
                         options={prefilterUserOptionsFiltered}
                         selectedKey={caseworkerSelectedKeys}
@@ -4093,21 +4599,13 @@ export const Grid = React.memo((props: GridProps) => {
                           optionsContainer: { minWidth: 240 },
                         }}
                       />
-                      {caseworkerSearch.trim()
-                        && getComboDisambiguationHint(
-                          prefilterUserOptionsFiltered,
-                          caseworkerSearch,
-                        )
-                        && (
-                          <Text variant="small" styles={{ root: { marginTop: 4 } }}>
-                            {getComboDisambiguationHint(
-                              prefilterUserOptionsFiltered,
-                              caseworkerSearch,
-                            )}
-                          </Text>
-                        )}
+                      {prefilterUserHint && (
+                        <Text id="prefilter-user-hint" variant="small" styles={{ root: { marginTop: 4 } }}>
+                          {prefilterUserHint}
+                        </Text>
+                      )}
                       {prefilterUserOptionsError && (
-                        <Text variant="small" styles={{ root: { color: theme.palette.redDark, marginTop: 2 } }}>
+                        <Text id="prefilter-user-error" variant="small" styles={{ root: { color: theme.palette.redDark, marginTop: 2 } }}>
                           {prefilterUserOptionsError}
                         </Text>
                       )}
@@ -4127,15 +4625,21 @@ export const Grid = React.memo((props: GridProps) => {
               <ComboBox
                 id="prefilter-workthat"
                 ariaLabel={prefilterText.labels.workThat}
+                aria-describedby={buildAriaDescribedBy(prefilterWorkThatHint ? 'prefilter-workthat-hint' : undefined)}
                 placeholder={prefilterText.placeholders.workThat}
+                title={prefilterWorkThatTitle}
                 options={filteredPrefilterWorkThatOptions}
-                selectedKey={comboEditing.prefilterWorkThat ? undefined : prefilters.workThat}
-                onChange={(event, option) => {
-                  if (consumeComboIgnoreNextChange('prefilterWorkThat')) return;
+                selectedKey={comboEditing.prefilterWorkThat ? null : prefilters.workThat}
+                calloutProps={{ setInitialFocus: false }}
+                onChange={(event, option, _index, value) => {
+                  if (consumeComboIgnoreNextChange('prefilterWorkThat', option)) return;
                   if (shouldIgnoreComboChange('prefilterWorkThat', option)) return;
-                  const resolvedKey = comboEditing.prefilterWorkThat
-                    ? resolveComboKeyFromSearch(filteredPrefilterWorkThatOptions, prefilterWorkThatSearch)
-                    : option?.key;
+                  const searchValue = typeof value === 'string' ? value : prefilterWorkThatSearch;
+                  const resolvedOptions = filterComboOptions(
+                    prefilterWorkThatOptions as IComboBoxOption[],
+                    searchValue,
+                  );
+                  const resolvedKey = option?.key ?? resolveComboKeyFromSearch(resolvedOptions, searchValue, prefilters.workThat);
                   if (!resolvedKey) return;
                   onPrefilterWorkThatChange(event, { key: resolvedKey } as IComboBoxOption);
                   setComboEditingFor('prefilterWorkThat', false);
@@ -4143,10 +4647,36 @@ export const Grid = React.memo((props: GridProps) => {
                 }}
                 allowFreeform={false}
                 allowFreeInput
-                autoComplete="on"
+                autoComplete="off"
                 text={comboEditing.prefilterWorkThat ? prefilterWorkThatSearch : undefined}
+                onKeyDownCapture={(event) => {
+                  const isEnter = event.key === 'Enter' || event.key === 'NumpadEnter';
+                  if (!isEnter) return;
+                  const inputValue = getComboInputValue(event) || prefilterWorkThatSearch;
+                  if (!inputValue.trim()) return;
+                  const resolvedOptions = filterComboOptions(
+                    prefilterWorkThatOptions as IComboBoxOption[],
+                    inputValue,
+                  );
+                  commitComboSingleSelect(
+                    event,
+                    inputValue,
+                    resolvedOptions,
+                    prefilters.workThat,
+                    (opt) => {
+                      onPrefilterWorkThatChange(event as unknown as React.FormEvent<IComboBox>, opt);
+                      setComboEditingFor('prefilterWorkThat', false);
+                      setPrefilterWorkThatSearch('');
+                    },
+                    'prefilterWorkThat',
+                  );
+                }}
                 onInputValueChange={(value) => {
-                  const next = normalizeComboSearchText(value);
+                  const next = normalizeSingleSelectSearchText(
+                    value,
+                    prefilterWorkThatOptions as IComboBoxOption[],
+                    prefilters.workThat,
+                  );
                   if (!next) {
                     setComboEditingFor('prefilterWorkThat', false);
                     setPrefilterWorkThatSearch('');
@@ -4156,12 +4686,28 @@ export const Grid = React.memo((props: GridProps) => {
                   setPrefilterWorkThatSearch(next);
                 }}
                 onKeyDown={(event) => {
-                  if (!prefilterWorkThatSearch.trim()) return;
+                  if (event.defaultPrevented) return;
                   const inputValue = getComboInputValue(event) || prefilterWorkThatSearch;
+                  if (!inputValue.trim()) return;
+                  const isEnter = event.key === 'Enter' || event.key === 'NumpadEnter';
+                  if (isEnter) {
+                    const enabledOptions = filteredPrefilterWorkThatOptions.filter((opt) => !opt.disabled);
+                    if (enabledOptions.length === 1) {
+                      event.preventDefault();
+                      onPrefilterWorkThatChange(event as unknown as React.FormEvent<IComboBox>, enabledOptions[0]);
+                      setComboEditingFor('prefilterWorkThat', false);
+                      setPrefilterWorkThatSearch('');
+                      return;
+                    }
+                  }
+                  const resolvedOptions = filterComboOptions(
+                    prefilterWorkThatOptions as IComboBoxOption[],
+                    inputValue,
+                  );
                   commitComboSingleSelect(
                     event,
                     inputValue,
-                    filteredPrefilterWorkThatOptions,
+                    resolvedOptions,
                     prefilters.workThat,
                     (opt) => {
                       onPrefilterWorkThatChange(event as unknown as React.FormEvent<IComboBox>, opt);
@@ -4181,13 +4727,11 @@ export const Grid = React.memo((props: GridProps) => {
                   optionsContainer: { minWidth: 200 },
                 }}
               />
-              {comboEditing.prefilterWorkThat
-                && getComboDisambiguationHint(filteredPrefilterWorkThatOptions, prefilterWorkThatSearch)
-                && (
-                  <Text variant="small" styles={{ root: { marginTop: 4 } }}>
-                    {getComboDisambiguationHint(filteredPrefilterWorkThatOptions, prefilterWorkThatSearch)}
-                  </Text>
-                )}
+              {prefilterWorkThatHint && (
+                <Text id="prefilter-workthat-hint" variant="small" styles={{ root: { marginTop: 4 } }}>
+                  {prefilterWorkThatHint}
+                </Text>
+              )}
             </div>
           </Stack.Item>
           {prefilterNeedsCompletedDates && (
@@ -4215,6 +4759,7 @@ export const Grid = React.memo((props: GridProps) => {
                       maxDate={today}
                       styles={{ root: { width: 180 } }}
                       ariaLabel={prefilterText.labels.fromDate}
+                      title={prefilterFromTitle}
                     />
                     {prefilterFromDateError && (
                       <Text variant="small" styles={{ root: { color: theme.palette.redDark, marginTop: -2 } }}>
@@ -4230,6 +4775,7 @@ export const Grid = React.memo((props: GridProps) => {
                       disabled
                       styles={{ root: { width: 180 } }}
                       ariaLabel={prefilterText.labels.toDate}
+                      title={prefilterToTitle}
                     />
                   </div>
                 </div>
@@ -4273,25 +4819,43 @@ export const Grid = React.memo((props: GridProps) => {
           <Stack.Item styles={{ root: { minWidth: 200 } }}>
             <ComboBox
               label={salesSearchText.searchPanel.searchByLabel}
+              aria-describedby={buildAriaDescribedBy(searchByHint ? 'voa-searchby-hint' : undefined)}
+              title={searchByTitle}
               options={filteredSearchByOptions}
-              selectedKey={comboEditing.searchBy ? undefined : filters.searchBy}
-              onChange={(event, option) => {
-                if (consumeComboIgnoreNextChange('searchBy')) return;
+              selectedKey={comboEditing.searchBy ? null : filters.searchBy}
+              onChange={(event, option, _index, value) => {
+                if (consumeComboIgnoreNextChange('searchBy', option)) return;
                 if (shouldIgnoreComboChange('searchBy', option)) return;
-                const resolvedKey = comboEditing.searchBy
-                  ? resolveComboKeyFromSearch(filteredSearchByOptions, searchBySearch)
-                  : option?.key;
+                const searchValue = typeof value === 'string' ? value : searchBySearch;
+                const resolvedOptions = filterComboOptions(searchByOptions as IComboBoxOption[], searchValue);
+                const resolvedKey = option?.key ?? resolveComboKeyFromSearch(resolvedOptions, searchValue, filters.searchBy);
                 if (!resolvedKey) return;
                 onSearchByChange(event, { key: resolvedKey } as IComboBoxOption);
                 setComboEditingFor('searchBy', false);
                 setSearchBySearch('');
               }}
+              onKeyDownCapture={(event) => {
+                const isEnter = event.key === 'Enter' || event.key === 'NumpadEnter';
+                if (!isEnter) return;
+                const inputValue = getComboInputValue(event) || searchBySearch;
+                if (!inputValue.trim()) return;
+                const resolvedOptions = filterComboOptions(searchByOptions as IComboBoxOption[], inputValue);
+                commitComboSingleSelect(event, inputValue, resolvedOptions, filters.searchBy, (opt) => {
+                  onSearchByChange(event as unknown as React.FormEvent<IComboBox>, opt);
+                  setComboEditingFor('searchBy', false);
+                  setSearchBySearch('');
+                }, 'searchBy');
+              }}
               allowFreeform={false}
               allowFreeInput
-              autoComplete="on"
+              autoComplete="off"
               text={comboEditing.searchBy ? searchBySearch : undefined}
               onInputValueChange={(value) => {
-                const next = normalizeComboSearchText(value);
+                const next = normalizeSingleSelectSearchText(
+                  value,
+                  searchByOptions as IComboBoxOption[],
+                  filters.searchBy,
+                );
                 if (!next) {
                   setComboEditingFor('searchBy', false);
                   setSearchBySearch('');
@@ -4301,9 +4865,11 @@ export const Grid = React.memo((props: GridProps) => {
                 setSearchBySearch(next);
               }}
               onKeyDown={(event) => {
-                if (!searchBySearch.trim()) return;
+                if (event.defaultPrevented) return;
                 const inputValue = getComboInputValue(event) || searchBySearch;
-                commitComboSingleSelect(event, inputValue, filteredSearchByOptions, filters.searchBy, (opt) => {
+                if (!inputValue.trim()) return;
+                const resolvedOptions = filterComboOptions(searchByOptions as IComboBoxOption[], inputValue);
+                commitComboSingleSelect(event, inputValue, resolvedOptions, filters.searchBy, (opt) => {
                   onSearchByChange(event as unknown as React.FormEvent<IComboBox>, opt);
                   setComboEditingFor('searchBy', false);
                   setSearchBySearch('');
@@ -4319,13 +4885,11 @@ export const Grid = React.memo((props: GridProps) => {
                 optionsContainer: { minWidth: 200 },
               }}
             />
-            {comboEditing.searchBy
-              && getComboDisambiguationHint(filteredSearchByOptions, searchBySearch)
-              && (
-                <Text variant="small" styles={{ root: { marginTop: 4 } }}>
-                  {getComboDisambiguationHint(filteredSearchByOptions, searchBySearch)}
-                </Text>
-              )}
+            {searchByHint && (
+              <Text id="voa-searchby-hint" variant="small" styles={{ root: { marginTop: 4 } }}>
+                {searchByHint}
+              </Text>
+            )}
           </Stack.Item>
           {renderSearchControl()}
           <Stack.Item className="voa-search-panel__actions">

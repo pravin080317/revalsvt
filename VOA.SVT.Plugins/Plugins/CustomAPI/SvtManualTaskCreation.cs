@@ -17,7 +17,7 @@ namespace VOA.SVT.Plugins.CustomAPI
         /// <summary>
         /// Name of the API configuration returned by voa_CredentialProvider
         /// </summary>
-        private const string CONFIGURATION_NAME = "SVTManualTaskCreation";
+        private const string CONFIGURATION_NAME = "SVTGetSalesRecord";
 
         public SvtManualTaskCreation(string unsecureConfiguration, string secureConfiguration)
             : base(typeof(SvtManualTaskCreation))
@@ -86,7 +86,7 @@ namespace VOA.SVT.Plugins.CustomAPI
 
             if (string.IsNullOrWhiteSpace(apiConfig.Address))
             {
-                context.OutputParameters["Result"] = BuildResult(false, "SVTManualTaskCreation configuration missing Address.", string.Empty);
+                context.OutputParameters["Result"] = BuildResult(false, "SVTGetSalesRecord configuration missing Address.", string.Empty);
                 return;
             }
 

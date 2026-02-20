@@ -12,15 +12,15 @@ using VOA.SVT.Plugins.Helpers;
 
 namespace VOA.SVT.Plugins.CustomAPI
 {
-    public class SvtTaskAssignment : PluginBase
+    public class SvtModifyTask : PluginBase
     {
         /// <summary>
         /// Name of the API configuration returned by voa_CredentialProvider
         /// </summary>
         private const string CONFIGURATION_NAME = "SVTTaskAssignment";
 
-        public SvtTaskAssignment(string unsecureConfiguration, string secureConfiguration)
-            : base(typeof(SvtTaskAssignment))
+        public SvtModifyTask(string unsecureConfiguration, string secureConfiguration)
+            : base(typeof(SvtModifyTask))
         {
             // Custom API plugin -> generally no secure/unsecure config usage.
         }
@@ -33,42 +33,40 @@ namespace VOA.SVT.Plugins.CustomAPI
             }
 
             var context = localPluginContext.PluginExecutionContext;
+            var trace = localPluginContext.TracingService;
             var userContext = UserContextResolver.Resolve(
                 localPluginContext.SystemUserService,
                 context.InitiatingUserId,
-                localPluginContext.TracingService);
-            var screenName = GetInput(context, "screenName");
-            if (string.IsNullOrWhiteSpace(screenName))
+                trace);
+            if (!UserContextResolver.HasCaseworkerAccess(userContext))
             {
-                screenName = GetInput(context, "canvasScreenName");
-            }
-            var assignmentContext = AssignmentContextResolver.Resolve(screenName);
-            if (!AssignmentContextResolver.IsAuthorized(userContext.Persona, assignmentContext))
-            {
-                localPluginContext.TracingService.Trace(
-                    $"SVT TaskAssignment denied. User={context.InitiatingUserId}, Persona={userContext.Persona}, Screen={screenName ?? "<null>"}");
-                throw new InvalidPluginExecutionException("SVT task assignment is restricted based on assignment context and role.");
+                trace?.Trace(
+                    $"SvtModifyTask denied. User={context.InitiatingUserId}, Persona={userContext.Persona}");
+                throw new InvalidPluginExecutionException("Modify SVT task is restricted to caseworker role/team.");
             }
 
-            var assignedToUserId = GetInput(context, "assignedToUserId");
+            var source = GetInput(context, "source");
             var taskStatus = GetInput(context, "taskStatus");
-            var saleId = GetInput(context, "saleId");
-            var taskId = GetInput(context, "taskId");
-            var assignedByUserId = GetInput(context, "assignedByUserId");
-            var date = GetInput(context, "date");
-            var taskIds = ParseTaskIds(taskId);
+            var taskListRaw = GetInput(context, "taskList");
+            var requestedBy = GetInput(context, "requestedBy");
+            var taskIds = ParseTaskIds(taskListRaw);
 
-            if (string.IsNullOrWhiteSpace(assignedByUserId))
+            if (string.IsNullOrWhiteSpace(source))
+            {
+                source = "VSRT";
+            }
+
+            if (string.IsNullOrWhiteSpace(requestedBy))
             {
                 var fallbackId = context.InitiatingUserId != Guid.Empty
                     ? context.InitiatingUserId
                     : context.UserId;
-                assignedByUserId = fallbackId == Guid.Empty ? string.Empty : fallbackId.ToString();
+                requestedBy = fallbackId == Guid.Empty ? string.Empty : fallbackId.ToString();
             }
 
-            if (string.IsNullOrWhiteSpace(assignedToUserId) || taskIds.Count == 0)
+            if (string.IsNullOrWhiteSpace(taskStatus) || taskIds.Count == 0)
             {
-                throw new InvalidPluginExecutionException("assignedToUserId and taskId are required.");
+                throw new InvalidPluginExecutionException("taskStatus and taskList are required.");
             }
 
             // 1) Read secrets/config from credential provider action
@@ -77,7 +75,7 @@ namespace VOA.SVT.Plugins.CustomAPI
                 ["ConfigurationName"] = CONFIGURATION_NAME
             };
 
-            localPluginContext.TracingService.Trace("Retrieving configuration from voa_CredentialProvider...");
+            trace?.Trace("Retrieving configuration from voa_CredentialProvider...");
 
             var getSecretsResponse = localPluginContext.SystemUserService.Execute(getSecretsRequest);
 
@@ -96,27 +94,24 @@ namespace VOA.SVT.Plugins.CustomAPI
                 throw new InvalidPluginExecutionException("SVTTaskAssignment configuration missing Address.");
             }
 
-            localPluginContext.TracingService.Trace("SVT TaskAssignment started.");
+            trace?.Trace("SvtModifyTask started.");
 
             // 2) OAuth token (if needed)
-            localPluginContext.TracingService.Trace("Generating authentication token...");
+            trace?.Trace("Generating authentication token...");
             var auth = new Authentication(localPluginContext, apiConfig);
             var authResult = auth.GenerateAuthentication();
 
             var payload = new Dictionary<string, object>
             {
-                ["source"] = ResolveSource(screenName, assignmentContext),
-                ["assignedTo"] = assignedToUserId ?? string.Empty,
-                ["taskList"] = taskIds,
-                ["requestedBy"] = assignedByUserId ?? string.Empty,
+                ["source"] = source ?? string.Empty,
                 ["taskStatus"] = taskStatus ?? string.Empty,
-                ["saleId"] = saleId ?? string.Empty,
-                ["date"] = date ?? string.Empty
+                ["taskList"] = taskIds,
+                ["requestedBy"] = requestedBy ?? string.Empty
             };
 
             var jsonBody = JsonSerializer.Serialize(payload);
 
-            localPluginContext.TracingService.Trace($"Posting assignment to APIM. Payload={Truncate(jsonBody, 500)}");
+            trace?.Trace($"Posting SvtModifyTask to APIM. Payload={Truncate(jsonBody, 500)}");
 
             using (var httpClient = new HttpClient())
             {
@@ -152,20 +147,23 @@ namespace VOA.SVT.Plugins.CustomAPI
 
                         if (!response.IsSuccessStatusCode)
                         {
-                            localPluginContext.TracingService.Trace(
+                            trace?.Trace(
                                 $"APIM call failed. Status={(int)response.StatusCode} {response.ReasonPhrase}. BodySnippet={Truncate(body, 500)}");
-
-                            context.OutputParameters["Result"] = BuildResult(false, "Assignment failed.", body);
-                            return;
+                            throw new InvalidPluginExecutionException(
+                                $"Modify SVT task failed ({(int)response.StatusCode} {response.ReasonPhrase}).");
                         }
 
-                        context.OutputParameters["Result"] = BuildResult(true, "Assignment succeeded.", body);
-                        localPluginContext.TracingService.Trace("SVT TaskAssignment completed successfully.");
+                        context.OutputParameters["Result"] = string.IsNullOrWhiteSpace(body) ? "success" : body;
+                        trace?.Trace("SvtModifyTask completed successfully.");
                     }
                     catch (Exception ex)
                     {
-                        localPluginContext.TracingService.Trace($"APIM call exception: {ex}");
-                        context.OutputParameters["Result"] = BuildResult(false, "Assignment failed.", ex.Message);
+                        trace?.Trace($"APIM call exception: {ex}");
+                        if (ex is InvalidPluginExecutionException)
+                        {
+                            throw;
+                        }
+                        throw new InvalidPluginExecutionException("Modify SVT task failed.");
                     }
                     finally
                     {
@@ -232,57 +230,17 @@ namespace VOA.SVT.Plugins.CustomAPI
 
         private static string NormalizeTaskId(string value)
         {
-            return string.IsNullOrWhiteSpace(value) ? null : value.Trim();
-        }
-
-        private static string ResolveSource(string screenName, AssignmentContext context)
-        {
-            var lower = (screenName ?? string.Empty).Trim().ToLowerInvariant();
-            if (lower.Contains("assignment") && lower.Contains("manager"))
+            if (string.IsNullOrWhiteSpace(value)) return null;
+            var sb = new StringBuilder();
+            foreach (var ch in value)
             {
-                return "MAT";
+                if (char.IsDigit(ch))
+                {
+                    sb.Append(ch);
+                }
             }
-
-            if (lower.Contains("assignment") && (lower.Contains("qc") || lower.Contains("quality")))
-            {
-                return "QCAT";
-            }
-
-            if ((lower.Contains("qc") || lower.Contains("quality")) && lower.Contains("view") && !lower.Contains("assignment"))
-            {
-                return "QCV";
-            }
-
-            if (lower.Contains("caseworker"))
-            {
-                return "CWV";
-            }
-
-            if (lower.Contains("sales") || lower.Contains("record search") || lower.Contains("recordsearch"))
-            {
-                return "SRS";
-            }
-
-            switch (context)
-            {
-                case AssignmentContext.Manager:
-                    return "MAT";
-                case AssignmentContext.Qa:
-                    return "QCAT";
-                default:
-                    return string.Empty;
-            }
-        }
-
-        private static string BuildResult(bool success, string message, string payload)
-        {
-            var safeMessage = (message ?? string.Empty).Replace("\"", "'");
-            var safePayload = (payload ?? string.Empty).Replace("\"", "'");
-            return "{" +
-                   "\"success\":" + (success ? "true" : "false") + "," +
-                   "\"message\":\"" + safeMessage + "\"," +
-                   "\"payload\":\"" + safePayload + "\"" +
-                   "}";
+            var digits = sb.ToString();
+            return string.IsNullOrWhiteSpace(digits) ? value.Trim() : digits;
         }
 
         private static string Truncate(string s, int maxLen)
