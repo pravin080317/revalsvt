@@ -49,7 +49,22 @@ import { IGridColumn, ColumnConfig, AssignUser } from './Component.types';
 import { GridCell } from '../DetailsListVOA/grid/GridCell';
 import { ClassNames } from '../DetailsListVOA/grid/Grid.styles';
 import { GridFilterState, NumericFilter, NumericFilterMode, createDefaultGridFilters, sanitizeFilters, SearchByOption, DateRangeFilter, isValidUkPostcode, normalizeUkPostcode } from './Filters';
+import { filterItemsByColumnFilters, type ColumnFilterValue } from './utils/GridColumnFilters';
 import { getSearchByOptionsFor, getColumnFilterConfigFor, isLookupFieldFor, isViewSalesRecordEnabledFor, ColumnFilterConfig } from '../DetailsListVOA/config/TableConfigs';
+import {
+  ADDRESS_FIELD_MAX_LENGTH,
+  ID_FIELD_MAX_LENGTH,
+  MIN_ADDRESS_TEXT_LENGTH,
+  SALE_ID_REGEX,
+  TASK_ID_MIN_LENGTH,
+  TASK_ID_REGEX,
+  UPRN_MAX_LENGTH,
+  getSalesSearchErrors,
+  sanitizeAlphaNumHyphen,
+  sanitizeDigits,
+  sanitizeTaskIdInput,
+} from './utils/SalesSearchValidation';
+import { buildPrefilterStorageKey, shouldResetPrefiltersOnScreenChange } from './utils/ScreenBehavior';
 import {
   MANAGER_PREFILTER_DEFAULT,
   CASEWORKER_PREFILTER_DEFAULT,
@@ -68,12 +83,14 @@ import {
   type ManagerWorkThat,
   type QcSearchBy,
 } from './config/PrefilterConfigs';
+import { computeCompletedToDateIso, getPrefilterFromDateError } from './utils/PrefilterDateUtils';
+import { normalizePrefilterSearchBy, shouldRemoveStoredPrefilter, shouldSkipPrefilterAutoApply } from './utils/PrefilterUtils';
+import { type ScreenKind } from './utils/ScreenResolution';
 import { SCREEN_TEXT } from '../DetailsListVOA/constants/ScreenText';
 
 type DataSet = ComponentFramework.PropertyHelper.DataSetApi.EntityRecord & IObjectWithKey;
-type ColumnFilterValue = string | string[] | NumericFilter | DateRangeFilter;
 const ASSIGN_LOADING_ROW_ID = '__loading__';
-export type GridScreenKind = 'salesSearch' | 'managerAssign' | 'caseworkerView' | 'qcAssign' | 'qcView' | 'unknown';
+export type GridScreenKind = ScreenKind;
 
 export interface GridProps {
   // When false, hides the built-in top search panel
@@ -211,18 +228,9 @@ interface PrefilterTooltips {
 }
 
 const SALES_SEARCH_OPTIONS: SearchByOption[] = ['address', 'saleId', 'taskId', 'uprn', 'billingAuthority'];
-const ID_FIELD_MAX_LENGTH = 15;
-const UPRN_MAX_LENGTH = 12;
-const ADDRESS_FIELD_MAX_LENGTH = 150;
-const MIN_ADDRESS_TEXT_LENGTH = 3;
-const SALE_ID_REGEX = /^S-\d+$/i;
-const TASK_ID_REGEX = /^(?:\d+|[AM]-\d+)$/i;
-const TASK_ID_MIN_LENGTH = 3;
 const BILLING_AUTHORITY_ALL_KEY = '__all__';
 const CASEWORKER_ALL_KEY = '__all__';
 const SELECT_ALL_KEY = '__select_all__';
-const MANAGER_SEARCH_BY_KEYS = new Set(MANAGER_SEARCH_BY_OPTIONS.map((opt) => String(opt.key)));
-const QC_SEARCH_BY_KEYS = new Set(QC_SEARCH_BY_OPTIONS.map((opt) => String(opt.key)));
 
 type StoredPrefilterState = Partial<ManagerPrefilterState> & { applied?: boolean };
 
@@ -249,34 +257,8 @@ const buildAriaDescribedBy = (...ids: (string | undefined)[]): string | undefine
   const values = ids.filter((id): id is string => typeof id === 'string' && id.trim().length > 0);
   return values.length > 0 ? values.join(' ') : undefined;
 };
-const normalizePrefilterSearchBy = (value: unknown, kind: GridScreenKind): ManagerSearchBy => {
-  const raw = typeof value === 'string' ? value : '';
-  if (kind === 'caseworkerView') return 'caseworker';
-  if (kind === 'qcView') return 'qcUser';
-  if (kind === 'qcAssign') {
-    return QC_SEARCH_BY_KEYS.has(raw) ? (raw as ManagerSearchBy) : QC_PREFILTER_DEFAULT.searchBy;
-  }
-  return MANAGER_SEARCH_BY_KEYS.has(raw) ? (raw as ManagerSearchBy) : MANAGER_PREFILTER_DEFAULT.searchBy;
-};
 const normalizePrefilterArray = (value: unknown): string[] =>
   (Array.isArray(value) ? value.map((item) => String(item)) : []);
-
-const sanitizeAlphaNumHyphen = (value?: string, maxLength = ID_FIELD_MAX_LENGTH): string =>
-  (value ?? '')
-    .toUpperCase()
-    .replace(/[^A-Z0-9-]/g, '')
-    .slice(0, maxLength);
-
-const sanitizeTaskIdInput = (value?: string, maxLength = ID_FIELD_MAX_LENGTH): string =>
-  (value ?? '')
-    .toUpperCase()
-    .replace(/[^AM0-9-]/g, '')
-    .slice(0, maxLength);
-
-const sanitizeDigits = (value?: string, maxLength = UPRN_MAX_LENGTH): string =>
-  (value ?? '')
-    .replace(/\D/g, '')
-    .slice(0, maxLength);
 
 const normalizeComboSearchText = (value?: string): string => {
   if (!value) return '';
@@ -710,6 +692,8 @@ export const Grid = React.memo((props: GridProps) => {
   const [menuFilterText, setMenuFilterText] = React.useState('');
   const [menuFilterError, setMenuFilterError] = React.useState<string | undefined>();
   const [menuFilterSearch, setMenuFilterSearch] = React.useState('');
+  const [menuExtraOptions, setMenuExtraOptions] = React.useState<string[]>([]);
+  const menuOptionsFieldRef = React.useRef<string>('');
   const liveFilterTimer = React.useRef<number | undefined>(undefined);
   const [filters, setFilters] = React.useState<GridFilterState>(searchFilters);
   const autoSearchEnabled = false;
@@ -971,15 +955,91 @@ export const Grid = React.memo((props: GridProps) => {
         ? qcViewText.emptyState
         : commonText.emptyState;
   const prefilterStorageKey = React.useMemo(
+    () => buildPrefilterStorageKey(tableKey, derivedScreenKind),
+    [derivedScreenKind, tableKey],
+  );
+  const legacyPrefilterStorageKey = React.useMemo(
     () => `voa-prefilters:${tableKey}:${screenName || 'default'}`,
     [screenName, tableKey],
   );
   const prefilterAutoAppliedRef = React.useRef<string>('');
+  const prefilterAutoApplyDebugRef = React.useRef<string>('');
+  const prefilterManualApplyRef = React.useRef(false);
   const prefilterDirtyRef = React.useRef(false);
+  const prefilterClearedRef = React.useRef(false);
+  const prefilterHydratingRef = React.useRef(false);
+  const prefilterHydrationTimeoutRef = React.useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  const prefilterAutoApplyInFlightRef = React.useRef(false);
+  const prefilterAutoApplyTimeoutRef = React.useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  const schedulePrefilterHydrationClear = React.useCallback(() => {
+    if (prefilterHydrationTimeoutRef.current !== undefined) {
+      clearTimeout(prefilterHydrationTimeoutRef.current);
+    }
+    prefilterHydrationTimeoutRef.current = setTimeout(() => {
+      prefilterHydrationTimeoutRef.current = undefined;
+      prefilterHydratingRef.current = false;
+    }, 0);
+  }, []);
+  const markPrefilterHydrating = React.useCallback(() => {
+    prefilterHydratingRef.current = true;
+    schedulePrefilterHydrationClear();
+  }, [schedulePrefilterHydrationClear]);
+  const clearAutoApplyInFlight = React.useCallback(() => {
+    prefilterAutoApplyInFlightRef.current = false;
+    if (prefilterAutoApplyTimeoutRef.current !== undefined) {
+      clearTimeout(prefilterAutoApplyTimeoutRef.current);
+      prefilterAutoApplyTimeoutRef.current = undefined;
+    }
+  }, []);
+  const markAutoApplyInFlight = React.useCallback(() => {
+    prefilterAutoApplyInFlightRef.current = true;
+    if (prefilterAutoApplyTimeoutRef.current !== undefined) {
+      clearTimeout(prefilterAutoApplyTimeoutRef.current);
+    }
+    prefilterAutoApplyTimeoutRef.current = setTimeout(() => {
+      prefilterAutoApplyTimeoutRef.current = undefined;
+      prefilterAutoApplyInFlightRef.current = false;
+    }, 1000);
+  }, []);
+  const getPrefiltersForStorage = React.useCallback(
+    (state: ManagerPrefilterState): ManagerPrefilterState => {
+      const userId = (currentUserId ?? '').trim();
+      if (!userId) return state;
+      if (isCaseworkerView && state.searchBy === 'caseworker' && state.caseworkers.length === 0) {
+        return { ...state, caseworkers: [userId] };
+      }
+      if (isQcView && state.searchBy === 'qcUser' && state.caseworkers.length === 0) {
+        return { ...state, caseworkers: [userId] };
+      }
+      return state;
+    },
+    [currentUserId, isCaseworkerView, isQcView],
+  );
   React.useEffect(() => {
     prefilterAutoAppliedRef.current = '';
+    prefilterAutoApplyDebugRef.current = '';
     prefilterDirtyRef.current = false;
+    prefilterClearedRef.current = false;
+    prefilterHydratingRef.current = false;
+    prefilterAutoApplyInFlightRef.current = false;
+    if (prefilterHydrationTimeoutRef.current !== undefined) {
+      clearTimeout(prefilterHydrationTimeoutRef.current);
+      prefilterHydrationTimeoutRef.current = undefined;
+    }
+    if (prefilterAutoApplyTimeoutRef.current !== undefined) {
+      clearTimeout(prefilterAutoApplyTimeoutRef.current);
+      prefilterAutoApplyTimeoutRef.current = undefined;
+    }
   }, [prefilterStorageKey]);
+
+  React.useEffect(() => {
+    if (!prefilterApplied) {
+      prefilterAutoAppliedRef.current = '';
+    } else {
+      prefilterManualApplyRef.current = false;
+      clearAutoApplyInFlight();
+    }
+  }, [clearAutoApplyInFlight, prefilterApplied]);
 
   React.useEffect(() => {
     if (columnFilters) {
@@ -1027,33 +1087,13 @@ export const Grid = React.memo((props: GridProps) => {
       && !state.completedFrom
       && !state.completedTo;
   }, [currentUserId, isCaseworkerView, isQcAssign, isQcView]);
+  const markPrefilterDirty = React.useCallback(() => {
+    if (prefilterHydratingRef.current || prefilterAutoApplyInFlightRef.current) return;
+    prefilterDirtyRef.current = true;
+    onPrefilterDirty?.();
+  }, [onPrefilterDirty]);
 
   const lastScreenKindRef = React.useRef<GridScreenKind | undefined>(undefined);
-  React.useEffect(() => {
-    const prev = lastScreenKindRef.current;
-    const next = derivedScreenKind;
-
-    if (prev !== next) {
-      // When moving from Sales Search into Manager Assignment, force a clean prefilter slate.
-      if (prev === 'salesSearch' && next === 'managerAssign') {
-        setPrefilters(MANAGER_PREFILTER_DEFAULT);
-        setPrefilterExpanded(true);
-        onPrefilterClear?.();
-      }
-      if (next === 'qcAssign') {
-        setPrefilters(QC_PREFILTER_DEFAULT);
-        setPrefilterExpanded(true);
-        onPrefilterClear?.();
-      }
-      if (next === 'qcView') {
-        setPrefilters(QC_VIEW_PREFILTER_DEFAULT);
-        setPrefilterExpanded(true);
-        onPrefilterClear?.();
-      }
-    }
-
-    lastScreenKindRef.current = next;
-  }, [derivedScreenKind, onPrefilterClear, prefilterStorageKey]);
 
   React.useEffect(() => {
     setSearchPanelExpanded(true);
@@ -1062,8 +1102,20 @@ export const Grid = React.memo((props: GridProps) => {
   React.useEffect(() => {
     if (!useAssignmentLayout) return;
     if (prefilterDirtyRef.current) return;
+    if (shouldSkipPrefilterAutoApply(prefilterManualApplyRef.current, !!prefilterApplied)) {
+      console.debug('[Prefilter] auto-apply skipped (manual apply pending)', {
+        screen: derivedScreenKind,
+        prefilterApplied,
+      });
+      return;
+    }
     try {
-      const raw = localStorage.getItem(prefilterStorageKey);
+      let raw = localStorage.getItem(prefilterStorageKey);
+      let migratedFromLegacy = false;
+      if (!raw && legacyPrefilterStorageKey !== prefilterStorageKey) {
+        raw = localStorage.getItem(legacyPrefilterStorageKey);
+        migratedFromLegacy = !!raw;
+      }
       if (!raw) return;
       const parsed = JSON.parse(raw) as StoredPrefilterState;
       const next: ManagerPrefilterState = {
@@ -1074,30 +1126,65 @@ export const Grid = React.memo((props: GridProps) => {
         completedFrom: typeof parsed.completedFrom === 'string' ? parsed.completedFrom : undefined,
         completedTo: typeof parsed.completedTo === 'string' ? parsed.completedTo : undefined,
       };
-      setPrefilters(next);
+      const normalizedNext = getPrefiltersForStorage(next);
+      markPrefilterHydrating();
+      setPrefilters(normalizedNext);
 
       const storedApplied = typeof parsed.applied === 'boolean' ? parsed.applied : undefined;
       const needsCompleted = (isQcAssign || isQcView)
-        ? isQcCompletedWorkThat(next.workThat)
-        : isManagerCompletedWorkThat(next.workThat);
+        ? isQcCompletedWorkThat(normalizedNext.workThat)
+        : isManagerCompletedWorkThat(normalizedNext.workThat);
       const hasOwner = (isCaseworkerView || isQcView)
-        ? next.caseworkers.length > 0
+        ? normalizedNext.caseworkers.length > 0
         : isQcAssign
-          ? (next.searchBy === 'task' ? true : next.caseworkers.length > 0)
-          : next.searchBy === 'billingAuthority'
-            ? next.billingAuthorities.length > 0
-            : next.caseworkers.length > 0;
-      const hasWorkThat = !!next.workThat;
-      const hasFromDate = !needsCompleted || !!next.completedFrom;
-      const taskCaseworkersReadyNow = !caseworkerOptionsLoading && !caseworkerOptionsError && caseworkerOptions.length > 0;
-      const canAutoApply = hasOwner && hasWorkThat && hasFromDate
-        && (!isQcAssign || next.searchBy !== 'task' || taskCaseworkersReadyNow);
+          ? (normalizedNext.searchBy === 'task' ? true : normalizedNext.caseworkers.length > 0)
+          : normalizedNext.searchBy === 'billingAuthority'
+            ? normalizedNext.billingAuthorities.length > 0
+            : normalizedNext.caseworkers.length > 0;
+      const hasWorkThat = !!normalizedNext.workThat;
+      const hasFromDate = !needsCompleted || !!normalizedNext.completedFrom;
+      const canAutoApply = hasOwner && hasWorkThat && hasFromDate;
       const shouldAutoApply = storedApplied === false ? false : canAutoApply;
+      const autoKey = `${prefilterStorageKey}|${derivedScreenKind}`;
+      if (prefilterAutoApplyDebugRef.current !== autoKey) {
+        prefilterAutoApplyDebugRef.current = autoKey;
+        // Debugging aid for auto-apply behavior.
+        console.debug('[Prefilter] auto-apply check', {
+          screen: derivedScreenKind,
+          storedApplied,
+          hasOwner,
+          hasWorkThat,
+          hasFromDate,
+          canAutoApply,
+          shouldAutoApply,
+          prefilterApplied,
+          prefilterStorageKey,
+          prefilters: normalizedNext,
+        });
+      }
       if (shouldAutoApply && onPrefilterApply && !prefilterApplied) {
-        const autoKey = `${prefilterStorageKey}|${derivedScreenKind}`;
         if (prefilterAutoAppliedRef.current !== autoKey) {
           prefilterAutoAppliedRef.current = autoKey;
-          onPrefilterApply(next, { source: 'auto' });
+          markAutoApplyInFlight();
+          console.debug('[Prefilter] auto-apply fire', {
+            screen: derivedScreenKind,
+            prefilters: normalizedNext,
+            onPrefilterApplyType: typeof onPrefilterApply,
+          });
+          try {
+            onPrefilterApply(normalizedNext, { source: 'auto' });
+            console.debug('[Prefilter] auto-apply done', { screen: derivedScreenKind });
+          } catch (err) {
+            console.error('[Prefilter] auto-apply failed', err);
+          }
+        }
+      }
+      if (migratedFromLegacy) {
+        try {
+          localStorage.setItem(prefilterStorageKey, raw);
+          localStorage.removeItem(legacyPrefilterStorageKey);
+        } catch {
+          // ignore storage failures
         }
       }
     } catch {
@@ -1108,26 +1195,39 @@ export const Grid = React.memo((props: GridProps) => {
     isCaseworkerView,
     isQcAssign,
     isQcView,
+    markAutoApplyInFlight,
     onPrefilterApply,
     prefilterApplied,
     prefilterStorageKey,
     caseworkerOptions,
     caseworkerOptionsError,
     caseworkerOptionsLoading,
+    markPrefilterHydrating,
     useAssignmentLayout,
   ]);
 
   React.useEffect(() => {
     if (!useAssignmentLayout) return;
     try {
-      if (isPrefilterDefault(prefilters) && !prefilterApplied) {
+      const storedPrefilters = getPrefiltersForStorage(prefilters);
+      const shouldRemove = shouldRemoveStoredPrefilter(
+        isPrefilterDefault(storedPrefilters),
+        !!prefilterApplied,
+        prefilterClearedRef.current,
+      );
+      if (shouldRemove) {
         localStorage.removeItem(prefilterStorageKey);
-      } else {
-        const payload: StoredPrefilterState = { ...prefilters, applied: !!prefilterApplied };
+      } else if (prefilterApplied) {
+        const payload: StoredPrefilterState = { ...storedPrefilters, applied: true };
+        localStorage.setItem(prefilterStorageKey, JSON.stringify(payload));
+      } else if (!isPrefilterDefault(storedPrefilters) && prefilterDirtyRef.current) {
+        const payload: StoredPrefilterState = { ...storedPrefilters, applied: false };
         localStorage.setItem(prefilterStorageKey, JSON.stringify(payload));
       }
     } catch {
       // ignore storage failures
+    } finally {
+      prefilterClearedRef.current = false;
     }
   }, [isPrefilterDefault, prefilterApplied, prefilterStorageKey, prefilters, useAssignmentLayout]);
 
@@ -1224,23 +1324,10 @@ export const Grid = React.memo((props: GridProps) => {
     return d;
   }, []);
 
-  const computeCompletedToDate = React.useCallback((from?: Date | null): string | undefined => {
-    if (!from) return undefined;
-    const start = new Date(from.getTime());
-    start.setHours(0, 0, 0, 0);
-    const target = new Date(start.getTime());
-    target.setDate(target.getDate() + 14);
-    const toDate = target > today ? today : target;
-    return toISODateString(toDate);
-  }, [today, toISODateString]);
-
-  const prefilterFromDateError = React.useMemo(() => {
-    if (!prefilters.completedFrom) return undefined;
-    const from = parseISODate(prefilters.completedFrom);
-    if (!from) return undefined;
-    if (from > today) return 'Start date cannot be in the future';
-    return undefined;
-  }, [parseISODate, prefilters.completedFrom, today]);
+  const prefilterFromDateError = React.useMemo(
+    () => getPrefilterFromDateError(prefilters.completedFrom, today),
+    [prefilters.completedFrom, today],
+  );
 
   const caseworkerPrefilterDefaults = React.useMemo<ManagerPrefilterState>(
     () => ({
@@ -1259,6 +1346,7 @@ export const Grid = React.memo((props: GridProps) => {
 
   React.useEffect(() => {
     if (!isCaseworkerView) return;
+    markPrefilterHydrating();
     setPrefilters((prev) => {
       if (prev.searchBy !== 'caseworker') {
         return caseworkerPrefilterDefaults;
@@ -1276,9 +1364,10 @@ export const Grid = React.memo((props: GridProps) => {
         workThat: needsWorkThat ? caseworkerPrefilterDefaults.workThat : prev.workThat,
       };
     });
-  }, [caseworkerPrefilterDefaults, isCaseworkerView]);
+  }, [caseworkerPrefilterDefaults, isCaseworkerView, markPrefilterHydrating]);
   React.useEffect(() => {
     if (!isQcView) return;
+    markPrefilterHydrating();
     setPrefilters((prev) => {
       if (prev.searchBy !== 'qcUser') {
         return qcViewPrefilterDefaults;
@@ -1296,7 +1385,37 @@ export const Grid = React.memo((props: GridProps) => {
         workThat: needsWorkThat ? qcViewPrefilterDefaults.workThat : prev.workThat,
       };
     });
-  }, [isQcView, qcViewPrefilterDefaults]);
+  }, [isQcView, markPrefilterHydrating, qcViewPrefilterDefaults]);
+
+  React.useEffect(() => {
+    const prev = lastScreenKindRef.current;
+    const next = derivedScreenKind;
+
+    let hasStoredPrefilter = false;
+    try {
+      hasStoredPrefilter = !!localStorage.getItem(prefilterStorageKey);
+    } catch {
+      hasStoredPrefilter = false;
+    }
+    if (shouldResetPrefiltersOnScreenChange(prev, next, hasStoredPrefilter)) {
+      markPrefilterHydrating();
+      if (next === 'managerAssign') {
+        setPrefilters(MANAGER_PREFILTER_DEFAULT);
+        setPrefilterExpanded(true);
+      } else if (next === 'caseworkerView') {
+        setPrefilters(caseworkerPrefilterDefaults);
+        setPrefilterExpanded(true);
+      } else if (next === 'qcAssign') {
+        setPrefilters(QC_PREFILTER_DEFAULT);
+        setPrefilterExpanded(true);
+      } else if (next === 'qcView') {
+        setPrefilters(qcViewPrefilterDefaults);
+        setPrefilterExpanded(true);
+      }
+    }
+
+    lastScreenKindRef.current = next;
+  }, [caseworkerPrefilterDefaults, derivedScreenKind, markPrefilterHydrating, prefilterStorageKey, qcViewPrefilterDefaults]);
 
   const onPrefilterSearchByChange = React.useCallback(
     (_: React.FormEvent<IComboBox>, option?: IComboBoxOption, _index?: number, value?: string) => {
@@ -1332,10 +1451,9 @@ export const Grid = React.memo((props: GridProps) => {
       }
       setComboEditingFor('prefilterWorkThat', false);
       setPrefilterWorkThatSearch('');
-      prefilterDirtyRef.current = true;
-      onPrefilterDirty?.();
+      markPrefilterDirty();
     },
-    [isQcAssign, onPrefilterDirty, setComboEditingFor],
+    [isQcAssign, markPrefilterDirty, setComboEditingFor],
   );
 
   const normalizedCaseworkerOptions = React.useMemo<IDropdownOption[]>(() => {
@@ -1430,8 +1548,7 @@ export const Grid = React.memo((props: GridProps) => {
           ...prev,
           caseworkers: option.selected ? [CASEWORKER_ALL_KEY] : [],
         }));
-        prefilterDirtyRef.current = true;
-        onPrefilterDirty?.();
+        markPrefilterDirty();
         return;
       }
       if (key.startsWith('__')) return;
@@ -1440,10 +1557,9 @@ export const Grid = React.memo((props: GridProps) => {
         const next = option.selected ? [...current, key] : current.filter((v) => v !== key);
         return { ...prev, caseworkers: next };
       });
-      prefilterDirtyRef.current = true;
-      onPrefilterDirty?.();
+      markPrefilterDirty();
     },
-    [onPrefilterDirty],
+    [markPrefilterDirty],
   );
 
   const onPrefilterWorkThatChange = React.useCallback(
@@ -1466,25 +1582,23 @@ export const Grid = React.memo((props: GridProps) => {
         completedFrom: needsCompleted ? prev.completedFrom : undefined,
         completedTo: needsCompleted ? prev.completedTo : undefined,
       }));
-      prefilterDirtyRef.current = true;
-      onPrefilterDirty?.();
+      markPrefilterDirty();
     },
-    [isCaseworkerView, isQcAssign, isQcView, onPrefilterDirty, prefilters.searchBy],
+    [isCaseworkerView, isQcAssign, isQcView, markPrefilterDirty, prefilters.searchBy],
   );
 
   const onPrefilterFromDateChange = React.useCallback(
     (date?: Date | null) => {
       const fromIso = date ? toISODateString(date) : undefined;
-      const toIso = computeCompletedToDate(date);
+      const toIso = computeCompletedToDateIso(date, today);
       setPrefilters((prev) => ({
         ...prev,
         completedFrom: fromIso,
         completedTo: toIso,
       }));
-      prefilterDirtyRef.current = true;
-      onPrefilterDirty?.();
+      markPrefilterDirty();
     },
-    [computeCompletedToDate, onPrefilterDirty, toISODateString],
+    [markPrefilterDirty, toISODateString, today],
   );
 
   const handlePrefilterSearch = React.useCallback(() => {
@@ -1498,19 +1612,30 @@ export const Grid = React.memo((props: GridProps) => {
       completedTo: needsCompleted ? prefilters.completedTo : undefined,
     };
     dismissResultMessages();
+    prefilterManualApplyRef.current = true;
+    try {
+      const storedPrefilters = getPrefiltersForStorage(normalized);
+      const payload: StoredPrefilterState = { ...storedPrefilters, applied: true };
+      localStorage.setItem(prefilterStorageKey, JSON.stringify(payload));
+    } catch {
+      // ignore storage failures
+    }
     onPrefilterApply(normalized, { source: 'user' });
     prefilterDirtyRef.current = false;
+    clearAutoApplyInFlight();
     comboIgnoreNextInputRef.current = {};
     comboIgnoreNextChangeRef.current = {};
     comboExpectedSelectionRef.current = {};
     if (isPrefilterNarrow) {
       setPrefilterExpanded(false);
     }
-  }, [dismissResultMessages, isPrefilterNarrow, onPrefilterApply, prefilters]);
+  }, [clearAutoApplyInFlight, dismissResultMessages, isPrefilterNarrow, onPrefilterApply, prefilters]);
 
   const handlePrefilterClear = React.useCallback(() => {
     dismissResultMessages();
     prefilterDirtyRef.current = true;
+    prefilterClearedRef.current = true;
+    clearAutoApplyInFlight();
     comboIgnoreNextInputRef.current = {};
     comboIgnoreNextChangeRef.current = {};
     comboExpectedSelectionRef.current = {};
@@ -1532,6 +1657,7 @@ export const Grid = React.memo((props: GridProps) => {
     onPrefilterClear?.();
   }, [
     caseworkerPrefilterDefaults,
+    clearAutoApplyInFlight,
     dismissResultMessages,
     isCaseworkerView,
     isQcAssign,
@@ -1544,80 +1670,7 @@ export const Grid = React.memo((props: GridProps) => {
   const getLengthErrors = React.useCallback(
     (fs: GridFilterState) => {
       if (isSalesSearch) {
-        const saleId = sanitizeAlphaNumHyphen(fs.saleId, ID_FIELD_MAX_LENGTH).trim();
-        const taskId = sanitizeTaskIdInput(fs.taskId, ID_FIELD_MAX_LENGTH).trim();
-        const uprn = sanitizeDigits(fs.uprn, UPRN_MAX_LENGTH).trim();
-        const building = (fs.buildingNameNumber ?? '').trim();
-        const street = (fs.street ?? '').trim();
-        const town = (fs.townCity ?? '').trim();
-        const postcode = normalizeUkPostcode(fs.postcode ?? '').trim();
-        const billingAuthority = (fs.billingAuthority?.[0] ?? '').trim();
-        const billingAuthorityReference = (fs.bacode ?? '').trim();
-
-        const saleIdError =
-          fs.searchBy === 'saleId' && saleId.length > 0 && (!SALE_ID_REGEX.test(saleId) || saleId.length < 3)
-            ? 'Please enter a valid Sale ID'
-            : undefined;
-        const taskIdError =
-          fs.searchBy === 'taskId' && taskId.length > 0
-            ? taskId.length < TASK_ID_MIN_LENGTH
-              ? `Enter at least ${TASK_ID_MIN_LENGTH} characters`
-              : !TASK_ID_REGEX.test(taskId)
-                ? 'Use A- or M- prefix (e.g. A-1000001) or numbers only.'
-                : undefined
-            : undefined;
-        const uprnError =
-          fs.searchBy === 'uprn' && (fs.uprn ?? '').trim().length > 0 && uprn.length === 0
-            ? 'Please enter a valid UPRN'
-            : undefined;
-
-        let billingAuthorityError: string | undefined;
-        const billingAuthorityRefError: string | undefined = undefined;
-        if (fs.searchBy === 'billingAuthority' && billingAuthority.length === 0) {
-          billingAuthorityError = 'Billing Authority is required';
-        }
-
-        let postcodeError: string | undefined;
-        let streetError: string | undefined;
-        let townError: string | undefined;
-        let addressCriteriaError: string | undefined;
-        if (fs.searchBy === 'address') {
-          const hasPostcode = postcode.length > 0;
-          const postcodeValid = hasPostcode ? isValidUkPostcode(postcode, false) : false;
-          if (hasPostcode && !postcodeValid) {
-            postcodeError = 'Please enter a valid postcode';
-          }
-          const requiresOtherCriteria = !postcodeValid;
-          if (requiresOtherCriteria) {
-            if (street.length > 0 && street.length < MIN_ADDRESS_TEXT_LENGTH) {
-              streetError = `Enter at least ${MIN_ADDRESS_TEXT_LENGTH} characters`;
-            }
-            if (town.length > 0 && town.length < MIN_ADDRESS_TEXT_LENGTH) {
-              townError = `Enter at least ${MIN_ADDRESS_TEXT_LENGTH} characters`;
-            }
-            const buildingValid = building.length > 0;
-            const streetValid = street.length >= MIN_ADDRESS_TEXT_LENGTH;
-            const townValid = town.length >= MIN_ADDRESS_TEXT_LENGTH;
-            const criteriaCount = (buildingValid ? 1 : 0) + (streetValid ? 1 : 0) + (townValid ? 1 : 0);
-            if (!hasPostcode && criteriaCount === 1) {
-              addressCriteriaError = 'Please provide at least two search criteria.';
-            }
-          }
-        }
-
-        return {
-          address: addressCriteriaError,
-          postcode: postcodeError,
-          street: streetError,
-          townCity: townError,
-          saleId: saleIdError,
-          taskId: taskIdError,
-          uprn: uprnError,
-          billingAuthority: billingAuthorityError,
-          bacode: billingAuthorityRefError,
-          summaryFlag: undefined,
-          searchField: undefined,
-        };
+        return getSalesSearchErrors(fs);
       }
 
       const cfg = SEARCH_FIELD_CONFIGS[fs.searchBy];
@@ -1644,7 +1697,7 @@ export const Grid = React.memo((props: GridProps) => {
           ? taskId.length < TASK_ID_MIN_LENGTH
             ? `Enter at least ${TASK_ID_MIN_LENGTH} characters`
             : !TASK_ID_REGEX.test(taskId)
-              ? 'Use A- or M- prefix (e.g. A-1000001) or numbers only.'
+              ? 'Please enter a valid Task ID Use A- or M- prefix (e.g. A-1000001) or numbers only.'
               : undefined
           : undefined;
       const address = (fs.address ?? '').trim();
@@ -1847,8 +1900,7 @@ export const Grid = React.memo((props: GridProps) => {
           ...prev,
           billingAuthorities: option.selected ? [BILLING_AUTHORITY_ALL_KEY] : [],
         }));
-        prefilterDirtyRef.current = true;
-        onPrefilterDirty?.();
+        markPrefilterDirty();
         return;
       }
       setPrefilters((prev) => {
@@ -1856,10 +1908,9 @@ export const Grid = React.memo((props: GridProps) => {
         const next = option.selected ? [...current, key] : current.filter((v) => v !== key);
         return { ...prev, billingAuthorities: next };
       });
-      prefilterDirtyRef.current = true;
-      onPrefilterDirty?.();
+      markPrefilterDirty();
     },
-    [onPrefilterDirty],
+    [markPrefilterDirty],
   );
   const summaryFlagError = lengthErrors.summaryFlag;
   const searchFieldError = lengthErrors.searchField;
@@ -1971,7 +2022,7 @@ export const Grid = React.memo((props: GridProps) => {
     if (!isSalesSearch) return true;
     const saleId = sanitizeAlphaNumHyphen(filters.saleId, ID_FIELD_MAX_LENGTH).trim();
     const taskId = sanitizeTaskIdInput(filters.taskId, ID_FIELD_MAX_LENGTH).trim();
-    const uprn = sanitizeDigits(filters.uprn, UPRN_MAX_LENGTH).trim();
+    const uprnRaw = (filters.uprn ?? '').trim();
     const billingAuthority = (filters.billingAuthority?.[0] ?? '').trim();
     const billingAuthorityReference = (filters.bacode ?? '').trim();
     const building = (filters.buildingNameNumber ?? '').trim();
@@ -1985,9 +2036,9 @@ export const Grid = React.memo((props: GridProps) => {
       case 'taskId':
         return taskId.length >= TASK_ID_MIN_LENGTH && TASK_ID_REGEX.test(taskId);
       case 'uprn':
-        return uprn.length > 0 && uprn.length <= UPRN_MAX_LENGTH;
+        return uprnRaw.length > 0 && uprnRaw.length <= UPRN_MAX_LENGTH && /^[0-9]+$/.test(uprnRaw);
       case 'billingAuthority':
-        return billingAuthority.length > 0;
+        return billingAuthority.length > 0 && billingAuthorityReference.length > 0;
       case 'address': {
         const hasPostcode = postcode.length > 0;
         const postcodeValid = hasPostcode ? isValidUkPostcode(postcode, false) : false;
@@ -2374,116 +2425,13 @@ export const Grid = React.memo((props: GridProps) => {
     if (disableClientFiltering) {
       return items;
     }
-    const t0 = performance.now();
-    const filterEntries = Object.entries(columnFiltersState).filter(([, value]) => {
-      if (value === undefined) return false;
-      if (Array.isArray(value)) return value.length > 0;
-      if (typeof value === 'string') return value.trim() !== '';
-      if ((value as NumericFilter).mode !== undefined) {
-        const num = value as NumericFilter;
-        if (num.mode === 'between') return num.min !== undefined || num.max !== undefined;
-        if (num.mode === '>=') return num.min !== undefined;
-        if (num.mode === '<=') return num.max !== undefined;
-        return false;
-      }
-      if ((value as DateRangeFilter).from !== undefined || (value as DateRangeFilter).to !== undefined) {
-        return true;
-      }
-      return false;
-    });
-    if (filterEntries.length === 0) {
-      const t1 = performance.now();
-      console.log('[Grid Perf] Client filteredItems (no filters) (ms):', Math.round(t1 - t0), 'items:', items.length);
-      return items;
-    }
-    const out = items.filter((item) => {
-      const record = item as unknown as Record<string, unknown>;
-      return filterEntries.every(([fieldName, filterValue]) => {
-        const cfg = getColumnFilterConfigFor(tableKey, fieldName);
-        const raw = record[fieldName];
-        const textVal = getFilterableText(raw).trim();
-        if (cfg) {
-          switch (cfg.control) {
-            case 'textEq':
-              return typeof filterValue === 'string'
-                ? textVal.toLowerCase() === filterValue.trim().toLowerCase()
-                : true;
-            case 'textPrefix':
-              return typeof filterValue === 'string'
-                ? textVal.toLowerCase().startsWith(filterValue.trim().toLowerCase())
-                : true;
-            case 'textContains':
-              return typeof filterValue === 'string'
-                ? textVal.toLowerCase().includes(filterValue.trim().toLowerCase())
-                : true;
-            case 'singleSelect':
-              return typeof filterValue === 'string'
-                ? textVal.toLowerCase() === filterValue.trim().toLowerCase()
-                : true;
-            case 'multiSelect': {
-              const needles = Array.isArray(filterValue)
-                ? filterValue.map((v) => String(v).trim().toLowerCase())
-                : [];
-              if (needles.length === 0) return true;
-              if (Array.isArray(raw)) {
-                const hay = raw
-                  .map((v) => (typeof v === 'string' || typeof v === 'number' || typeof v === 'boolean' ? String(v).trim().toLowerCase() : ''))
-                  .filter((s) => s !== '');
-                return needles.some((n) => hay.includes(n));
-              }
-              return needles.some((n) => textVal.toLowerCase() === n);
-            }
-            case 'numeric': {
-              const numFilter = filterValue as NumericFilter;
-              const numericRaw = typeof raw === 'number' ? raw : Number(textVal);
-              if (Number.isNaN(numericRaw)) return false;
-              if (numFilter.mode === 'between') {
-                const minOk = numFilter.min !== undefined ? numericRaw >= numFilter.min : true;
-                const maxOk = numFilter.max !== undefined ? numericRaw <= numFilter.max : true;
-                return minOk && maxOk;
-              }
-              if (numFilter.mode === '>=') return numFilter.min !== undefined ? numericRaw >= numFilter.min : true;
-              if (numFilter.mode === '<=') return numFilter.max !== undefined ? numericRaw <= numFilter.max : true;
-              return true;
-            }
-            case 'dateRange': {
-              const dr = filterValue as DateRangeFilter;
-              const rawDate = textVal;
-              const rawTime = Date.parse(rawDate);
-              if (Number.isNaN(rawTime)) return false;
-              const fromTime = dr.from ? Date.parse(dr.from) : undefined;
-              const toTime = dr.to ? Date.parse(dr.to) : undefined;
-              if (fromTime !== undefined && rawTime < fromTime) return false;
-              if (toTime !== undefined && rawTime > toTime) return false;
-              return true;
-            }
-            default:
-              return true;
-          }
-        }
-        if (Array.isArray(filterValue)) {
-          const needles = filterValue.map((v) => String(v).trim().toLowerCase()).filter((v) => v !== '');
-          if (needles.length === 0) return true;
-          if (Array.isArray(raw)) {
-            const hay = raw
-              .map((v) => (typeof v === 'string' || typeof v === 'number' || typeof v === 'boolean' ? String(v).trim().toLowerCase() : ''))
-              .filter((s) => s !== '');
-            return needles.some((n) => hay.includes(n));
-          }
-          const text = textVal.toLowerCase();
-          return needles.some((n) => text === n);
-        }
-        const needle = typeof filterValue === 'string' ? filterValue.trim().toLowerCase() : '';
-        if (Array.isArray(raw)) {
-          return raw.some((v) => (typeof v === 'string' || typeof v === 'number' || typeof v === 'boolean') && String(v).toLowerCase().includes(needle));
-        }
-        const text = textVal.toLowerCase();
-        return text.includes(needle);
-      });
-    });
-    const t1 = performance.now();
-    console.log('[Grid Perf] Client filteredItems (ms):', Math.round(t1 - t0), 'items:', items.length, 'filters:', filterEntries.length, 'result:', out.length);
-    return out;
+    return filterItemsByColumnFilters(
+      items,
+      columnFiltersState,
+      tableKey,
+      getFilterableText,
+      (item, field) => (item as unknown as Record<string, unknown>)[field],
+    );
   }, [columnFiltersState, disableClientFiltering, getFilterableText, items, tableKey]);
 
   const selectionSummaryText = React.useMemo(() => {
@@ -2791,7 +2739,7 @@ export const Grid = React.memo((props: GridProps) => {
               placeholder={salesSearchText.placeholders.uprn}
               title={uprnTitle}
               value={filters.uprn ?? ''}
-              onChange={(_, v) => updateFilters('uprn', sanitizeDigits(v, UPRN_MAX_LENGTH))}
+              onChange={(_, v) => updateFilters('uprn', (v ?? '').slice(0, UPRN_MAX_LENGTH))}
               errorMessage={uprnError}
               inputMode="numeric"
               maxLength={UPRN_MAX_LENGTH}
@@ -3238,7 +3186,14 @@ export const Grid = React.memo((props: GridProps) => {
       };
       (cfg?.options ?? []).forEach((o) => push(o, o));
       if (cfg?.optionFields) {
-        getDistinctOptions(cfg.optionFields).forEach((o) => push(String(o.key), o.text));
+        if (menuExtraOptions.length > 0) {
+          menuExtraOptions
+            .map((o) => String(o).trim())
+            .filter((o) => o !== '')
+            .forEach((o) => push(o, o));
+        } else {
+          getDistinctOptions(cfg.optionFields).forEach((o) => push(String(o.key), o.text));
+        }
       }
       if (cfg?.selectAllValues) {
         const isSingleAll = cfg.selectAllValues.length === 1
@@ -3256,7 +3211,7 @@ export const Grid = React.memo((props: GridProps) => {
       }
       return opts;
     },
-    [getDistinctOptions],
+    [getDistinctOptions, menuExtraOptions],
   );
 
   const openMenuForColumn = React.useCallback(
@@ -3267,6 +3222,8 @@ export const Grid = React.memo((props: GridProps) => {
       const fieldName = (gridCol.fieldName ?? gridCol.key) ?? '';
       const menuFilterKey = `menuFilter-${gridCol.key ?? gridCol.fieldName ?? 'column'}`;
       const cfg = getColumnFilterConfigFor(tableKey, fieldName);
+      const normalizedField = String(fieldName ?? '').toLowerCase();
+      menuOptionsFieldRef.current = normalizedField;
       const existing = columnFiltersState[fieldName];
       let initialValue: ColumnFilterValue = '';
       if (cfg) {
@@ -3302,9 +3259,23 @@ export const Grid = React.memo((props: GridProps) => {
       comboIgnoreNextChangeRef.current[menuFilterKey] = false;
       delete comboExpectedSelectionRef.current[menuFilterKey];
       setMenuFilterError(undefined);
+      setMenuExtraOptions([]);
       setMenuState({ target, column: gridCol });
+      if (onLoadFilterOptions && (cfg?.control === 'singleSelect' || cfg?.control === 'multiSelect')) {
+        void onLoadFilterOptions(fieldName ?? '', '')
+          .then((vals) => {
+            if (menuOptionsFieldRef.current !== normalizedField) return;
+            setMenuExtraOptions(vals ?? []);
+            return undefined;
+          })
+          .catch(() => {
+            if (menuOptionsFieldRef.current !== normalizedField) return;
+            setMenuExtraOptions([]);
+            return undefined;
+          });
+      }
     },
-    [columnFiltersState, tableKey],
+    [columnFiltersState, onLoadFilterOptions, tableKey],
   );
 
   const onColumnHeaderClick = React.useCallback(
@@ -3455,6 +3426,15 @@ export const Grid = React.memo((props: GridProps) => {
       return;
     }
     const fieldName = (menuState.column.fieldName ?? menuState.column.key) ?? '';
+    setColumnFilters((prev) => {
+      if (!Object.prototype.hasOwnProperty.call(prev, fieldName)) {
+        return prev;
+      }
+      const updated: Record<string, ColumnFilterValue> = { ...prev };
+      delete updated[fieldName];
+      onColumnFiltersChange?.(updated);
+      return updated;
+    });
     const cfg: ColumnFilterConfig | undefined = getColumnFilterConfigFor(tableKey, fieldName);
     if (!cfg) {
       setMenuFilterValue('');
@@ -3615,6 +3595,7 @@ export const Grid = React.memo((props: GridProps) => {
     const firstOption = prefilterWorkThatOptions.find((opt) => opt?.key !== undefined);
     if (!firstOption) return;
     const nextWork = String(firstOption.key) as ManagerWorkThat;
+    markPrefilterHydrating();
     setPrefilters((prev) => {
       if (prev.workThat) return prev;
       const needsCompleted = (isQcAssign || isQcView) ? isQcCompletedWorkThat(nextWork) : isManagerCompletedWorkThat(nextWork);
@@ -3625,7 +3606,7 @@ export const Grid = React.memo((props: GridProps) => {
         completedTo: needsCompleted ? prev.completedTo : undefined,
       };
     });
-  }, [isCaseworkerView, isManagerAssign, isQcAssign, isQcView, prefilterWorkThatOptions, prefilters.workThat]);
+  }, [isCaseworkerView, isManagerAssign, isQcAssign, isQcView, markPrefilterHydrating, prefilterWorkThatOptions, prefilters.workThat]);
   const caseworkerOptionsDisabled = caseworkerOptionsLoading
     || !!caseworkerOptionsError
     || normalizedCaseworkerOptions.length === 0;
@@ -3680,9 +3661,6 @@ export const Grid = React.memo((props: GridProps) => {
   const prefilterNeedsCompletedDates = (isQcAssign || isQcView)
     ? isQcCompletedWorkThat(prefilters.workThat)
     : isManagerCompletedWorkThat(prefilters.workThat);
-  const taskCaseworkersReady = !caseworkerOptionsLoading
-    && !caseworkerOptionsError
-    && caseworkerOptions.length > 0;
   const hasImplicitOwner = !!currentUserId?.trim();
   const prefilterHasOwner = (isCaseworkerView || isQcView)
     ? prefilters.caseworkers.length > 0 || hasImplicitOwner
@@ -3697,8 +3675,7 @@ export const Grid = React.memo((props: GridProps) => {
     || !prefilterHasOwner
     || !prefilterHasWorkThat
     || !prefilterHasFromDate
-    || !!prefilterFromDateError
-    || (isQcAssign && prefilters.searchBy === 'task' && !taskCaseworkersReady);
+    || !!prefilterFromDateError;
   const prefilterIsDefault = isPrefilterDefault(prefilters);
   const hasColumnFilters = Object.keys(columnFiltersState).length > 0;
   const showViewSalesRecord = isViewSalesRecordEnabledFor(tableKey);
@@ -4817,8 +4794,10 @@ export const Grid = React.memo((props: GridProps) => {
           styles={{ root: { marginBottom: 16 } }}
         >
           <Stack.Item styles={{ root: { minWidth: 200 } }}>
+            <Label htmlFor="searchby-input">{salesSearchText.searchPanel.searchByLabel}</Label>
             <ComboBox
-              label={salesSearchText.searchPanel.searchByLabel}
+              id="searchby"
+              ariaLabel={salesSearchText.searchPanel.searchByLabel}
               aria-describedby={buildAriaDescribedBy(searchByHint ? 'voa-searchby-hint' : undefined)}
               title={searchByTitle}
               options={filteredSearchByOptions}
