@@ -1,126 +1,140 @@
-import { buildApiParamsFor } from '../TableConfigs';
-import { TaskSearchItem, TaskSearchResponse } from '../TaskSearchSample';
-import { SAMPLE_RECORDS } from '../SampleData';
+import { CONTROL_CONFIG } from '../config/ControlConfig';
+import { TaskSearchItem, TaskSearchResponse } from '../data/TaskSearchSample';
+import { SAMPLE_TASK_RESULTS } from '../data/TaskSearchSample';
+import { SAMPLE_RECORDS } from '../data/SampleData';
 import { IInputs } from '../generated/ManifestTypes';
-
-export interface ClientSortState {
-  name: string;
-  sortDirection: number; // 0 asc, 1 desc
-}
+import { executeUnboundCustomApi, normalizeCustomApiName, resolveCustomApiOperationType } from './CustomApi';
+import { normalizeSearchResponse, SalesApiResponse, unwrapCustomApiPayload } from './DataService';
+import { buildGridApiParams, type ClientSortState } from '../utils/GridDataParams';
 
 export interface LoadResult {
   items: TaskSearchItem[];
   totalCount: number;
   serverDriven: boolean;
+  filters?: Record<string, string | string[]>;
+  errorMessage?: string;
 }
+
+const TECHNICAL_ERROR_MESSAGE = 'Technical error. Please try again in some time.';
+
+const isServerErrorMessage = (message: string): boolean => {
+  const normalized = message.toLowerCase();
+  return normalized.includes('500')
+    || normalized.includes('internal server error')
+    || normalized.includes('status: 500')
+    || normalized.includes('status code 500');
+};
+
+const normalizeErrorMessage = (message?: string): string | undefined => {
+  if (!message) return undefined;
+  return isServerErrorMessage(message) ? TECHNICAL_ERROR_MESSAGE : message;
+};
+
+const resolveCustomApiName = (context: ComponentFramework.Context<IInputs>): string => {
+  const raw = (context.parameters as unknown as Record<string, { raw?: string }>).customApiName?.raw;
+  const fromContext = normalizeCustomApiName(typeof raw === 'string' ? raw : undefined);
+  const fallback = normalizeCustomApiName(CONTROL_CONFIG.customApiName);
+  return fromContext || fallback || '';
+};
+
+const resolveCustomApiType = (context: ComponentFramework.Context<IInputs>): number => {
+  const raw = (context.parameters as unknown as Record<string, { raw?: string }>).customApiType?.raw;
+  const fromContext = typeof raw === 'string' ? raw : undefined;
+  return resolveCustomApiOperationType(fromContext ?? CONTROL_CONFIG.customApiType);
+};
+
+const resolveServerDrivenThreshold = (context: ComponentFramework.Context<IInputs>): number => {
+  const raw = (context.parameters as unknown as Record<string, { raw?: number | string }>).serverDrivenThreshold?.raw;
+  if (typeof raw === 'number' && !Number.isNaN(raw)) return raw;
+  if (typeof raw === 'string') {
+    const parsed = Number(raw);
+    if (!Number.isNaN(parsed)) return parsed;
+  }
+  return CONTROL_CONFIG.serverDrivenThreshold;
+};
+
+const isLocalHost = (): boolean => {
+  if (typeof window === 'undefined') return false;
+  const host = window.location?.hostname ?? '';
+  return host === 'localhost' || host === '127.0.0.1' || host === '::1';
+};
 
 export async function loadGridData(
   context: ComponentFramework.Context<IInputs>,
   args: {
     tableKey: string;
     filters: unknown; // GridFilterState but keep loose to avoid circular deps
+    source?: string;
+    requestedBy?: string;
     currentPage: number;
     pageSize: number;
-    headerFilters: Record<string, string | string[]>;
     clientSort?: ClientSortState;
+    prefilters?: unknown;
+    searchQuery?: string;
   },
 ): Promise<LoadResult> {
-  const configuredEndpoint = (context.parameters as unknown as Record<string, { raw?: string }>).apimEndpoint?.raw?.trim();
-  const baseUrl = configuredEndpoint && configuredEndpoint.length > 0
-    ? configuredEndpoint
-    : 'https://api.contoso.gov.uk/revaluation/tasks';
-
-  let requestUrl: URL;
-  try {
-    requestUrl = new URL(baseUrl);
-  } catch {
-    // Fall back to showing local SAMPLE_RECORDS via host's sample path
-    return { items: [], totalCount: SAMPLE_RECORDS.length, serverDriven: false };
-  }
-
-  const pageSize = (context.parameters as unknown as Record<string, { raw?: number }>).pageSize?.raw ?? 10;
-  const apiParamsBase = buildApiParamsFor(args.tableKey, args.filters as never, args.currentPage, pageSize);
-  const headerFilterEntries = Object.entries(args.headerFilters).filter(([_, v]) =>
-    Array.isArray(v) ? v.length > 0 : (v ?? '').toString().trim() !== '',
-  );
-
-  const customApiName = (context.parameters as unknown as Record<string, { raw?: string }>).customApiName?.raw?.trim();
-
-  const sortBy = args.clientSort?.name;
-  const sortDirection = args.clientSort?.sortDirection;
-  const buildParams = (page: number) => {
-    const p: Record<string, string> = { ...apiParamsBase, page: String(page), pageSize: String(pageSize) };
-    if (sortBy) p.sortBy = sortBy;
-    if (typeof sortDirection === 'number') p.sortDirection = String(sortDirection);
-    return p;
-  };
+  const pageSize = args.pageSize ?? (context.parameters as unknown as Record<string, { raw?: number }>).pageSize?.raw ?? 500;
+  const customApiName = resolveCustomApiName(context);
+  const customApiType = resolveCustomApiType(context);
+  const buildParams = (page: number) =>
+    buildGridApiParams({
+      ...args,
+      currentPage: page,
+      pageSize,
+    });
 
   const execCustomApi = async (params: Record<string, string>): Promise<TaskSearchResponse> => {
-    const request: Record<string, unknown> & {
-      getMetadata: () => {
-        boundParameter: null;
-        parameterTypes: Record<string, { typeName: string; structuralProperty: number }>;
-        operationType: number;
-        operationName: string;
-      };
-    } = {
-      getMetadata: () => ({
-        boundParameter: null,
-        parameterTypes: Object.keys(params).reduce((acc, key) => {
-          acc[key] = { typeName: 'Edm.String', structuralProperty: 1 };
-          return acc;
-        }, {} as Record<string, { typeName: string; structuralProperty: number }>),
-        operationType: 0,
-        operationName: customApiName!,
-      }),
-    };
-    Object.entries(params).forEach(([k, v]) => ((request as Record<string, unknown>)[k] = v));
-    if (headerFilterEntries.length > 0) {
-      (request as Record<string, unknown>).columnFilters = JSON.stringify(args.headerFilters);
-    }
-    interface WebApiWithExecute { execute: (request: unknown) => Promise<Response>; }
-    const result = await (context.webAPI as unknown as WebApiWithExecute).execute(request);
-    return (await result.json()) as TaskSearchResponse;
-  };
-
-  const execHttp = async (params: Record<string, string>): Promise<TaskSearchResponse> => {
-    const url = new URL(baseUrl);
-    Object.entries(params).forEach(([k, v]) => url.searchParams.set(k, v));
-    if (headerFilterEntries.length > 0) {
-      headerFilterEntries.forEach(([field, val]) => {
-        if (Array.isArray(val)) {
-          val.forEach((v) => {
-            if ((v ?? '').toString().trim() !== '') url.searchParams.append(`filter[${field}][]`, String(v));
-          });
-        } else {
-          const trimmed = (val ?? '').toString().trim();
-          if (trimmed !== '') url.searchParams.append(`filter[${field}]`, trimmed);
-        }
-      });
-    }
-    const response = await fetch(url.toString(), { method: 'GET' });
-    if (!response.ok) throw new Error(`APIM request failed with status ${response.status}`);
-    return (await response.json()) as TaskSearchResponse;
+    const rawPayload = await executeUnboundCustomApi<TaskSearchResponse | SalesApiResponse>(context, customApiName, params, {
+      operationType: customApiType,
+    });
+    const payload = unwrapCustomApiPayload(rawPayload);
+    return normalizeSearchResponse(payload);
   };
 
   try {
     const firstParams = buildParams(args.currentPage);
-    const firstPayload = customApiName ? await execCustomApi(firstParams) : await execHttp(firstParams);
-    const total = Number(firstPayload.totalCount ?? firstPayload.items?.length ?? 0);
-    const serverDriven = total > 2000;
-    if (!serverDriven && total > 0 && (firstPayload.items?.length ?? 0) < total) {
-      const pages = Math.ceil(total / pageSize);
-      const all: TaskSearchItem[] = [...(firstPayload.items ?? [])];
-      for (let p = 0; p < pages; p++) {
-        if (p === args.currentPage) continue;
-        const payload = customApiName ? await execCustomApi(buildParams(p)) : await execHttp(buildParams(p));
-        all.push(...(payload.items ?? []));
+    if (!customApiName) {
+      // When no custom API is configured, show local sample data (from SampleData)
+      if (isLocalHost()) {
+        return { items: SAMPLE_RECORDS as unknown as TaskSearchItem[], totalCount: SAMPLE_RECORDS.length, serverDriven: false };
       }
-      return { items: all, totalCount: total, serverDriven: false };
+      return { items: [], totalCount: 0, serverDriven: false };
     }
-    return { items: firstPayload.items ?? [], totalCount: total, serverDriven };
-  } catch {
-    // Fall back to showing local SAMPLE_RECORDS via host's sample path
-    return { items: [], totalCount: SAMPLE_RECORDS.length, serverDriven: false };
+    const firstPayload = await execCustomApi(firstParams);
+    const total = Number(firstPayload.totalCount ?? firstPayload.items?.length ?? 0);
+    const threshold = resolveServerDrivenThreshold(context);
+    const firstPageCount = firstPayload.items?.length ?? 0;
+    const serverDriven = total > threshold || total > firstPageCount;
+    const responseFilters = firstPayload.filters;
+    return {
+      items: firstPayload.items ?? [],
+      totalCount: total,
+      serverDriven,
+      filters: responseFilters,
+      errorMessage: normalizeErrorMessage(firstPayload.errorMessage),
+    };
+  } catch (err) {
+    // On error, log and fall back to showing local sample data (from SampleData)
+    const errText = (() => {
+      if (err instanceof Error) return `${err.name}: ${err.message}`;
+      if (typeof err === 'string') return err;
+      try {
+        return JSON.stringify(err);
+      } catch {
+        return 'Unknown error';
+      }
+    })();
+    try {
+      console.error('[GridDataController] loadGridData failed; showing sample data', errText);
+    } catch {
+      /* ignore logging failures */
+    }
+    // Sample fallback disabled for now; return empty set on error.
+    return {
+      items: [],
+      totalCount: 0,
+      serverDriven: false,
+      errorMessage: normalizeErrorMessage(errText) ?? 'Unable to load results. Please try again.',
+    };
   }
 }

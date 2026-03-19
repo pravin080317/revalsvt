@@ -1,63 +1,338 @@
 import * as React from 'react';
-import { Selection, SelectionMode, IDetailsList, IObjectWithKey } from '@fluentui/react';
-import { Grid, GridProps } from '../../Grid';
+import { Selection, SelectionMode, IDetailsList, IObjectWithKey, MessageBarType } from '@fluentui/react';
+import { DetailsList as Grid, GridProps } from '../DetailsList';
 import { PCFContext } from '../context/PCFContext';
-import { ColumnConfig } from '../../Component.types';
-import { GridFilterState, createDefaultGridFilters, sanitizeFilters } from '../../Filters';
-import { getProfileConfigs } from '../../ColumnProfiles';
-import { fetchFilterOptions } from '../../services/DataService';
+import { ColumnConfig, AssignUser } from '../../Component.types';
+import { GridFilterState, createDefaultGridFilters, sanitizeFilters, NumericFilter, DateRangeFilter } from '../../Filters';
+import { getProfileConfigs } from '../../config/ColumnProfiles';
+import { CONTROL_CONFIG } from '../../config/ControlConfig';
+import { getColumnFilterConfigFor, type TableKey } from '../../config/TableConfigs';
+import { COLUMN_FILTER_VALUE_SEPARATOR, type ManagerPrefilterState } from '../../config/PrefilterConfigs';
+import { SCREEN_TEXT, MANAGER_BILLING_AUTHORITY_OPTIONS, MANAGER_CASEWORKER_OPTIONS } from '../../constants/ScreenText';
 import { buildColumns } from '../../utils/ColumnsBuilder';
 import { ensureSampleColumns, buildSampleEntityRecords } from '../../utils/SampleHelpers';
+import { parseAssignableUsersResponse as parseAssignableUsersResponseBase, resolveAssignmentStatusValidation } from '../../utils/AssignmentHelpers';
+import { buildColumnFilterQuery } from '../../utils/ColumnFilterQuery';
+import { filterItemsByColumnFilters } from '../../utils/GridColumnFilters';
+import { toSortableDateKey } from '../../utils/DateSortUtils';
+import { deserializeColumnFiltersFromStorage, parseStoredSortState, serializeColumnFiltersForStorage, shouldPersistSortState } from '../../utils/GridStatePersistence';
+import { isGuidValue, normalizeSuid, normalizeUserId } from '../../utils/IdentifierUtils';
+import { buildGridSessionKey, buildPrefilterStorageKey, isSalesSearchDefaultFilters, resolveAssignmentScreenName, shouldShowResults } from '../../utils/ScreenBehavior';
+import { resolveScreenConfig, toKnownTableKey, normalizeTableKey, type ScreenKind } from '../../utils/ScreenResolution';
 import { loadGridData } from '../../services/GridDataController';
+import { executeUnboundCustomApi, normalizeCustomApiName, resolveCustomApiOperationType } from '../../services/CustomApi';
 import { IInputs } from '../../generated/ManifestTypes';
+import { logPerf } from '../../utils/Perf';
+import { abbreviateSummaryFlagLabel } from '../../utils/TagSemanticUtils';
+
+export type { ScreenKind } from '../../utils/ScreenResolution';
 
 export interface DetailsListHostProps {
   context: ComponentFramework.Context<IInputs>;
-  onRowInvoke?: (args: { taskId?: string; saleId?: string }) => void;
+  onRowInvoke?: (args: { taskId?: string; saleId?: string }) => void | Promise<void>;
   // Emit IDs on selection (single or multi); arrays support multi-select
   onSelectionChange?: (args: { taskId?: string; saleId?: string; selectedTaskIds?: string[]; selectedSaleIds?: string[] }) => void;
+  // Emit count of selected rows (even if IDs are missing)
+  onSelectionCountChange?: (count: number) => void;
+  // Triggered when the back button is pressed
+  onBackRequested?: () => void;
+  // When provided, the host renders these items instead of loading via APIM.
+  externalItems?: unknown[];
+  // Bubble header filter Apply back to parent (used by external item scenarios to call API with extra params)
+  onColumnFiltersApply?: (filters: Record<string, string | string[]>) => void;
 }
 
-export const DetailsListHost: React.FC<DetailsListHostProps> = ({ context, onRowInvoke, onSelectionChange }) => {
-  // Parse basic params
-  const pageSize = (context.parameters as unknown as Record<string, { raw?: number }>).pageSize?.raw ?? 10;
-  // Navigation is Canvas-owned (Option 1). Keep params for future use but do not navigate here.
-  const navigationTarget = (context.parameters as unknown as Record<string, { raw?: string }>).navigationTarget?.raw ?? '';
-  const canvasScreenName = (context.parameters as unknown as Record<string, { raw?: string }>).canvasScreenName?.raw?.trim() ?? '';
-  let tableKey = 'sales';
-  try {
-    const raw = (context.parameters as unknown as Record<string, { raw?: string }>).tableKey?.raw;
-    tableKey = raw?.trim()?.toLowerCase() ?? 'sales';
-  } catch {
-    tableKey = 'sales';
+type ColumnFilterValue = string | string[] | NumericFilter | DateRangeFilter;
+type FilterOptionsMap = Record<string, string[]>;
+const SSU_APP_ID = 'cdb5343c-51c1-ec11-983e-002248438fff';
+
+const QC_TEAM_NAMES = new Set(['svt qa team']);
+const QC_ROLE_NAMES = new Set(['voa - svt qa']);
+const CASEWORKER_TEAM_NAMES = new Set(['svt user team']);
+const CASEWORKER_ROLE_NAMES = new Set(['voa - svt user']);
+const MANAGER_ASSIGNMENT_SCREEN_NAME = 'manager assignment';
+const QC_ASSIGNMENT_SCREEN_NAME = 'quality control assignment';
+
+const normalizeGroupName = (value?: string): string => (value ?? '').trim().toLowerCase();
+const normalizeGroupList = (values?: string[]): string[] =>
+  (Array.isArray(values) ? values.map((value) => normalizeGroupName(value)).filter((value) => value !== '') : []);
+const isAssignableUserInGroup = (user: AssignUser, teamNames: Set<string>, roleNames: Set<string>): boolean => {
+  if (!user) return false;
+  const team = normalizeGroupName(user.team);
+  const role = normalizeGroupName(user.role);
+  const teams = normalizeGroupList(user.teams);
+  const roles = normalizeGroupList(user.roles);
+  const hasTeam = ([team, ...teams]).some((value) => value !== '' && teamNames.has(value));
+  const hasRole = ([role, ...roles]).some((value) => value !== '' && roleNames.has(value));
+  return hasTeam || hasRole;
+};
+
+const buildAssignableUsersCacheKey = (apiName: string, customApiType: number, screenName: string): string =>
+  `${apiName}|${customApiType}|${screenName.trim().toLowerCase()}`;
+
+const normalizeAssignableUserId = (value: unknown): string => {
+  if (value === null || value === undefined) return '';
+  if (typeof value !== 'string' && typeof value !== 'number' && typeof value !== 'boolean') {
+    return '';
   }
+  return normalizeUserId(String(value)).toLowerCase();
+};
+
+const resolveAssignedByUserId = (context: ComponentFramework.Context<IInputs>): string => {
+  const fromContext = (context.userSettings as { userId?: string } | undefined)?.userId;
+  if (fromContext) return normalizeUserId(fromContext);
+  const xrm = (globalThis as {
+    Xrm?: { Utility?: { getGlobalContext?: () => { userSettings?: { userId?: string } } } };
+  }).Xrm;
+  const fromXrm = xrm?.Utility?.getGlobalContext?.()?.userSettings?.userId;
+  return normalizeUserId(fromXrm);
+};
+
+const SALES_SEARCH_DEFAULT_FILTERS: GridFilterState = {
+  ...createDefaultGridFilters(),
+  searchBy: 'address',
+};
+
+const buildSsuUrl = (clientUrl: string, suid: string): string => {
+  const baseUrl = clientUrl.replace(/\/$/, '');
+  return `${baseUrl}/main.aspx?appid=${SSU_APP_ID}&newwindow=true&pagetype=entityrecord&etn=voa_ssu&id=${encodeURIComponent(suid)}`;
+};
+
+const resolveClientUrl = (ctx: ComponentFramework.Context<IInputs>): string => {
+  const contextWithPage = ctx as unknown as { page?: { getClientUrl?: () => string } };
+  const page = contextWithPage.page;
+  if (typeof page?.getClientUrl === 'function') {
+    try {
+      return page.getClientUrl();
+    } catch {
+      // Fall back for test harness where getClientUrl may not be available.
+    }
+  }
+  if (typeof window !== 'undefined' && window.location?.origin) {
+    return window.location.origin;
+  }
+  return '';
+};
+
+const toFilterValueString = (val: ColumnFilterValue | undefined): string => {
+  if (val === undefined || val === null) return '';
+  if (typeof val === 'string') return val;
+  if (Array.isArray(val)) return val.map((v) => toFilterValueString(v as ColumnFilterValue)).filter((s) => s !== '').join('|');
+  if (typeof val === 'object') return JSON.stringify(val);
+  return '';
+};
+
+const normalizeFilterArray = (val: unknown): string[] =>
+  Array.isArray(val)
+    ? val.map((v) => toFilterValueString(v as ColumnFilterValue)).filter((s) => s.trim() !== '')
+    : [];
+
+const isPlainObject = (val: unknown): val is Record<string, unknown> =>
+  !!val && typeof val === 'object' && !Array.isArray(val);
+
+const parseFilterValue = (raw: string): ColumnFilterValue => {
+  const trimmed = raw.trim();
+  if (!trimmed) return '';
+  if ((trimmed.startsWith('{') && trimmed.endsWith('}')) || (trimmed.startsWith('[') && trimmed.endsWith(']'))) {
+    try {
+      const parsed = JSON.parse(trimmed) as unknown;
+      if (Array.isArray(parsed)) return parsed.map((v) => String(v));
+      if (isPlainObject(parsed)) return parsed as ColumnFilterValue;
+    } catch {
+      // ignore JSON parse issues
+    }
+  }
+  return trimmed;
+};
+
+const normalizeApiFilters = (filters?: Record<string, unknown>): Record<string, ColumnFilterValue> | undefined => {
+  if (!filters) return undefined;
+  const normalized: Record<string, ColumnFilterValue> = {};
+  Object.entries(filters).forEach(([key, value]) => {
+    const lowerKey = key.toLowerCase();
+    if (value === undefined || value === null) return;
+    if (Array.isArray(value)) {
+      const arr = value.map((v) => String(v ?? '')).filter((v) => v.trim() !== '');
+      if (arr.length > 0) normalized[lowerKey] = arr;
+      return;
+    }
+    if (typeof value === 'string') {
+      const parsed = parseFilterValue(value);
+      if (parsed !== '') normalized[lowerKey] = parsed;
+      return;
+    }
+    if (isPlainObject(value)) {
+      normalized[lowerKey] = value as ColumnFilterValue;
+    }
+  });
+  return normalized;
+};
+
+const normalizeFilterKey = (value: string): string =>
+  value.replace(/[^a-z0-9]/gi, '').toLowerCase();
+
+const splitDelimitedFilterValue = (value: string): string[] =>
+  value
+    .split(COLUMN_FILTER_VALUE_SEPARATOR)
+    .map((part) => part.trim())
+    .filter((part) => part !== '');
+
+const normalizeFilterOptions = (table: string, filters?: Record<string, string | string[]>): FilterOptionsMap => {
+  if (!filters) return {};
+  const normalized: FilterOptionsMap = {};
+  Object.entries(filters).forEach(([key, value]) => {
+    const lowerKey = normalizeFilterKey(key);
+    if (value === undefined || value === null) return;
+    if (Array.isArray(value)) {
+      const arr = value.map((v) => String(v ?? '')).filter((v) => v.trim() !== '');
+      if (arr.length > 0) normalized[lowerKey] = Array.from(new Set(arr));
+      return;
+    }
+    if (typeof value === 'string') {
+      const trimmed = value.trim();
+      if (!trimmed) return;
+      if ((trimmed.startsWith('[') && trimmed.endsWith(']')) || (trimmed.startsWith('{') && trimmed.endsWith('}'))) {
+        try {
+          const parsed = JSON.parse(trimmed) as unknown;
+          if (Array.isArray(parsed)) {
+            const arr = parsed.map((v) => String(v ?? '')).filter((v) => v.trim() !== '');
+            if (arr.length > 0) normalized[lowerKey] = Array.from(new Set(arr));
+            return;
+          }
+        } catch {
+          // fall back to plain string
+        }
+      }
+      const cfg = getColumnFilterConfigFor(table, lowerKey);
+      if ((cfg?.control === 'multiSelect' || cfg?.control === 'singleSelect') && trimmed.includes(COLUMN_FILTER_VALUE_SEPARATOR)) {
+        const arr = splitDelimitedFilterValue(trimmed);
+        if (arr.length > 0) {
+          normalized[lowerKey] = Array.from(new Set(arr));
+          return;
+        }
+      }
+      normalized[lowerKey] = [trimmed];
+    }
+  });
+  return normalized;
+};
+
+const areFiltersEqual = (a: Record<string, ColumnFilterValue>, b: Record<string, ColumnFilterValue>): boolean => {
+  const aKeys = Object.keys(a).sort();
+  const bKeys = Object.keys(b).sort();
+  if (aKeys.length !== bKeys.length) return false;
+  for (let i = 0; i < aKeys.length; i++) {
+    if (aKeys[i] !== bKeys[i]) return false;
+    const av = a[aKeys[i]];
+    const bv = b[bKeys[i]];
+    if (Array.isArray(av) || Array.isArray(bv)) {
+      const aa = normalizeFilterArray(av);
+      const bb = normalizeFilterArray(bv);
+      if (aa.length !== bb.length) return false;
+      for (let j = 0; j < aa.length; j++) if (aa[j] !== bb[j]) return false;
+      continue;
+    }
+    if (isPlainObject(av) || isPlainObject(bv)) {
+      if (JSON.stringify(av ?? {}) !== JSON.stringify(bv ?? {})) return false;
+      continue;
+    }
+    const avText = toFilterValueString(av as ColumnFilterValue).trim();
+    const bvText = toFilterValueString(bv as ColumnFilterValue).trim();
+    if (avText !== bvText) return false;
+  }
+  return true;
+};
+
+export const DetailsListHost: React.FC<DetailsListHostProps> = ({
+  context,
+  onRowInvoke,
+  onSelectionChange,
+  onSelectionCountChange,
+  onBackRequested,
+  externalItems,
+  onColumnFiltersApply,
+}) => {
+  // Parse basic params
+  const pageSize = (context.parameters as unknown as Record<string, { raw?: number }>).pageSize?.raw ?? 500;
+  const allocatedHeight = typeof context.mode?.allocatedHeight === 'number' && context.mode.allocatedHeight > 0
+    ? context.mode.allocatedHeight
+    : undefined;
+  const canvasScreenName = (context.parameters as unknown as Record<string, { raw?: string }>).canvasScreenName?.raw ?? '';
+  const tableKeyRaw = (context.parameters as unknown as Record<string, { raw?: string }>).tableKey?.raw ?? '';
+  const columnDisplayNamesRaw = (context.parameters as unknown as Record<string, { raw?: string }>).columnDisplayNames?.raw?.trim() ?? '{}';
+  const columnConfigRaw = (context.parameters as unknown as Record<string, { raw?: string }>).columnConfig?.raw?.trim() ?? '[]';
+  const screenName = canvasScreenName.toLowerCase();
+  const fallbackTableKey = React.useMemo(
+    () => normalizeTableKey((CONTROL_CONFIG.tableKey || 'sales').trim().toLowerCase()),
+    [],
+  );
+  const explicitTableKey = React.useMemo(() => toKnownTableKey(tableKeyRaw), [tableKeyRaw]);
+  const resolvedScreenConfig = React.useMemo(
+    () => resolveScreenConfig(canvasScreenName, explicitTableKey, fallbackTableKey),
+    [canvasScreenName, explicitTableKey, fallbackTableKey],
+  );
+  const { tableKey, profileKey, sourceCode, kind: screenKind } = resolvedScreenConfig;
+  const assignmentScreenName = React.useMemo(
+    () => resolveAssignmentScreenName(canvasScreenName, screenKind),
+    [canvasScreenName, screenKind],
+  );
+  const commonText = SCREEN_TEXT.common;
+  const managerText = SCREEN_TEXT.managerAssignment;
+  const qcText = SCREEN_TEXT.qcAssignment;
+  const assignTasksText = SCREEN_TEXT.assignTasks;
+  const assignmentConfig = CONTROL_CONFIG.taskAssignment ?? {
+    maxBatchSize: 500,
+    allowedStatusesManager: [] as string[],
+    allowedStatusesQc: [] as string[],
+    allowedStatuses: [] as string[],
+  };
+  const isLocalHost = React.useMemo(() => {
+    if (typeof window === 'undefined') return false;
+    const host = window.location?.hostname ?? '';
+    return host === 'localhost' || host === '127.0.0.1' || host === '::1';
+  }, []);
+  const fallbackBillingAuthorityOptions = React.useMemo(
+    () => (isLocalHost
+      ? MANAGER_BILLING_AUTHORITY_OPTIONS
+        .map((opt) => String(opt.text ?? opt.key ?? '').trim())
+        .filter((value) => value.length > 0)
+      : []),
+    [isLocalHost],
+  );
+  const fallbackCaseworkerOptions = React.useMemo(
+    () => (isLocalHost
+      ? MANAGER_CASEWORKER_OPTIONS
+        .map((opt) => String(opt.text ?? opt.key ?? '').trim())
+        .filter((value) => value.length > 0)
+      : []),
+    [isLocalHost],
+  );
+  const fallbackQcUserOptions = React.useMemo(() => fallbackCaseworkerOptions, [fallbackCaseworkerOptions]);
 
   // Column display names and configs
   const [columnDisplayNames, setColumnDisplayNames] = React.useState<Record<string, string>>({});
   const [columnConfigs, setColumnConfigs] = React.useState<Record<string, ColumnConfig>>({});
 
   React.useEffect(() => {
-    const raw = (context.parameters as unknown as Record<string, { raw?: string }>).columnDisplayNames?.raw?.trim() ?? '{}';
     try {
-      const parsed = JSON.parse(raw) as Record<string, string>;
+      const parsed = JSON.parse(columnDisplayNamesRaw) as Record<string, string>;
       const map: Record<string, string> = {};
       Object.keys(parsed).forEach((k) => (map[k.toLowerCase()] = parsed[k]));
       setColumnDisplayNames(map);
     } catch {
       setColumnDisplayNames({});
     }
-  }, [context]);
+  }, [columnDisplayNamesRaw]);
 
   React.useEffect(() => {
-    const raw = (context.parameters as unknown as Record<string, { raw?: string }>).columnConfig?.raw?.trim() ?? '[]';
     try {
-      const fromProfile = getProfileConfigs((context.parameters as unknown as Record<string, { raw?: string }>).columnConfigProfile?.raw?.trim()?.toLowerCase());
-      const fromJson = JSON.parse(raw) as ColumnConfig[];
+      const fromProfile = getProfileConfigs(profileKey);
+      const fromJson = JSON.parse(columnConfigRaw) as ColumnConfig[];
       const merged = [...fromProfile, ...fromJson];
       const map: Record<string, ColumnConfig> = {};
       merged.forEach((c) => {
         const n = c.ColName?.trim().toLowerCase();
-        if (n) map[n] = c;
+        if (n && n !== 'completeddate') map[n] = c;
       });
       // Ensure multi-value flags render as tags by default
       if (!map.summaryflags) {
@@ -66,96 +341,711 @@ export const DetailsListHost: React.FC<DetailsListHostProps> = ({ context, onRow
       if (!map.reviewflags) {
         map.reviewflags = { ColName: 'reviewflags', ColCellType: 'tag' } as ColumnConfig;
       }
-      if (map.taskid) {
-        if (!map.taskid.ColCellType) {
-          map.taskid = { ...map.taskid, ColCellType: 'link' } as ColumnConfig;
+      if (map.saleid) {
+        if (!map.saleid.ColCellType) {
+          map.saleid = { ...map.saleid, ColCellType: 'link' } as ColumnConfig;
         }
       } else {
-        map.taskid = { ColName: 'taskid', ColCellType: 'link' } as ColumnConfig;
+        map.saleid = { ColName: 'saleid', ColCellType: 'link' } as ColumnConfig;
       }
       setColumnConfigs(map);
     } catch {
       setColumnConfigs({});
     }
-  }, [context]);
+  }, [columnConfigRaw, profileKey]);
 
   // State
   const [currentPage, setCurrentPage] = React.useState(0);
-  const [headerFilters, setHeaderFilters] = React.useState<Record<string, string | string[]>>({});
-  const [clientSort, setClientSort] = React.useState<{ name: string; sortDirection: number } | undefined>({ name: 'saleid', sortDirection: 0 });
-  const [searchFilters, setSearchFilters] = React.useState<GridFilterState>({ ...createDefaultGridFilters(), searchBy: 'taskStatus', taskStatus: 'New' });
+  const [headerFilters, setHeaderFilters] = React.useState<Record<string, ColumnFilterValue>>({});
+
+  const toApiHeaderFilters = React.useCallback(
+    (filters: Record<string, ColumnFilterValue>): Record<string, string | string[]> => {
+      const out: Record<string, string | string[]> = {};
+      Object.entries(filters).forEach(([k, v]) => {
+        if (Array.isArray(v)) {
+          out[k] = v.map((x) => String(x ?? ''));
+        } else if (typeof v === 'string') {
+          out[k] = v;
+        } else if (v && typeof v === 'object') {
+          out[k] = [JSON.stringify(v)];
+        }
+      });
+      return out;
+    },
+    [],
+  );
+  const lastAppliedFiltersRef = React.useRef<Record<string, ColumnFilterValue>>({});
+  const [clientSort, setClientSort] = React.useState<{ name: string; sortDirection: number } | undefined>({
+    name: 'taskid',
+    sortDirection: 0,
+  });
+  const [userSortActive, setUserSortActive] = React.useState(false);
+  const [searchFilters, setSearchFilters] = React.useState<GridFilterState>(SALES_SEARCH_DEFAULT_FILTERS);
+  const [prefilters, setPrefilters] = React.useState<ManagerPrefilterState | undefined>(undefined);
+  const [prefilterApplied, setPrefilterApplied] = React.useState(false);
+  const [searchNonce, setSearchNonce] = React.useState(0);
+  const [apiFilterOptions, setApiFilterOptions] = React.useState<FilterOptionsMap>({});
+  const [billingAuthorityOptions, setBillingAuthorityOptions] = React.useState<string[]>([]);
+  const [billingAuthorityOptionsLoading, setBillingAuthorityOptionsLoading] = React.useState(false);
+  const [billingAuthorityOptionsError, setBillingAuthorityOptionsError] = React.useState<string | undefined>(undefined);
+  const [caseworkerOptions, setCaseworkerOptions] = React.useState<string[]>([]);
+  const [caseworkerOptionsLoading, setCaseworkerOptionsLoading] = React.useState(false);
+  const [caseworkerOptionsError, setCaseworkerOptionsError] = React.useState<string | undefined>(undefined);
+  const [qcUserOptions, setQcUserOptions] = React.useState<string[]>([]);
+  const [qcUserOptionsLoading, setQcUserOptionsLoading] = React.useState(false);
+  const [qcUserOptionsError, setQcUserOptionsError] = React.useState<string | undefined>(undefined);
   const [apimItems, setApimItems] = React.useState<unknown[]>([]);
   const [totalCount, setTotalCount] = React.useState(0);
   const [serverDriven, setServerDriven] = React.useState(false);
   const [apimLoading, setApimLoading] = React.useState(false);
   const [hasLoadedApim, setHasLoadedApim] = React.useState(false);
+  const [loadErrorMessage, setLoadErrorMessage] = React.useState<string | undefined>(undefined);
+  const [assignMessage, setAssignMessage] = React.useState<{ text: string; type: MessageBarType } | undefined>(undefined);
+  const [assignUsers, setAssignUsers] = React.useState<AssignUser[]>([]);
+  const [assignUsersLoading, setAssignUsersLoading] = React.useState(false);
+  const [assignUsersError, setAssignUsersError] = React.useState<string | undefined>(undefined);
+  const [assignUsersInfo, setAssignUsersInfo] = React.useState<string | undefined>(undefined);
+  const [assignableUsersCache, setAssignableUsersCache] = React.useState<AssignUser[]>([]);
+  const [assignPanelOpen, setAssignPanelOpen] = React.useState(false);
+  const [assignPendingRefresh, setAssignPendingRefresh] = React.useState(false);
+  const assignRefreshResolve = React.useRef<null | ((ok: boolean) => void)>(null);
+  const assignUsersLoadKeyRef = React.useRef<string>('');
+  const caseworkerOptionsLoadKeyRef = React.useRef<string>('');
+  const assignableUsersCacheLoadKeyRef = React.useRef<string>('');
+  const assignableUsersCacheContextsRef = React.useRef<Set<string>>(new Set());
+  const metadataLoadKeyRef = React.useRef<string>('');
+  const prefilterSkipLogKeyRef = React.useRef<string>('');
+  const handleAssignPanelToggle = React.useCallback((isOpen: boolean): boolean => {
+    if (!isOpen) {
+      setAssignPanelOpen(false);
+      return true;
+    }
+
+    const selected = selection.getSelection() as Record<string, unknown>[];
+    const isAssignmentScreen = screenKind === 'managerAssign' || screenKind === 'qcAssign';
+    if (isAssignmentScreen && selected.length > 0) {
+      const statusCheck = resolveAssignmentStatusValidation(
+        selected,
+        screenKind,
+        assignmentConfig,
+        assignTasksText.messages.invalidStatus,
+      );
+      if (statusCheck.error) {
+        setAssignMessage({ text: statusCheck.error, type: MessageBarType.error });
+        return false;
+      }
+    }
+
+    setAssignPanelOpen(true);
+    setAssignUsers([]);
+    setAssignUsersError(undefined);
+    setAssignUsersInfo(undefined);
+    setAssignUsersLoading(true);
+    return true;
+  }, [assignmentConfig, assignTasksText.messages.invalidStatus, screenKind]);
+  // Defer persistence until after initial hydration to avoid add/remove flicker in localStorage
+  const [hydrated, setHydrated] = React.useState(false);
+  const resetHostResultsState = React.useCallback(() => {
+    setApimLoading((prev) => (prev ? false : prev));
+    setHasLoadedApim((prev) => (prev ? false : prev));
+    setApimItems((prev) => (prev.length > 0 ? [] : prev));
+    setTotalCount((prev) => (prev !== 0 ? 0 : prev));
+    setServerDriven((prev) => (prev ? false : prev));
+    setApiFilterOptions((prev) => (Object.keys(prev).length > 0 ? {} : prev));
+    setLoadErrorMessage((prev) => (prev !== undefined ? undefined : prev));
+  }, []);
   const allowColumnReorder = (context.parameters as unknown as Record<string, { raw?: string | boolean }>).allowColumnReorder?.raw === true ||
     String((context.parameters as unknown as Record<string, { raw?: string | boolean }>).allowColumnReorder?.raw ?? '').toLowerCase() === 'true';
+  const isManagerAssign = screenKind === 'managerAssign';
+  const isQcAssign = screenKind === 'qcAssign';
+  const isCaseworkerView = screenKind === 'caseworkerView';
+  const isQcView = screenKind === 'qcView';
+  const isSalesSearch = screenKind === 'salesSearch';
+  const isAssignment = isManagerAssign || isQcAssign;
+  const isPrefilterScreen = isManagerAssign || isCaseworkerView || isQcAssign || isQcView;
+  const assignmentContextKey = isManagerAssign ? 'manager' : isQcAssign ? 'qa' : '';
+  const assignmentContextScreenName = React.useMemo(() => {
+    if (screenKind === 'managerAssign') return MANAGER_ASSIGNMENT_SCREEN_NAME;
+    if (screenKind === 'qcAssign') return QC_ASSIGNMENT_SCREEN_NAME;
+    return canvasScreenName ?? '';
+  }, [canvasScreenName, screenKind]);
+  const userMappingScreenName = QC_ASSIGNMENT_SCREEN_NAME;
+  const currentUserId = React.useMemo(() => resolveAssignedByUserId(context), [context]);
+  const [salesSearchApplied, setSalesSearchApplied] = React.useState(!isSalesSearch);
+  const handlePrefilterDirty = React.useCallback(() => {
+    if (!isPrefilterScreen) return;
+    console.debug('[Prefilter] host dirty', {
+      screen: screenKind,
+      prefilterApplied,
+    });
+    setPrefilterApplied(false);
+  }, [isPrefilterScreen, prefilterApplied, screenKind]);
+  const handleSalesSearchDirty = React.useCallback(() => {
+    if (!isSalesSearch) return;
+    setSalesSearchApplied(false);
+  }, [isSalesSearch]);
+  const lastSalesModeRef = React.useRef<boolean | undefined>(undefined);
+  const lastScreenKindRef = React.useRef<ScreenKind | undefined>(undefined);
 
-  // Build columns (includes auto-add from API item)
+  React.useEffect(() => {
+    if (lastSalesModeRef.current === isSalesSearch) return;
+    lastSalesModeRef.current = isSalesSearch;
+    if (isSalesSearch) {
+      setSalesSearchApplied(false);
+      setSearchFilters(SALES_SEARCH_DEFAULT_FILTERS);
+      setCurrentPage(0);
+      setHeaderFilters({});
+      lastAppliedFiltersRef.current = {};
+      setHasLoadedApim(false);
+      setApimItems([]);
+      setTotalCount(0);
+      setServerDriven(false);
+      setApiFilterOptions({});
+      setLoadErrorMessage(undefined);
+      return;
+    }
+    // Non-sales screens keep their existing defaults.
+    setSalesSearchApplied(true);
+    setSearchFilters({
+      ...createDefaultGridFilters(),
+      searchBy: 'taskStatus',
+      taskStatus: ['New'],
+    });
+  }, [isSalesSearch]);
+
+  const parseAssignableUsersResponse = React.useCallback(
+    (response?: { Result?: string; result?: string }) => parseAssignableUsersResponseBase(response, assignTasksText.messages),
+    [assignTasksText.messages],
+  );
+
+  const getUserDisplayName = React.useCallback((user: AssignUser): string => {
+    const first = String(user?.firstName ?? '').trim();
+    const last = String(user?.lastName ?? '').trim();
+    const full = `${first} ${last}`.trim();
+    if (full) return full;
+    const email = String(user?.email ?? '').trim();
+    if (email) return email;
+    return String(user?.id ?? '').trim();
+  }, []);
+
+  const isQcAssignableUser = React.useCallback(
+    (user: AssignUser) => isAssignableUserInGroup(user, QC_TEAM_NAMES, QC_ROLE_NAMES),
+    [],
+  );
+  const isCaseworkerAssignableUser = React.useCallback(
+    (user: AssignUser) => isAssignableUserInGroup(user, CASEWORKER_TEAM_NAMES, CASEWORKER_ROLE_NAMES),
+    [],
+  );
+
+  const caseworkerNameToIdMap = React.useMemo(() => {
+    const map: Record<string, string> = {};
+    assignableUsersCache.forEach((user) => {
+      const id = normalizeUserId(String(user?.id ?? ''));
+      if (!id) return;
+      const name = getUserDisplayName(user).trim();
+      if (!name) return;
+      const key = name.toLowerCase();
+      if (!map[key]) {
+        map[key] = id;
+      }
+    });
+    return map;
+  }, [assignableUsersCache, getUserDisplayName]);
+
+  const mapCaseworkerNamesToIds = React.useCallback(
+    (values: string[]): string[] =>
+      values.map((v) => {
+        const raw = String(v ?? '').trim();
+        if (!raw) return raw;
+        if (raw === '__all__') return raw;
+        const id = caseworkerNameToIdMap[raw.toLowerCase()];
+        return id ?? raw;
+      }),
+    [caseworkerNameToIdMap],
+  );
+
+  const mapUserValueToId = React.useCallback((value: string): string => {
+    const raw = String(value ?? '').trim();
+    if (!raw) return raw;
+    const normalized = normalizeUserId(raw);
+    if (isGuidValue(normalized)) return normalized;
+    const mapped = caseworkerNameToIdMap[raw.toLowerCase()];
+    return mapped ?? '';
+  }, [caseworkerNameToIdMap]);
+  const summaryFlagOptions = React.useMemo(() => {
+    const values = apiFilterOptions.summaryflags ?? apiFilterOptions.summaryflag ?? [];
+    if (values.length === 0) return [];
+    return Array.from(new Set(
+      values
+        .map((value) => String(value ?? '').trim())
+        .filter((value) => value !== ''),
+    ));
+  }, [apiFilterOptions]);
+  const resolveSummaryFlagFilterValue = React.useCallback((rawValue: string): string => {
+    const trimmed = String(rawValue ?? '').trim();
+    if (!trimmed) return '';
+    if (summaryFlagOptions.length === 0) return trimmed;
+    const lower = trimmed.toLowerCase();
+    const exactLabel = summaryFlagOptions.find((option) => option.toLowerCase() === lower);
+    if (exactLabel) return exactLabel;
+    const exactAbbreviationMatches = summaryFlagOptions.filter(
+      (option) => abbreviateSummaryFlagLabel(option).toLowerCase() === lower,
+    );
+    if (exactAbbreviationMatches.length === 1) return exactAbbreviationMatches[0];
+    if (lower.length >= 2) {
+      const abbreviationPrefixMatches = summaryFlagOptions.filter(
+        (option) => abbreviateSummaryFlagLabel(option).toLowerCase().startsWith(lower),
+      );
+      if (abbreviationPrefixMatches.length === 1) return abbreviationPrefixMatches[0];
+    }
+    return trimmed;
+  }, [summaryFlagOptions]);
+  const normalizeSummaryFlagColumnFilters = React.useCallback(
+    (filters: Record<string, ColumnFilterValue>): Record<string, ColumnFilterValue> => {
+      const normalized: Record<string, ColumnFilterValue> = { ...filters };
+      Object.keys(normalized).forEach((field) => {
+        const key = normalizeFilterKey(field);
+        if (key !== 'summaryflags' && key !== 'summaryflag') return;
+        const current = normalized[field];
+        if (typeof current !== 'string') return;
+        const resolved = resolveSummaryFlagFilterValue(current);
+        if (!resolved) {
+          delete normalized[field];
+          return;
+        }
+        normalized[field] = resolved;
+      });
+      return normalized;
+    },
+    [resolveSummaryFlagFilterValue],
+  );
+
+  const mapColumnFiltersForApi = React.useCallback(
+    (
+      filters: Record<string, ColumnFilterValue>,
+      options?: { normalizeSummaryFlags?: boolean },
+    ): Record<string, ColumnFilterValue> => {
+      const mapped: Record<string, ColumnFilterValue> = options?.normalizeSummaryFlags === false
+        ? { ...filters }
+        : normalizeSummaryFlagColumnFilters(filters);
+      (['assignedto', 'qcassignedto'] as const).forEach((field) => {
+        const current = mapped[field];
+        if (!current) return;
+        if (typeof current === 'string') {
+          const value = mapUserValueToId(current);
+          if (!value) {
+            delete mapped[field];
+            return;
+          }
+          mapped[field] = value;
+          return;
+        }
+        if (Array.isArray(current)) {
+          const values = current
+            .map((value) => mapUserValueToId(String(value)))
+            .filter((value) => value && isGuidValue(value));
+          if (values.length === 0) {
+            delete mapped[field];
+            return;
+          }
+          mapped[field] = values;
+        }
+      });
+      return mapped;
+    },
+    [mapUserValueToId, normalizeSummaryFlagColumnFilters],
+  );
+
+  const mapSearchFiltersForApi = React.useCallback(
+    (filters: GridFilterState): GridFilterState => {
+      const assignedTo = filters.assignedTo ? mapUserValueToId(filters.assignedTo) : '';
+      const qcAssignedTo = filters.qcAssignedTo ? mapUserValueToId(filters.qcAssignedTo) : '';
+      const nextAssignedTo = assignedTo || undefined;
+      const nextQcAssignedTo = qcAssignedTo || undefined;
+      const nextTaskId = filters.taskId;
+      if (nextAssignedTo === filters.assignedTo && nextQcAssignedTo === filters.qcAssignedTo && nextTaskId === filters.taskId) {
+        return filters;
+      }
+      return { ...filters, assignedTo: nextAssignedTo, qcAssignedTo: nextQcAssignedTo, taskId: nextTaskId };
+    },
+    [mapUserValueToId],
+  );
+
+  const hasFullResultSet = totalCount > 0 && apimItems.length >= totalCount;
+  const clientSideThreshold = Math.max(1, pageSize);
+  const clientSideEligible = hasLoadedApim
+    && !serverDriven
+    && hasFullResultSet
+    && totalCount <= clientSideThreshold;
+  const shouldNormalizeSummaryFlagFilters = clientSideEligible;
+  const apiHeaderFilters = React.useMemo(
+    () => mapColumnFiltersForApi(headerFilters, { normalizeSummaryFlags: shouldNormalizeSummaryFlagFilters }),
+    [headerFilters, mapColumnFiltersForApi, shouldNormalizeSummaryFlagFilters],
+  );
+  const activeClientSort = userSortActive ? clientSort : undefined;
+  const serverClientSort = clientSideEligible ? undefined : activeClientSort;
+  const columnFilterQuery = React.useMemo(
+    () => buildColumnFilterQuery(tableKey, apiHeaderFilters, serverClientSort),
+    [apiHeaderFilters, serverClientSort, tableKey],
+  );
+
+  const buildCaseworkerNames = React.useCallback((users: AssignUser[]): string[] => {
+    const names = (users ?? [])
+      .map((user) => getUserDisplayName(user))
+      .filter((name) => !!name);
+
+    const unique = Array.from(new Set(names));
+    unique.sort((a, b) => a.localeCompare(b));
+    return unique;
+  }, [getUserDisplayName]);
+
+  const mergeAssignableUsers = React.useCallback((prev: AssignUser[], next: AssignUser[]): AssignUser[] => {
+    const map = new Map<string, AssignUser>();
+    prev.forEach((u) => {
+      const id = normalizeAssignableUserId(u.id);
+      if (id) map.set(id, { ...u, id });
+    });
+    next.forEach((u) => {
+      const id = normalizeAssignableUserId(u.id);
+      if (id) map.set(id, { ...u, id });
+    });
+    return Array.from(map.values());
+  }, []);
+
+  const userDisplayNameMap = React.useMemo(() => {
+    const map: Record<string, string> = {};
+    assignableUsersCache.forEach((user) => {
+      const id = normalizeAssignableUserId(user.id);
+      if (!id) return;
+      const name = getUserDisplayName(user);
+      if (name) map[id] = name;
+    });
+    return map;
+  }, [assignableUsersCache, getUserDisplayName]);
+  const hasUserDisplayNameMap = React.useMemo(() => Object.keys(userDisplayNameMap).length > 0, [userDisplayNameMap]);
+  const mapUserIdToDisplay = React.useCallback((value: string): string => {
+    const raw = String(value ?? '').trim();
+    if (!raw) return raw;
+    const normalized = normalizeUserId(raw).toLowerCase();
+    if (!isGuidValue(normalized)) return raw;
+    return userDisplayNameMap[normalized] ?? raw;
+  }, [userDisplayNameMap]);
+  const displayFilterOptions = React.useMemo(() => {
+    if (!hasUserDisplayNameMap) return apiFilterOptions;
+    const mapped: FilterOptionsMap = { ...apiFilterOptions };
+    (['assignedto', 'qcassignedto'] as const).forEach((field) => {
+      const values = mapped[field];
+      if (!values || values.length === 0) return;
+      const next = values
+        .map(mapUserIdToDisplay)
+        .map((v) => String(v ?? '').trim())
+        .filter((v) => v !== '');
+      if (next.length > 0) {
+        mapped[field] = Array.from(new Set(next));
+      }
+    });
+    return mapped;
+  }, [apiFilterOptions, hasUserDisplayNameMap, mapUserIdToDisplay]);
+
+  // Persist header filters per table for consistent UX across reloads
+  const storageKey = React.useMemo(() => `voa-grid-filters:${tableKey}`, [tableKey]);
+  const storageKeySort = React.useMemo(() => `voa-grid-sort:${tableKey}`, [tableKey]);
+  const storageKeyPage = React.useMemo(() => `voa-grid-page:${tableKey}`, [tableKey]);
+  const prefilterStorageKey = React.useMemo(() => buildPrefilterStorageKey(tableKey, screenKind), [screenKind, tableKey]);
+  const legacyPrefilterStorageKey = React.useMemo(
+    () => `voa-prefilters:${tableKey}:${screenName || 'default'}`,
+    [screenName, tableKey],
+  );
+  const screenInstanceKey = React.useMemo(() => buildGridSessionKey(tableKey, screenKind), [screenKind, tableKey]);
+  const salesSearchStorageKey = React.useMemo(
+    () => `voa-sales-search:${tableKey}:${screenName || 'default'}`,
+    [screenName, tableKey],
+  );
+  const salesSearchHydratedRef = React.useRef<string>('');
+  // Some environments show keys without ':' in DevTools; support both forms for compatibility
+  const storageKeyNC = React.useMemo(() => storageKey.replace(':', ''), [storageKey]);
+  const storageKeySortNC = React.useMemo(() => storageKeySort.replace(':', ''), [storageKeySort]);
+  const storageKeyPageNC = React.useMemo(() => storageKeyPage.replace(':', ''), [storageKeyPage]);
+
+  React.useEffect(() => {
+    if (isManagerAssign || isQcAssign) {
+      setSearchFilters(createDefaultGridFilters());
+    }
+  }, [isManagerAssign, isQcAssign]);
+
+  React.useEffect(() => {
+    if (!isSalesSearch) return;
+    if (salesSearchHydratedRef.current === salesSearchStorageKey) return;
+    salesSearchHydratedRef.current = salesSearchStorageKey;
+    try {
+      const raw = localStorage.getItem(salesSearchStorageKey);
+      if (!raw) return;
+      const parsed = JSON.parse(raw) as { filters?: GridFilterState; applied?: boolean } | undefined;
+      const merged = {
+        ...SALES_SEARCH_DEFAULT_FILTERS,
+        ...(parsed?.filters ?? {}),
+      } as GridFilterState;
+      const normalized = sanitizeFilters(merged);
+      const isDefault = isSalesSearchDefaultFilters(normalized);
+      const shouldApply = parsed?.applied === false ? false : !isDefault;
+      setSearchFilters(normalized);
+      setSalesSearchApplied(shouldApply);
+      if (shouldApply) {
+        setSearchNonce((n) => n + 1);
+      }
+    } catch {
+      // ignore restore failures
+    }
+  }, [isSalesSearch, salesSearchStorageKey]);
+  // Hydrate from localStorage on table change (URL persistence disabled by policy)
+  React.useEffect(() => {
+    try {
+      let sessionScreens: Record<string, boolean> = {};
+      try {
+        const rawScreens = sessionStorage.getItem('voa-session-screens');
+        if (rawScreens) {
+          sessionScreens = JSON.parse(rawScreens) as Record<string, boolean>;
+        }
+      } catch {
+        // ignore session storage failures
+      }
+      // Restore directly from localStorage. In Power Apps hosted navigation, sessionStorage is not
+      // always stable across screen transitions even when the user returns to the same logical screen.
+      const rawLocalFilters = localStorage.getItem(storageKey) ?? localStorage.getItem(storageKeyNC);
+      if (rawLocalFilters) {
+        const normalized = deserializeColumnFiltersFromStorage(String(tableKey), rawLocalFilters) as Record<string, ColumnFilterValue>;
+        lastAppliedFiltersRef.current = normalized;
+        setHeaderFilters(normalized);
+        try {
+          onColumnFiltersApply?.(
+            toApiHeaderFilters(
+              mapColumnFiltersForApi(normalized, { normalizeSummaryFlags: shouldNormalizeSummaryFlagFilters }),
+            ),
+          );
+        } catch {
+          /* ignore */
+        }
+      } else {
+        lastAppliedFiltersRef.current = {};
+        setHeaderFilters({});
+      }
+      // Sort
+      const rawLocalSort = localStorage.getItem(storageKeySort) ?? localStorage.getItem(storageKeySortNC);
+      if (rawLocalSort) {
+        const parsed = parseStoredSortState(rawLocalSort);
+        if (parsed) {
+          setClientSort(parsed);
+          setUserSortActive(true);
+        } else {
+          setUserSortActive(false);
+        }
+      } else {
+        setUserSortActive(false);
+      }
+      // Page
+      const rawLocalPage = localStorage.getItem(storageKeyPage) ?? localStorage.getItem(storageKeyPageNC);
+      if (rawLocalPage) {
+        const n = Number(rawLocalPage);
+        if (!Number.isNaN(n) && n >= 0) setCurrentPage(n);
+      } else {
+        setCurrentPage(0);
+      }
+      try {
+        sessionScreens[screenInstanceKey] = true;
+        sessionStorage.setItem('voa-session-screens', JSON.stringify(sessionScreens));
+        sessionStorage.setItem('voa-last-screen', screenInstanceKey);
+      } catch {
+        // ignore session storage failures
+      }
+    } catch {
+      // ignore hydrate failures
+    }
+    // Mark hydration complete so persistence can begin on subsequent changes
+    setHydrated(true);
+  }, [
+    mapColumnFiltersForApi,
+    onColumnFiltersApply,
+    screenInstanceKey,
+    storageKey,
+    storageKeyNC,
+    storageKeySort,
+    storageKeySortNC,
+    storageKeyPage,
+    storageKeyPageNC,
+    tableKey,
+    toApiHeaderFilters,
+    shouldNormalizeSummaryFlagFilters,
+  ]);
+  // Persist to localStorage whenever filters/page/sort change
+  React.useEffect(() => {
+    if (!hydrated) return; // skip initial mount until hydration finishes
+    try {
+      // localStorage
+      if (Object.keys(headerFilters).length === 0) {
+        localStorage.removeItem(storageKey); localStorage.removeItem(storageKeyNC);
+      } else {
+        const arrayStore = serializeColumnFiltersForStorage(headerFilters);
+        const filtersJSON = JSON.stringify(arrayStore);
+        localStorage.setItem(storageKey, filtersJSON);
+        localStorage.setItem(storageKeyNC, filtersJSON);
+      }
+      if (shouldPersistSortState(clientSort, userSortActive)) {
+        const sortJSON = JSON.stringify(clientSort);
+        localStorage.setItem(storageKeySort, sortJSON);
+        localStorage.setItem(storageKeySortNC, sortJSON);
+      } else {
+        localStorage.removeItem(storageKeySort); localStorage.removeItem(storageKeySortNC);
+      }
+      localStorage.setItem(storageKeyPage, String(currentPage));
+      localStorage.setItem(storageKeyPageNC, String(currentPage));
+    } catch {
+      // ignore persist failures
+    }
+  }, [headerFilters, clientSort, currentPage, storageKey, storageKeyNC, storageKeySort, storageKeySortNC, storageKeyPage, storageKeyPageNC, hydrated, userSortActive]);
+
+  React.useEffect(() => {
+    if (!isSalesSearch) return;
+    try {
+      const isDefault = isSalesSearchDefaultFilters(searchFilters);
+      if (isDefault && !salesSearchApplied) {
+        localStorage.removeItem(salesSearchStorageKey);
+      } else {
+        localStorage.setItem(
+          salesSearchStorageKey,
+          JSON.stringify({ filters: searchFilters, applied: salesSearchApplied }),
+        );
+      }
+    } catch {
+      // ignore storage failures
+    }
+  }, [isSalesSearch, salesSearchApplied, salesSearchStorageKey, searchFilters]);
+
+  // Build columns from defined config only (no auto-add from API fields).
   const datasetColumns = React.useMemo(() => {
-    const sampleFromApi = hasLoadedApim && apimItems.length > 0 ? (apimItems[0] as Record<string, unknown>) : undefined;
-    return buildColumns(columnDisplayNames, columnConfigs, sampleFromApi);
-  }, [apimItems, columnConfigs, columnDisplayNames, hasLoadedApim]);
+    const t0 = performance.now();
+    const cols = buildColumns(columnDisplayNames, columnConfigs, undefined);
+    const t1 = performance.now();
+    logPerf('[Grid Perf] Build columns (ms):', Math.round(t1 - t0), 'count:', cols.length);
+    return cols;
+  }, [columnConfigs, columnDisplayNames]);
+
+  const clientUrl = resolveClientUrl(context);
 
   // Records mapping
   const { records, ids } = React.useMemo(() => {
+    const t0 = performance.now();
     const recs: Record<string, ComponentFramework.PropertyHelper.DataSetApi.EntityRecord> = {};
     const all: string[] = [];
     const toText = (v: unknown) => (typeof v === 'string' ? v : typeof v === 'number' || typeof v === 'boolean' ? String(v) : '');
     if (hasLoadedApim && apimItems.length > 0) {
+      const mapUserIdsToNames = (value: unknown): string[] | undefined => {
+        if (!value) return undefined;
+        if (!hasUserDisplayNameMap) return undefined;
+        const ids = Array.isArray(value)
+          ? value.map((v) => String(v ?? '').trim()).filter((v) => v !== '')
+          : typeof value === 'string'
+          ? value.split(',').map((v) => v.trim()).filter((v) => v !== '')
+          : [];
+        if (ids.length === 0) return undefined;
+        return ids.map((id) => {
+          const normalizedId = normalizeAssignableUserId(id);
+          if (!normalizedId) return id;
+          return userDisplayNameMap[normalizedId] ?? id;
+        });
+      };
       apimItems.forEach((item, index) => {
         const base: Record<string, unknown> = {};
         const r = base as ComponentFramework.PropertyHelper.DataSetApi.EntityRecord & Record<string, unknown>;
         const obj = item as Record<string, unknown>;
-        const uprnVal = obj.uprn;
+        const o = obj as {
+          statutorySpatialUnitLabelId?: string;
+          statutoryspatialunitlabelid?: string;
+          taskId?: string;
+          uprn?: unknown;
+        };
+        const lblId = o.statutorySpatialUnitLabelId ?? o.statutoryspatialunitlabelid;
+        const uprnVal = o.uprn;
         const uprnStr = typeof uprnVal === 'string' || typeof uprnVal === 'number' ? String(uprnVal) : '';
-        const id = (obj.taskId as string) || `${uprnStr}-${index}` || `apim-${index}`;
+        const primaryId = lblId ?? o.taskId;
+        const fallbackId = uprnStr ? `${uprnStr}-${index}` : `apim-${index}`;
+        const id = primaryId ? `${primaryId}-${index}` : fallbackId;
         r.getRecordId = () => id;
         r.getNamedReference = undefined as unknown as ComponentFramework.PropertyHelper.DataSetApi.EntityRecord['getNamedReference'];
         r.getValue = ((columnName: string) => r[columnName] ?? '') as ComponentFramework.PropertyHelper.DataSetApi.EntityRecord['getValue'];
         r.getFormattedValue = ((columnName: string) => toText(r[columnName])) as ComponentFramework.PropertyHelper.DataSetApi.EntityRecord['getFormattedValue'];
         Object.keys(obj).forEach((k) => (r[k.toLowerCase()] = obj[k]));
+        const assignedDisplay = mapUserIdsToNames((r as Record<string, unknown>).assignedto ?? (r as Record<string, unknown>).assignedTo);
+        if (assignedDisplay) {
+          r.assignedto = assignedDisplay;
+          (r as Record<string, unknown>).assignedTo = assignedDisplay;
+        }
+        const qcAssignedDisplay = mapUserIdsToNames((r as Record<string, unknown>).qcassignedto ?? (r as Record<string, unknown>).qcAssignedTo);
+        if (qcAssignedDisplay) {
+          r.qcassignedto = qcAssignedDisplay;
+          (r as Record<string, unknown>).qcAssignedTo = qcAssignedDisplay;
+        }
         // some handy aliases
         r.saleid = r.saleid ?? (r as Record<string, unknown> & { saleId?: unknown }).saleId;
+        const suid = normalizeSuid(r.suid);
+        r.addressurl = suid && clientUrl ? buildSsuUrl(clientUrl, suid) : '';
         all.push(id);
         recs[id] = r;
       });
-    } else {
+    } else if (isLocalHost) {
       ensureSampleColumns(datasetColumns, columnDisplayNames);
       const sample = buildSampleEntityRecords();
       Object.assign(recs, sample.records);
       all.push(...sample.ids);
     }
+    const t1 = performance.now();
+    logPerf('[Grid Perf] Map records (ms):', Math.round(t1 - t0), 'count:', all.length);
     return { records: recs, ids: all };
-  }, [apimItems, columnDisplayNames, datasetColumns, hasLoadedApim]);
+  }, [apimItems, clientUrl, columnDisplayNames, datasetColumns, hasLoadedApim, isLocalHost, userDisplayNameMap]);
+
+  const disableClientFiltering = hasLoadedApim && !clientSideEligible;
+
+  const getFilterableText = React.useCallback((raw: unknown): string => {
+    if (Array.isArray(raw)) {
+      return raw
+        .map((v) => (typeof v === 'string' || typeof v === 'number' || typeof v === 'boolean' ? String(v) : ''))
+        .filter((s) => s !== '')
+        .join(', ');
+    }
+    if (typeof raw === 'string') return raw;
+    if (typeof raw === 'number' || typeof raw === 'boolean') return String(raw);
+    return '';
+  }, []);
 
   const filteredIds = React.useMemo(() => {
-    const ds = datasetColumns;
-    const toText = (val: unknown): string => (typeof val === 'string' ? val : typeof val === 'number' || typeof val === 'boolean' ? String(val) : '');
-    const entries = Object.entries(headerFilters).filter(([, v]) => (Array.isArray(v) ? v.length > 0 : (v ?? '').toString().trim() !== ''));
-    if (entries.length === 0) return ids;
-    return ids.filter((id) => {
-      const rec = records[id] as unknown as Record<string, unknown>;
-      return entries.every(([field, v]) => {
-        const value = toText(rec[field]);
-        if (Array.isArray(v)) {
-          const needles = v.map((s) => String(s).trim().toLowerCase()).filter((s) => s !== '');
-          if (needles.length === 0) return true;
-          return needles.some((n) => value.trim().toLowerCase() === n);
-        }
-        return value.toLowerCase().includes(String(v).trim().toLowerCase());
-      });
-    });
-  }, [headerFilters, ids, records, datasetColumns]);
+    if (disableClientFiltering) {
+      return ids;
+    }
+    const t0 = performance.now();
+    const out = filterItemsByColumnFilters(
+      ids,
+      headerFilters,
+      tableKey,
+      getFilterableText,
+      (id, field) => (records[id] as unknown as Record<string, unknown>)[field],
+    );
+    const t1 = performance.now();
+    logPerf('[Grid Perf] Host filter ids (ms):', Math.round(t1 - t0), 'ids:', ids.length, 'filters:', Object.keys(headerFilters).length, 'result:', out.length);
+    return out;
+  }, [disableClientFiltering, getFilterableText, headerFilters, ids, records, tableKey]);
 
   const sortedIds = React.useMemo(() => {
-    if (!clientSort || serverDriven) return filteredIds;
+    if (!clientSideEligible || !userSortActive || !clientSort) return filteredIds;
+    const t0 = performance.now();
     const field = clientSort.name?.toLowerCase?.() ?? '';
+    const dateFields = new Set(['transactiondate', 'assigneddate', 'taskcompleteddate', 'qcassigneddate', 'qccompleteddate']);
     const desc = clientSort.sortDirection === 1;
     const getVal = (id: string): string => {
       const rec = records[id] as unknown as Record<string, unknown>;
       const v = rec[field];
+      if (dateFields.has(field)) {
+        const raw = typeof v === 'string' || typeof v === 'number' ? String(v) : '';
+        return toSortableDateKey(raw);
+      }
       if (typeof v === 'number') return String(v);
       if (typeof v === 'boolean') return v ? '1' : '0';
       if (typeof v === 'string') return v.toLowerCase();
@@ -168,48 +1058,549 @@ export const DetailsListHost: React.FC<DetailsListHostProps> = ({ context, onRow
       const cmp = va.localeCompare(vb, undefined, { numeric: true, sensitivity: 'base' });
       return desc ? -cmp : cmp;
     });
+    const t1 = performance.now();
+    logPerf('[Grid Perf] Host sort (ms):', Math.round(t1 - t0), 'field:', field, 'desc:', desc, 'count:', arr.length);
     return arr;
-  }, [clientSort, filteredIds, records, serverDriven]);
+  }, [clientSideEligible, clientSort, filteredIds, records, userSortActive]);
 
   const start = currentPage * pageSize;
-  const pageIds = sortedIds.slice(start, start + pageSize);
+  const pageIds = React.useMemo(() => {
+    if (serverDriven) return filteredIds;
+    const pageSliceT0 = performance.now();
+    const slice = sortedIds.slice(start, start + pageSize);
+    const pageSliceT1 = performance.now();
+    if (sortedIds.length > 0) {
+      logPerf('[Grid Perf] Host page slice (ms):', Math.round(pageSliceT1 - pageSliceT0), 'start:', start, 'size:', pageSize, 'result:', slice.length);
+    }
+    return slice;
+  }, [filteredIds, serverDriven, sortedIds, start, pageSize]);
   const canPrev = currentPage > 0;
   const canNext = serverDriven ? (currentPage + 1) * pageSize < totalCount : start + pageSize < filteredIds.length;
   const totalPages = serverDriven ? Math.ceil(totalCount / pageSize) : Math.ceil(filteredIds.length / pageSize);
 
-  // Initial load and reloads when critical props change
-  const lastRef = React.useRef<{ apim?: string; apiName?: string; table?: string }>({});
+  // If externalItems are provided, use them and skip APIM loading
   React.useEffect(() => {
-    const apim = (context.parameters as unknown as Record<string, { raw?: string }>).apimEndpoint?.raw?.trim() ?? '';
-    const apiName = (context.parameters as unknown as Record<string, { raw?: string }>).customApiName?.raw?.trim() ?? '';
-    const changed = lastRef.current.apim !== apim || lastRef.current.apiName !== apiName || lastRef.current.table !== tableKey || !hasLoadedApim;
+    if (externalItems !== undefined) {
+      setApimLoading(false);
+      setApimItems(externalItems ?? []);
+      setTotalCount((externalItems ?? []).length);
+      setServerDriven(false);
+      setHasLoadedApim(true);
+      setLoadErrorMessage(undefined);
+    }
+  }, [externalItems]);
+
+  // Initial load and reloads when critical props change (skips when externalItems are supplied)
+  const lastRef = React.useRef<{
+    table?: string;
+    trigger?: string;
+    page?: number;
+    size?: number;
+    sort?: string;
+    nonce?: number;
+    columnFilters?: string;
+  }>({});
+  React.useEffect(() => {
+    const prevKind = lastScreenKindRef.current;
+    const screenKindChanged = prevKind !== undefined && prevKind !== screenKind;
+    const switchedSalesToManager = screenKindChanged && prevKind === 'salesSearch' && isManagerAssign;
+    const switchedToCaseworker = screenKindChanged && isCaseworkerView;
+    const switchedToQcAssign = screenKindChanged && isQcAssign;
+    const switchedToQcView = screenKindChanged && isQcView;
+    lastScreenKindRef.current = screenKind;
+
+    if (switchedSalesToManager || switchedToCaseworker || switchedToQcAssign || switchedToQcView) {
+      let hasStoredPrefilter = false;
+      try {
+        hasStoredPrefilter = !!localStorage.getItem(prefilterStorageKey);
+        if (!hasStoredPrefilter && legacyPrefilterStorageKey !== prefilterStorageKey) {
+          hasStoredPrefilter = !!localStorage.getItem(legacyPrefilterStorageKey);
+        }
+      } catch {
+        hasStoredPrefilter = false;
+      }
+
+      setPrefilters(undefined);
+      setPrefilterApplied(false);
+      setHasLoadedApim(false);
+      setApimItems([]);
+      setTotalCount(0);
+      setServerDriven(false);
+      setApiFilterOptions({});
+      setLoadErrorMessage(undefined);
+      selection.setAllSelected(false);
+      setSelectedCount(0);
+      onSelectionCountChange?.(0);
+      onSelectionChange?.({ selectedTaskIds: [], selectedSaleIds: [] });
+      if (!hasStoredPrefilter) {
+        setCurrentPage(0);
+        setSearchFilters(createDefaultGridFilters());
+        setUserSortActive(false);
+        setHeaderFilters({});
+        lastAppliedFiltersRef.current = {};
+      }
+      return;
+    }
+
+    if (externalItems !== undefined) {
+      // External data path; do not load from APIM
+      return;
+    }
+    if (isSalesSearch && !salesSearchApplied) {
+      prefilterSkipLogKeyRef.current = '';
+      resetHostResultsState();
+      return;
+    }
+    const pendingScreenKindChange = lastScreenKindRef.current !== undefined && lastScreenKindRef.current !== screenKind;
+    if (pendingScreenKindChange) {
+      prefilterSkipLogKeyRef.current = '';
+      setApimLoading(false);
+      return;
+    }
+    if (isPrefilterScreen && !prefilterApplied) {
+      const skipKey = `${screenKind}|${prefilterApplied ? '1' : '0'}|${JSON.stringify(prefilters ?? null)}`;
+      if (prefilterSkipLogKeyRef.current !== skipKey) {
+        prefilterSkipLogKeyRef.current = skipKey;
+        console.debug('[Prefilter] host load skip', {
+          screen: screenKind,
+          prefilterApplied,
+          prefilters,
+        });
+      }
+      resetHostResultsState();
+      return;
+    }
+    prefilterSkipLogKeyRef.current = '';
+    const trigger = String((context.parameters as unknown as Record<string, { raw?: string | number }>).searchTrigger?.raw ?? '');
+    const sortKey = serverClientSort ? `${serverClientSort.name}:${serverClientSort.sortDirection}` : '';
+    const nextSortKey = clientSideEligible ? lastRef.current.sort : sortKey;
+    const nextColumnFilters = columnFilterQuery;
+    const changed = lastRef.current.table !== tableKey
+      || lastRef.current.trigger !== trigger
+      || lastRef.current.page !== currentPage
+      || lastRef.current.size !== pageSize
+      || lastRef.current.sort !== nextSortKey
+      || lastRef.current.nonce !== searchNonce
+      || lastRef.current.columnFilters !== nextColumnFilters
+      || (!hasLoadedApim && !apimLoading);
     if (!changed) return;
-    lastRef.current = { apim, apiName, table: tableKey };
+    lastRef.current = {
+      table: tableKey,
+      trigger,
+      page: currentPage,
+      size: pageSize,
+      sort: nextSortKey,
+      nonce: searchNonce,
+      columnFilters: nextColumnFilters,
+    };
+    setLoadErrorMessage(undefined);
     setApimLoading(true);
     void (async () => {
+      const requestedBy = (isCaseworkerView || isQcView) && currentUserId
+        ? currentUserId.toLowerCase()
+        : undefined;
+      console.debug('[Prefilter] host load start', {
+        screen: screenKind,
+        prefilterApplied,
+        prefilters,
+        requestedBy,
+        searchNonce,
+      });
       const res = await loadGridData(context, {
         tableKey,
-        filters: sanitizeFilters(searchFilters),
+        filters: sanitizeFilters(mapSearchFiltersForApi(searchFilters)),
+        source: sourceCode,
+        requestedBy,
         currentPage,
         pageSize,
-        headerFilters,
-        clientSort,
+        clientSort: serverClientSort,
+        prefilters,
+        searchQuery: columnFilterQuery,
       });
       setApimItems(res.items);
       setTotalCount(res.totalCount);
       setServerDriven(res.serverDriven);
       setApimLoading(false);
       setHasLoadedApim(true);
+      setLoadErrorMessage(res.errorMessage);
+      if (assignPendingRefresh && assignRefreshResolve.current) {
+        assignRefreshResolve.current(true);
+        assignRefreshResolve.current = null;
+        setAssignPendingRefresh(false);
+      }
+      setApiFilterOptions(normalizeFilterOptions(tableKey, res.filters));
     })();
-  }, [context, tableKey, searchFilters, currentPage, pageSize, headerFilters, clientSort, hasLoadedApim]);
+  }, [context, tableKey, sourceCode, searchFilters, currentPage, pageSize, clientSort, userSortActive, clientSideEligible, searchNonce, hasLoadedApim, apimLoading, prefilters, prefilterApplied, isCaseworkerView, currentUserId, isPrefilterScreen, isSalesSearch, salesSearchApplied, prefilterStorageKey, screenKind, columnFilterQuery, mapSearchFiltersForApi, resetHostResultsState]);
+
+  React.useEffect(() => {
+    if (!assignPanelOpen || !assignmentContextKey) {
+      assignUsersLoadKeyRef.current = '';
+      setAssignUsersLoading(false);
+      if (!assignPanelOpen) {
+        setAssignUsers([]);
+        setAssignUsersError(undefined);
+        setAssignUsersInfo(undefined);
+      }
+      return;
+    }
+
+    const apiName = resolveAssignableUsersApiName();
+    if (!apiName) {
+      setAssignUsers([]);
+      setAssignUsersError(assignTasksText.messages.assignableUsersApiNotConfigured);
+      setAssignUsersInfo(undefined);
+      setAssignUsersLoading(false);
+      return;
+    }
+
+    const customApiType = resolveCustomApiTypeForAssignableUsers();
+    const cacheContextKey = buildAssignableUsersCacheKey(apiName, customApiType, assignmentContextScreenName);
+    const requestKey = `${assignmentContextKey}|${cacheContextKey}`;
+    if (assignUsersLoadKeyRef.current === requestKey) {
+      return;
+    }
+    assignUsersLoadKeyRef.current = requestKey;
+
+    setAssignUsers([]);
+    setAssignUsersLoading(true);
+    setAssignUsersError(undefined);
+    setAssignUsersInfo(undefined);
+
+    void (async () => {
+      try {
+        const response = await executeUnboundCustomApi<{ Result?: string; result?: string }>(
+          context,
+          apiName,
+          { screenName: assignmentContextScreenName },
+          { operationType: customApiType },
+        );
+        const parsed = parseAssignableUsersResponse(response);
+        if (assignUsersLoadKeyRef.current !== requestKey) {
+          return;
+        }
+
+        if (parsed.error) {
+          setAssignUsers([]);
+          setAssignUsersError(parsed.error);
+          setAssignUsersInfo(undefined);
+          return;
+        }
+
+        if (parsed.info) {
+          assignableUsersCacheContextsRef.current.add(cacheContextKey);
+          setAssignUsers([]);
+          setAssignUsersError(undefined);
+          setAssignUsersInfo(parsed.info);
+          return;
+        }
+
+        const filteredUsers = isQcAssign ? parsed.users.filter(isQcAssignableUser) : parsed.users;
+        if (parsed.users.length > 0) {
+          setAssignableUsersCache((prev) => mergeAssignableUsers(prev, parsed.users));
+          assignableUsersCacheContextsRef.current.add(cacheContextKey);
+        }
+        if (isQcAssign && filteredUsers.length === 0) {
+          setAssignUsers([]);
+          setAssignUsersError(undefined);
+          setAssignUsersInfo(assignTasksText.messages.noUsersFound);
+          return;
+        }
+        setAssignUsers(filteredUsers);
+        setAssignUsersError(undefined);
+        setAssignUsersInfo(undefined);
+      } catch (err) {
+        setAssignUsers([]);
+        setAssignUsersError(err instanceof Error ? err.message : assignTasksText.messages.assignableUsersLoadFailed);
+        setAssignUsersInfo(undefined);
+      } finally {
+        if (assignUsersLoadKeyRef.current === requestKey) {
+          setAssignUsersLoading(false);
+        }
+      }
+    })();
+  }, [
+    assignPanelOpen,
+    assignmentContextKey,
+    assignTasksText.messages,
+    assignmentContextScreenName,
+    context,
+    isQcAssign,
+    isQcAssignableUser,
+    parseAssignableUsersResponse,
+    mergeAssignableUsers,
+  ]);
+
+  React.useEffect(() => {
+    const shouldLoad = isManagerAssign || isQcAssign || isCaseworkerView;
+    if (!shouldLoad) {
+      caseworkerOptionsLoadKeyRef.current = '';
+      setCaseworkerOptions([]);
+      setCaseworkerOptionsLoading(false);
+      setCaseworkerOptionsError(undefined);
+      setQcUserOptions([]);
+      setQcUserOptionsLoading(false);
+      setQcUserOptionsError(undefined);
+      return;
+    }
+
+    const prefilterErrors = isQcAssign ? qcText.errors : managerText.errors;
+    const apiName = resolveAssignableUsersApiName();
+    if (!apiName) {
+      if (fallbackCaseworkerOptions.length > 0) {
+        setCaseworkerOptions(fallbackCaseworkerOptions);
+        setCaseworkerOptionsError(undefined);
+      } else {
+        setCaseworkerOptions([]);
+        setCaseworkerOptionsError(prefilterErrors.assignableUsersApiNotConfigured);
+      }
+      setCaseworkerOptionsLoading(false);
+
+      if (isQcAssign) {
+        if (fallbackQcUserOptions.length > 0) {
+          setQcUserOptions(fallbackQcUserOptions);
+          setQcUserOptionsError(undefined);
+        } else {
+          setQcUserOptions([]);
+          setQcUserOptionsError(prefilterErrors.assignableUsersApiNotConfigured);
+        }
+        setQcUserOptionsLoading(false);
+      } else {
+        setQcUserOptions([]);
+        setQcUserOptionsError(undefined);
+        setQcUserOptionsLoading(false);
+      }
+      return;
+    }
+
+    const customApiType = resolveCustomApiTypeForAssignableUsers();
+    const cacheContextKey = buildAssignableUsersCacheKey(apiName, customApiType, assignmentContextScreenName);
+    const requestKey = `caseworkers|${assignmentContextKey}|${cacheContextKey}`;
+    if (caseworkerOptionsLoadKeyRef.current === requestKey) {
+      return;
+    }
+    caseworkerOptionsLoadKeyRef.current = requestKey;
+
+    setCaseworkerOptions([]);
+    setCaseworkerOptionsLoading(true);
+    setCaseworkerOptionsError(undefined);
+    if (isQcAssign) {
+      setQcUserOptions([]);
+      setQcUserOptionsLoading(true);
+      setQcUserOptionsError(undefined);
+    }
+
+    void (async () => {
+      try {
+        const response = await executeUnboundCustomApi<{ Result?: string; result?: string }>(
+          context,
+          apiName,
+          { screenName: assignmentContextScreenName },
+          { operationType: customApiType },
+        );
+
+        const parsed = parseAssignableUsersResponse(response);
+        if (caseworkerOptionsLoadKeyRef.current !== requestKey) {
+          return;
+        }
+
+        if (parsed.error) {
+          if (fallbackCaseworkerOptions.length > 0) {
+            setCaseworkerOptions(fallbackCaseworkerOptions);
+            setCaseworkerOptionsError(undefined);
+          } else {
+            setCaseworkerOptions([]);
+            setCaseworkerOptionsError(parsed.error);
+          }
+          if (isQcAssign) {
+            if (fallbackQcUserOptions.length > 0) {
+              setQcUserOptions(fallbackQcUserOptions);
+              setQcUserOptionsError(undefined);
+            } else {
+              setQcUserOptions([]);
+              setQcUserOptionsError(parsed.error);
+            }
+          }
+          return;
+        }
+
+        if (parsed.info) {
+          assignableUsersCacheContextsRef.current.add(cacheContextKey);
+          if (fallbackCaseworkerOptions.length > 0) {
+            setCaseworkerOptions(fallbackCaseworkerOptions);
+            setCaseworkerOptionsError(undefined);
+          } else {
+            setCaseworkerOptions([]);
+            setCaseworkerOptionsError(undefined);
+          }
+          if (isQcAssign) {
+            if (fallbackQcUserOptions.length > 0) {
+              setQcUserOptions(fallbackQcUserOptions);
+              setQcUserOptionsError(undefined);
+            } else {
+              setQcUserOptions([]);
+              setQcUserOptionsError(undefined);
+            }
+          }
+          return;
+        }
+
+        const caseworkerUsers = parsed.users.filter(isCaseworkerAssignableUser);
+        const qcUsers = parsed.users.filter(isQcAssignableUser);
+        const caseworkerSource = isQcAssign
+          ? caseworkerUsers
+          : (caseworkerUsers.length > 0 ? caseworkerUsers : parsed.users);
+        const caseworkerNames = buildCaseworkerNames(caseworkerSource);
+        setCaseworkerOptions(caseworkerNames.length > 0 ? caseworkerNames : fallbackCaseworkerOptions);
+        if (isQcAssign) {
+          const qcNames = buildCaseworkerNames(qcUsers);
+          setQcUserOptions(qcNames.length > 0 ? qcNames : fallbackQcUserOptions);
+        }
+        setAssignableUsersCache((prev) => mergeAssignableUsers(prev, parsed.users));
+        assignableUsersCacheContextsRef.current.add(cacheContextKey);
+        setCaseworkerOptionsError(undefined);
+        setQcUserOptionsError(undefined);
+      } catch (err) {
+        if (fallbackCaseworkerOptions.length > 0) {
+          setCaseworkerOptions(fallbackCaseworkerOptions);
+          setCaseworkerOptionsError(undefined);
+        } else {
+          setCaseworkerOptions([]);
+          setCaseworkerOptionsError(err instanceof Error ? err.message : prefilterErrors.caseworkersLoadFailed);
+        }
+        if (isQcAssign) {
+          if (fallbackQcUserOptions.length > 0) {
+            setQcUserOptions(fallbackQcUserOptions);
+            setQcUserOptionsError(undefined);
+          } else {
+            setQcUserOptions([]);
+            setQcUserOptionsError(err instanceof Error ? err.message : prefilterErrors.caseworkersLoadFailed);
+          }
+        }
+      } finally {
+        if (caseworkerOptionsLoadKeyRef.current === requestKey) {
+          setCaseworkerOptionsLoading(false);
+          setQcUserOptionsLoading(false);
+        }
+      }
+    })();
+  }, [
+    assignmentContextKey,
+    buildCaseworkerNames,
+    assignmentContextScreenName,
+    context,
+    fallbackCaseworkerOptions,
+    fallbackQcUserOptions,
+    isCaseworkerAssignableUser,
+    isCaseworkerView,
+    isManagerAssign,
+    isQcAssign,
+    isQcAssignableUser,
+    managerText.errors,
+    qcText.errors,
+    parseAssignableUsersResponse,
+    mergeAssignableUsers,
+  ]);
+
+  const requiresUserMapping = React.useMemo(() => {
+    const assignedCfg = getColumnFilterConfigFor(tableKey, 'assignedto');
+    const qcCfg = getColumnFilterConfigFor(tableKey, 'qcassignedto');
+    return !!assignedCfg || !!qcCfg;
+  }, [tableKey]);
+
+  const hasGuidAssignments = React.useMemo(() => {
+    if (apimItems.length === 0) return false;
+    const sample = apimItems.slice(0, 50);
+    const toIdList = (value: unknown): string[] => {
+      if (!value) return [];
+      if (Array.isArray(value)) {
+        return value.map((v) => String(v ?? '').trim()).filter((v) => v !== '');
+      }
+      if (typeof value === 'string') {
+        return value.split(',').map((v) => v.trim()).filter((v) => v !== '');
+      }
+      return [];
+    };
+    for (const item of sample) {
+      const record = item as Record<string, unknown>;
+      const assignedValues = toIdList(record.assignedto ?? record.assignedTo);
+      const qcAssignedValues = toIdList(record.qcassignedto ?? record.qcAssignedTo);
+      for (const value of [...assignedValues, ...qcAssignedValues]) {
+        const normalized = normalizeUserId(value);
+        if (normalized && isGuidValue(normalized)) {
+          return true;
+        }
+      }
+    }
+    return false;
+  }, [apimItems]);
+
+  React.useEffect(() => {
+    if (!requiresUserMapping) return;
+    if (!hasGuidAssignments) return;
+    const apiName = resolveAssignableUsersApiName();
+    if (!apiName) return;
+    const customApiType = resolveCustomApiTypeForAssignableUsers();
+    const cacheContextKey = buildAssignableUsersCacheKey(apiName, customApiType, userMappingScreenName);
+    if (assignableUsersCacheContextsRef.current.has(cacheContextKey)) return;
+    if (assignableUsersCacheLoadKeyRef.current === cacheContextKey) {
+      return;
+    }
+    assignableUsersCacheLoadKeyRef.current = cacheContextKey;
+
+    void (async () => {
+      try {
+        const response = await executeUnboundCustomApi<{ Result?: string; result?: string }>(
+          context,
+          apiName,
+          { screenName: userMappingScreenName },
+          { operationType: customApiType },
+        );
+        const parsed = parseAssignableUsersResponse(response);
+        if (assignableUsersCacheLoadKeyRef.current !== cacheContextKey) {
+          return;
+        }
+        if (parsed.error) {
+          return;
+        }
+        assignableUsersCacheContextsRef.current.add(cacheContextKey);
+        if (parsed.users && parsed.users.length > 0) {
+          setAssignableUsersCache((prev) => mergeAssignableUsers(prev, parsed.users));
+        }
+      } catch {
+        // ignore assignable users cache load failures
+      }
+    })();
+  }, [
+    context,
+    hasGuidAssignments,
+    mergeAssignableUsers,
+    parseAssignableUsersResponse,
+    requiresUserMapping,
+    resolveAssignableUsersApiName,
+    resolveCustomApiTypeForAssignableUsers,
+    userMappingScreenName,
+  ]);
 
   // Handlers
   const [selectedCount, setSelectedCount] = React.useState(0);
-  const selection: Selection<IObjectWithKey> = new Selection<IObjectWithKey>({
-    getKey: (item: IObjectWithKey) => (item as unknown as ComponentFramework.PropertyHelper.DataSetApi.EntityRecord).getRecordId(),
+  const onSelectionChangeRef = React.useRef(onSelectionChange);
+  const onSelectionCountChangeRef = React.useRef(onSelectionCountChange);
+  React.useEffect(() => {
+    onSelectionChangeRef.current = onSelectionChange;
+  }, [onSelectionChange]);
+  React.useEffect(() => {
+    onSelectionCountChangeRef.current = onSelectionCountChange;
+  }, [onSelectionCountChange]);
+  const selectionRef = React.useRef<Selection<IObjectWithKey>>();
+  const selection = (selectionRef.current ??= new Selection<IObjectWithKey>({
+    getKey: (item: IObjectWithKey) =>
+      (item as unknown as ComponentFramework.PropertyHelper.DataSetApi.EntityRecord).getRecordId(),
     onSelectionChanged: () => {
+      const selection = selectionRef.current;
+      if (!selection) return;
       setSelectedCount((sel) => {
         const next = selection.getSelectedCount();
+        onSelectionCountChangeRef.current?.(next);
         return next !== sel ? next : sel;
       });
       // Emit selected Task/Sale IDs to parent without fetching details
@@ -225,48 +1616,550 @@ export const DetailsListHost: React.FC<DetailsListHostProps> = ({ context, onRow
         const taskIds = pairs.map(p => p.taskId).filter((v): v is string => !!v);
         const saleIds = pairs.map(p => p.saleId).filter((v): v is string => !!v);
         const first = pairs[0] ?? { taskId: undefined, saleId: undefined };
-        onSelectionChange?.({ taskId: first.taskId, saleId: first.saleId, selectedTaskIds: taskIds, selectedSaleIds: saleIds });
+        onSelectionChangeRef.current?.({ taskId: first.taskId, saleId: first.saleId, selectedTaskIds: taskIds, selectedSaleIds: saleIds });
       } catch {
         // ignore selection mapping errors
       }
     },
-  });
+  }));
   const componentRef = React.createRef<IDetailsList>();
 
-  const onNavigate = (item?: ComponentFramework.PropertyHelper.DataSetApi.EntityRecord): void => {
+  const onNavigate = (item?: ComponentFramework.PropertyHelper.DataSetApi.EntityRecord): void | Promise<void> => {
     if (!item) return;
     // Records are normalized to lower‑case keys during mapping; prefer lower‑case, fall back to camelCase
     const rec = item as unknown as { taskid?: string; taskId?: string; saleid?: string; saleId?: string };
     const taskId = rec.taskid ?? rec.taskId;
     const saleId = rec.saleid ?? rec.saleId;
     // Emit only. Navigation is handled in Canvas via PCF OnChange.
-    onRowInvoke?.({ taskId, saleId });
+    return onRowInvoke?.({ taskId, saleId });
   };
 
   const onSort = (name: string, desc: boolean): void => {
     setClientSort({ name, sortDirection: desc ? 1 : 0 });
+    setUserSortActive(true);
   };
 
+  const clearStoredSort = React.useCallback(() => {
+    try {
+      localStorage.removeItem(storageKeySort);
+      localStorage.removeItem(storageKeySortNC);
+    } catch {
+      // ignore storage failures
+    }
+  }, [storageKeySort, storageKeySortNC]);
+
+  const resolveAssignmentApiName = (): string => {
+    const raw = (context.parameters as unknown as Record<string, { raw?: string }>).taskAssignmentApiName?.raw;
+    const fromContext = normalizeCustomApiName(typeof raw === 'string' ? raw : undefined);
+    const fallback = normalizeCustomApiName(CONTROL_CONFIG.taskAssignmentApiName);
+    return fromContext || fallback || '';
+  };
+
+  const resolveSubmitQcRemarksApiName = (): string => {
+    const raw = (context.parameters as unknown as Record<string, { raw?: string }>).submitQcRemarksApiName?.raw;
+    const fromContext = normalizeCustomApiName(typeof raw === 'string' ? raw : undefined);
+    const fallback = normalizeCustomApiName(CONTROL_CONFIG.submitQcRemarksApiName);
+    return fromContext || fallback || '';
+  };
+
+  const resolveCustomApiTypeForAssign = (): number => {
+    const raw = (context.parameters as unknown as Record<string, { raw?: string }>).customApiType?.raw;
+    const fromContext = typeof raw === 'string' ? raw : undefined;
+    return resolveCustomApiOperationType(fromContext ?? CONTROL_CONFIG.customApiType);
+  };
+
+  function resolveAssignableUsersApiName(): string {
+    const raw = (context.parameters as unknown as Record<string, { raw?: string }>).assignableUsersApiName?.raw;
+    const fromContext = normalizeCustomApiName(typeof raw === 'string' ? raw : undefined);
+    const fallback = normalizeCustomApiName(CONTROL_CONFIG.assignableUsersApiName);
+    return fromContext || fallback || '';
+  }
+
+  function resolveCustomApiTypeForAssignableUsers(): number {
+    const raw = (context.parameters as unknown as Record<string, { raw?: string }>).assignableUsersApiType?.raw;
+    const fromContext = typeof raw === 'string' ? raw : undefined;
+    const fallback = CONTROL_CONFIG.assignableUsersApiType ?? CONTROL_CONFIG.customApiType;
+    return resolveCustomApiOperationType(fromContext ?? fallback);
+  }
+
+  const resolveMetadataApiName = (): string => {
+    const raw = (context.parameters as unknown as Record<string, { raw?: string }>).metadataApiName?.raw;
+    const fromContext = normalizeCustomApiName(typeof raw === 'string' ? raw : undefined);
+    const fallback = normalizeCustomApiName(CONTROL_CONFIG.metadataApiName);
+    return fromContext || fallback || '';
+  };
+
+  const resolveMetadataApiType = (): number => {
+    const raw = (context.parameters as unknown as Record<string, { raw?: string }>).metadataApiType?.raw;
+    const fromContext = typeof raw === 'string' ? raw : undefined;
+    const fallback = CONTROL_CONFIG.metadataApiType ?? CONTROL_CONFIG.customApiType;
+    return resolveCustomApiOperationType(fromContext ?? fallback);
+  };
+
+  const metadataApiName = resolveMetadataApiName();
+  const metadataApiType = resolveMetadataApiType();
+
+  React.useEffect(() => {
+    const shouldLoad = isManagerAssign || isSalesSearch;
+    if (!shouldLoad) {
+      metadataLoadKeyRef.current = '';
+      setBillingAuthorityOptions([]);
+      setBillingAuthorityOptionsError(undefined);
+      setBillingAuthorityOptionsLoading(false);
+      return;
+    }
+
+    if (!metadataApiName) {
+      metadataLoadKeyRef.current = '';
+      if (fallbackBillingAuthorityOptions.length > 0) {
+        setBillingAuthorityOptions(fallbackBillingAuthorityOptions);
+        setBillingAuthorityOptionsError(undefined);
+      } else {
+        setBillingAuthorityOptions([]);
+        setBillingAuthorityOptionsError(commonText.messages.metadataApiNotConfigured);
+      }
+      setBillingAuthorityOptionsLoading(false);
+      return;
+    }
+
+    const metadataLoadKey = `${screenKind}|${metadataApiName}|${metadataApiType}`;
+    if (metadataLoadKeyRef.current === metadataLoadKey) {
+      return;
+    }
+    metadataLoadKeyRef.current = metadataLoadKey;
+
+    let active = true;
+    setBillingAuthorityOptionsLoading(true);
+    setBillingAuthorityOptionsError(undefined);
+
+    void (async () => {
+      try {
+        const rawPayload = await executeUnboundCustomApi<unknown>(
+          context,
+          metadataApiName,
+          {},
+          { operationType: metadataApiType },
+        );
+
+        let payload: unknown = rawPayload;
+        if (typeof payload === 'string') {
+          try {
+            payload = JSON.parse(payload) as unknown;
+          } catch {
+            // ignore parse failures
+          }
+        }
+        if (payload && typeof payload === 'object') {
+          const record = payload as Record<string, unknown>;
+          const raw = record.Result ?? record.result;
+          if (typeof raw === 'string') {
+            try {
+              payload = JSON.parse(raw) as unknown;
+            } catch {
+              // ignore parse failures
+            }
+          }
+        }
+
+        const record = payload && typeof payload === 'object' ? (payload as Record<string, unknown>) : undefined;
+        const list = Array.isArray(record?.billingAuthority)
+          ? record?.billingAuthority
+          : Array.isArray(record?.billingAuthorities)
+            ? record?.billingAuthorities
+            : [];
+
+        const normalized = Array.isArray(list)
+          ? list
+            .filter((value) => typeof value === 'string')
+            .map((value) => value.trim())
+            .filter((value) => value.length > 0)
+          : [];
+
+        if (!active) return;
+
+        const finalOptions = normalized.length > 0 ? normalized : fallbackBillingAuthorityOptions;
+        setBillingAuthorityOptions(finalOptions);
+        if (!record || (!Array.isArray(record?.billingAuthority) && !Array.isArray(record?.billingAuthorities))) {
+          setBillingAuthorityOptionsError(finalOptions.length > 0 ? undefined : commonText.messages.billingAuthoritiesMissing);
+        }
+      } catch {
+        if (!active) return;
+        if (fallbackBillingAuthorityOptions.length > 0) {
+          setBillingAuthorityOptions(fallbackBillingAuthorityOptions);
+          setBillingAuthorityOptionsError(undefined);
+        } else {
+          setBillingAuthorityOptions([]);
+          setBillingAuthorityOptionsError(commonText.messages.billingAuthoritiesLoadFailed);
+        }
+      } finally {
+        if (active) {
+          setBillingAuthorityOptionsLoading(false);
+        }
+      }
+    })();
+
+    return () => {
+      active = false;
+    };
+  }, [
+    commonText.messages,
+    context,
+    fallbackBillingAuthorityOptions,
+    isManagerAssign,
+    isSalesSearch,
+    metadataApiName,
+    metadataApiType,
+  ]);
+
+  const assignTasksToUser = async (user: { id: string; firstName: string; lastName: string }): Promise<boolean> => {
+    try {
+      const selected = selection.getSelection() as Record<string, unknown>[];
+      if (selected.length === 0) {
+        setAssignMessage({ text: assignTasksText.messages.selectTasksWarning, type: MessageBarType.warning });
+        return false;
+      }
+      const maxBatchSize = assignmentConfig.maxBatchSize ?? 500;
+      if (selected.length > maxBatchSize) {
+        const template = assignTasksText.messages.tooManyTasks;
+        const message = template.replace(/\{max\}/g, String(maxBatchSize));
+        setAssignMessage({ text: message, type: MessageBarType.warning });
+        return false;
+      }
+      const apiName = resolveAssignmentApiName();
+      if (!apiName) {
+        setAssignMessage({ text: assignTasksText.messages.apiNotConfigured, type: MessageBarType.error });
+        return false;
+      }
+      const customApiType = resolveCustomApiTypeForAssign();
+      const assignedBy = resolveAssignedByUserId(context);
+      const assignedDate = new Date().toISOString();
+      const toNumericTaskId = (value: unknown): string => {
+        const raw = typeof value === 'string' ? value : typeof value === 'number' || typeof value === 'boolean' ? String(value) : '';
+        if (!raw) return '';
+        const digitsOnly = raw.replace(/\D/g, '');
+        return digitsOnly || raw;
+      };
+      const statusCheck = resolveAssignmentStatusValidation(
+        selected,
+        screenKind,
+        assignmentConfig,
+        assignTasksText.messages.invalidStatus,
+      );
+      if (statusCheck.error) {
+        setAssignMessage({ text: statusCheck.error, type: MessageBarType.error });
+        return false;
+      }
+      const assignmentTaskStatus = statusCheck.assignmentTaskStatus;
+      const taskIds = selected
+        .map((rec) => toNumericTaskId(rec.taskid ?? rec.taskId ?? ''))
+        .map((value) => value.trim())
+        .filter((value) => value !== '');
+      const uniqueTaskIds = Array.from(new Set(taskIds));
+      if (uniqueTaskIds.length === 0) {
+        setAssignMessage({ text: assignTasksText.messages.noValidTaskIds, type: MessageBarType.error });
+        return false;
+      }
+      const parseAssignmentResult = (payload: unknown): { success?: boolean; message?: string; payload?: string } | null => {
+        if (!payload) return null;
+        if (typeof payload === 'string') {
+          try {
+            return JSON.parse(payload) as { success?: boolean; message?: string; payload?: string };
+          } catch {
+            return { message: payload };
+          }
+        }
+        if (typeof payload === 'object') {
+          const record = payload as Record<string, unknown>;
+          const raw = record.Result ?? record.result;
+          if (typeof raw === 'string') {
+            try {
+              return JSON.parse(raw) as { success?: boolean; message?: string; payload?: string };
+            } catch {
+              return { message: raw };
+            }
+          }
+          if (typeof record.success === 'boolean') {
+            return record as { success?: boolean; message?: string; payload?: string };
+          }
+        }
+        return null;
+      };
+      const normalizeOutcomeText = (value?: string): string => {
+        if (!value) return '';
+        return value.replace(/^['"]|['"]$/g, '').trim().toLowerCase();
+      };
+      const parseApimOutcome = (payload?: string): { success?: boolean; alreadyAssigned?: boolean } => {
+        const raw = typeof payload === 'string' ? payload.trim() : '';
+        if (!raw) return {};
+        const normalized = normalizeOutcomeText(raw);
+        const hasAlreadyAssigned = normalized.includes('already assigned') || normalized.includes('alreadyassigned');
+        if (['success', 'succeeded', 'ok', 'true'].includes(normalized)) return { success: true };
+        if (['fail', 'failed', 'failure', 'error', 'false'].includes(normalized)) {
+          return { success: false, alreadyAssigned: hasAlreadyAssigned };
+        }
+        try {
+          const parsed = JSON.parse(raw) as unknown;
+          if (typeof parsed === 'string') {
+            return parseApimOutcome(parsed);
+          }
+          if (parsed && typeof parsed === 'object') {
+            const record = parsed as Record<string, unknown>;
+            const success = typeof record.success === 'boolean' ? record.success : undefined;
+            const message = [
+              record.message,
+              record.status,
+              record.result,
+              record.detail,
+            ]
+              .map((v) => (typeof v === 'string' ? v : ''))
+              .join(' ');
+            const normalizedMessage = normalizeOutcomeText(message);
+            const alreadyAssigned = normalizedMessage.includes('already assigned') || normalizedMessage.includes('alreadyassigned');
+            return { success, alreadyAssigned };
+          }
+        } catch {
+          // ignore JSON parse issues
+        }
+        return { alreadyAssigned: hasAlreadyAssigned };
+      };
+
+      const assignmentParams: Record<string, string> = {
+        assignedToUserId: user.id,
+        taskId: JSON.stringify(uniqueTaskIds),
+        assignedByUserId: assignedBy,
+        screenName: assignmentScreenName || screenName,
+      };
+      if (assignmentTaskStatus) {
+        assignmentParams.taskStatus = assignmentTaskStatus;
+      }
+      const response = await executeUnboundCustomApi<Record<string, unknown>>(
+        context,
+        apiName,
+        assignmentParams,
+        { operationType: customApiType },
+      );
+      const parsed = parseAssignmentResult(response);
+      if (!parsed || parsed?.success === false) {
+        setAssignMessage({ text: assignTasksText.messages.assignmentFailed, type: MessageBarType.error });
+        setSearchNonce((n) => n + 1);
+        return false;
+      }
+      const apimOutcome = parseApimOutcome(parsed.payload);
+      if (apimOutcome.alreadyAssigned || apimOutcome.success === false) {
+        setAssignMessage({ text: assignTasksText.messages.alreadyAssigned, type: MessageBarType.error });
+        setSearchNonce((n) => n + 1);
+        return false;
+      }
+      const assignedCount = uniqueTaskIds.length;
+      const rawUserName = [user.firstName, user.lastName].map((v) => (v ?? '').trim()).filter((v) => v !== '');
+      const userName = rawUserName.length > 0 ? rawUserName.join(' ') : 'selected user';
+      const formatTemplate = (template: string): string =>
+        template.replace(/\{count\}/g, String(assignedCount)).replace(/\{user\}/g, userName);
+      const assignedTemplate = assignedCount === 1
+        ? assignTasksText.messages.assignedSuccessWithUserSingle
+          ?? assignTasksText.messages.assignedSuccessSingle
+          ?? assignTasksText.messages.assignedSuccess
+        : assignTasksText.messages.assignedSuccessWithUserMultiple
+          ?? assignTasksText.messages.assignedSuccessMultiple
+          ?? assignTasksText.messages.assignedSuccess;
+      setAssignMessage({ text: formatTemplate(assignedTemplate), type: MessageBarType.success });
+      selection.setAllSelected(false);
+      setSelectedCount(0);
+      onSelectionCountChange?.(0);
+      onSelectionChange?.({ selectedTaskIds: [], selectedSaleIds: [] });
+      setAssignPendingRefresh(true);
+      setSearchNonce((n) => n + 1);
+      return await new Promise<boolean>((resolve) => {
+        assignRefreshResolve.current = resolve;
+      });
+    } catch (err) {
+      setAssignMessage({
+        text: assignTasksText.messages.assignmentFailed,
+        type: MessageBarType.error,
+      });
+      setSearchNonce((n) => n + 1);
+      if (assignRefreshResolve.current) {
+        assignRefreshResolve.current(false);
+        assignRefreshResolve.current = null;
+        setAssignPendingRefresh(false);
+      }
+      return false;
+    }
+  };
+
+  const markPassedQcTasks = async (): Promise<void> => {
+    const markPassedQcText = SCREEN_TEXT.qcView.markPassedQc;
+    try {
+      const selected = selection.getSelection() as Record<string, unknown>[];
+      if (selected.length === 0) {
+        setAssignMessage({ text: markPassedQcText.messages.noSelection, type: MessageBarType.warning });
+        return;
+      }
+      const apiName = resolveSubmitQcRemarksApiName();
+      if (!apiName) {
+        setAssignMessage({ text: markPassedQcText.messages.apiNotConfigured, type: MessageBarType.error });
+        return;
+      }
+      const REASSIGNED_TO_QC_STATUS_NORMALIZED = 'reassigned to qc';
+      const allReassigned = selected.every((rec) => {
+        const statusRaw = (rec.taskstatus ?? rec.taskStatus ?? '') as string;
+        return String(statusRaw).trim().toLowerCase() === REASSIGNED_TO_QC_STATUS_NORMALIZED;
+      });
+      if (!allReassigned) {
+        setAssignMessage({ text: markPassedQcText.messages.invalidStatus, type: MessageBarType.error });
+        return;
+      }
+      const toNumericTaskId = (value: unknown): string => {
+        const raw = typeof value === 'string' ? value : typeof value === 'number' || typeof value === 'boolean' ? String(value) : '';
+        if (!raw) return '';
+        const digitsOnly = raw.replace(/\D/g, '');
+        return digitsOnly || raw;
+      };
+      const taskIds = selected
+        .map((rec) => toNumericTaskId(rec.taskid ?? rec.taskId ?? ''))
+        .map((value) => value.trim())
+        .filter((value) => value !== '');
+      const uniqueTaskIds = Array.from(new Set(taskIds));
+      if (uniqueTaskIds.length === 0) {
+        setAssignMessage({ text: markPassedQcText.messages.noValidTaskIds, type: MessageBarType.error });
+        return;
+      }
+      const reviewedBy = resolveAssignedByUserId(context);
+      const customApiType = resolveCustomApiOperationType('action');
+      await executeUnboundCustomApi<Record<string, unknown>>(
+        context,
+        apiName,
+        {
+          taskId: JSON.stringify(uniqueTaskIds),
+          qcOutcome: markPassedQcText.qcOutcome,
+          qcRemark: markPassedQcText.qcRemark,
+          qcReviewedBy: reviewedBy,
+        },
+        { operationType: customApiType },
+      );
+      const successText = uniqueTaskIds.length === 1
+        ? markPassedQcText.messages.success
+        : markPassedQcText.messages.successMultiple.replace(/\{count\}/g, String(uniqueTaskIds.length));
+      setAssignMessage({ text: successText, type: MessageBarType.success });
+      selection.setAllSelected(false);
+      setSelectedCount(0);
+      onSelectionCountChange?.(0);
+      onSelectionChange?.({ selectedTaskIds: [], selectedSaleIds: [] });
+      setSearchNonce((n) => n + 1);
+    } catch {
+      setAssignMessage({ text: SCREEN_TEXT.qcView.markPassedQc.messages.failed, type: MessageBarType.error });
+      setSearchNonce((n) => n + 1);
+    }
+  };
+
+  const applyPrefilters = React.useCallback((
+    next: ManagerPrefilterState,
+    options?: { source?: 'auto' | 'user' },
+  ) => {
+    const isAuto = options?.source === 'auto';
+    console.debug('[Prefilter] host apply', {
+      screen: screenKind,
+      isAuto,
+      next,
+    });
+    let resolved = next;
+    if (isQcAssign) {
+      if (next.searchBy === 'task') {
+        resolved = { ...next, caseworkers: [] };
+      } else if (next.searchBy === 'caseworker' || next.searchBy === 'qcUser') {
+        resolved = { ...next, caseworkers: mapCaseworkerNamesToIds(next.caseworkers ?? []) };
+      }
+    } else if (next.searchBy === 'caseworker') {
+      const nextCaseworkers = next.caseworkers ?? [];
+      if (isCaseworkerView && nextCaseworkers.length === 0 && currentUserId) {
+        resolved = { ...next, caseworkers: [currentUserId] };
+      } else {
+        resolved = { ...next, caseworkers: mapCaseworkerNamesToIds(nextCaseworkers) };
+      }
+    }
+    setPrefilters(resolved);
+    setPrefilterApplied(true);
+    setCurrentPage(0);
+    setSearchFilters(createDefaultGridFilters());
+    if (!isAuto) {
+      setClientSort({ name: 'saleid', sortDirection: 0 });
+      setUserSortActive(false);
+      setHeaderFilters({});
+      lastAppliedFiltersRef.current = {};
+      try {
+        localStorage.removeItem(storageKey);
+        localStorage.removeItem(storageKeyNC);
+      } catch {
+        // ignore storage failures
+      }
+      clearStoredSort();
+    }
+    selection.setAllSelected(false);
+    setSelectedCount(0);
+    onSelectionCountChange?.(0);
+    onSelectionChange?.({ selectedTaskIds: [], selectedSaleIds: [] });
+    setSearchNonce((n) => n + 1);
+  }, [
+    currentUserId,
+    isCaseworkerView,
+    isQcAssign,
+    mapCaseworkerNamesToIds,
+    onSelectionChange,
+    onSelectionCountChange,
+    screenKind,
+    selection,
+    clearStoredSort,
+    storageKey,
+    storageKeyNC,
+  ]);
+
   const props: GridProps = {
-    showSearchPanel: false,
+    showSearchPanel: !isManagerAssign && !isCaseworkerView && !isQcAssign && !isQcView,
+    screenKind,
     tableKey,
     datasetColumns,
     columnConfigs,
+    billingAuthorityOptions,
+    billingAuthorityOptionsLoading,
+    billingAuthorityOptionsError,
+    caseworkerOptions,
+    caseworkerOptionsLoading,
+    caseworkerOptionsError,
+    qcUserOptions,
+    qcUserOptionsLoading,
+    qcUserOptionsError,
     records,
     sortedRecordIds: pageIds,
     shimmer: apimLoading,
     itemsLoading: apimLoading,
-    selectionType: SelectionMode.multiple,
+    selectionType: (isSalesSearch || isCaseworkerView) ? SelectionMode.single : SelectionMode.multiple,
     selection,
     onNavigate,
     onSort,
-    sorting: (clientSort ? [{ name: clientSort.name, sortDirection: clientSort.sortDirection }] : []) as unknown as ComponentFramework.PropertyHelper.DataSetApi.SortStatus[],
+    sorting: (userSortActive && clientSort ? [{ name: clientSort.name, sortDirection: clientSort.sortDirection }] : []) as unknown as ComponentFramework.PropertyHelper.DataSetApi.SortStatus[],
     componentRef,
     resources: context.resources,
     columnDatasetNotDefined: false,
     onSearch: (fs) => {
-      setSearchFilters(sanitizeFilters(fs));
+      const sanitized = sanitizeFilters(fs);
+      setSearchFilters(sanitized);
       setCurrentPage(0);
+      setUserSortActive(false);
+      clearStoredSort();
+      if (isSalesSearch) {
+        const isDefault = isSalesSearchDefaultFilters(sanitized);
+        setSalesSearchApplied(!isDefault);
+        if (isDefault) {
+          setHasLoadedApim(false);
+          setApimItems([]);
+          setTotalCount(0);
+          setServerDriven(false);
+          setApiFilterOptions({});
+          setLoadErrorMessage(undefined);
+          return;
+        }
+      }
+      setSearchNonce((n) => n + 1);
     },
     onNextPage: () => {
       if (canNext) setCurrentPage((p) => p + 1);
@@ -279,30 +2172,104 @@ export const DetailsListHost: React.FC<DetailsListHostProps> = ({ context, onRow
     },
     currentPage,
     totalPages,
+    pageSize,
     canNext,
     canPrev,
     searchFilters,
-    showResults: true,
+    showResults: shouldShowResults(screenKind, prefilterApplied, salesSearchApplied),
     selectedCount,
     allowColumnReorder,
-    onLoadFilterOptions: async (field, query) => {
-      const configuredEndpoint = (context.parameters as unknown as Record<string, { raw?: string }>).apimEndpoint?.raw?.trim();
-      const customApiName = (context.parameters as unknown as Record<string, { raw?: string }>).customApiName?.raw?.trim();
-      if (!query || query.trim().length === 0) return [];
-      try {
-        return await fetchFilterOptions(context, { tableKey, field, query, apimEndpoint: configuredEndpoint, customApiName });
-      } catch {
-        return [];
-      }
+    statusMessage: assignMessage,
+    onStatusMessageDismiss: () => setAssignMessage(undefined),
+    errorMessage: loadErrorMessage,
+    assignUsers,
+    assignUsersLoading,
+    assignUsersError,
+    assignUsersInfo,
+    onAssignPanelToggle: handleAssignPanelToggle,
+    currentUserId,
+    onAssignTasks: assignTasksToUser,
+    onMarkPassedQc: isQcView ? markPassedQcTasks : undefined,
+    onLoadFilterOptions: (field, query) => {
+      const key = normalizeFilterKey(String(field ?? ''));
+      const options = displayFilterOptions[key] ?? [];
+      if (!query || query.trim().length === 0) return Promise.resolve(options);
+      const q = query.trim().toLowerCase();
+      return Promise.resolve(options.filter((opt) => opt.toLowerCase().includes(q)));
     },
     onColumnFiltersChange: (f) => {
-      setHeaderFilters(f);
-      setCurrentPage(0);
+      const normalizedBase: Record<string, ColumnFilterValue> = {};
+      Object.entries(f).forEach(([k, v]) => (normalizedBase[k.toLowerCase()] = v as ColumnFilterValue));
+      const normalized = shouldNormalizeSummaryFlagFilters
+        ? normalizeSummaryFlagColumnFilters(normalizedBase)
+        : normalizedBase;
+      // No-op if unchanged to avoid duplicate apply calls
+      const prev = lastAppliedFiltersRef.current;
+      const same = areFiltersEqual(prev, normalized);
+      if (!same) {
+        lastAppliedFiltersRef.current = normalized;
+        setHeaderFilters(normalized);
+        // Persist immediately to localStorage as arrays
+        try {
+          if (Object.keys(normalized).length === 0) {
+            localStorage.removeItem(storageKey); localStorage.removeItem(storageKeyNC);
+          } else {
+            const arrayStore = serializeColumnFiltersForStorage(normalized);
+            const filtersJSON = JSON.stringify(arrayStore);
+            localStorage.setItem(storageKey, filtersJSON);
+            localStorage.setItem(storageKeyNC, filtersJSON);
+          }
+        } catch {
+          // ignore storage failures
+        }
+        setCurrentPage(0);
+        try {
+          onColumnFiltersApply?.(
+            toApiHeaderFilters(
+              mapColumnFiltersForApi(normalized, { normalizeSummaryFlags: shouldNormalizeSummaryFlagFilters }),
+            ),
+          );
+        } catch { void 0; }
+      }
     },
+    columnFilters: headerFilters,
+    disableClientFiltering,
     taskCount: serverDriven ? totalCount : filteredIds.length,
+    canvasScreenName,
+    prefilterApplied,
+    onPrefilterDirty: handlePrefilterDirty,
+    onSearchDirty: handleSalesSearchDirty,
+    onPrefilterApply: applyPrefilters,
+    onPrefilterClear: () => {
+      setPrefilters(undefined);
+      setPrefilterApplied(false);
+      setCurrentPage(0);
+      setSearchFilters(createDefaultGridFilters());
+      setClientSort({ name: 'saleid', sortDirection: 0 });
+      setUserSortActive(false);
+      setHeaderFilters({});
+      lastAppliedFiltersRef.current = {};
+      selection.setAllSelected(false);
+      setSelectedCount(0);
+      onSelectionCountChange?.(0);
+      onSelectionChange?.({ selectedTaskIds: [], selectedSaleIds: [] });
+      setApimItems([]);
+      setTotalCount(0);
+      setServerDriven(false);
+      setHasLoadedApim(false);
+      setApiFilterOptions({});
+      try {
+        localStorage.removeItem(storageKey);
+        localStorage.removeItem(storageKeyNC);
+      } catch {
+        // ignore storage failures
+      }
+      clearStoredSort();
+    },
+    rowInvokeEnabled: false,
   };
 
-  return <Grid {...(props as unknown as GridProps)} />;
+  return <Grid {...(props as unknown as GridProps)} height={allocatedHeight} onBackRequested={onBackRequested} />;
 };
 
 DetailsListHost.displayName = 'DetailsListHost';

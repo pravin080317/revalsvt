@@ -7,12 +7,17 @@ This project contains a Power Apps Component Framework (PCF) control that render
 - Build and run locally: `npm start`
 - Add the control to a form/app and configure properties:
   - `revalSalesDataset`: Bind to your dataset.
-  - `tableKey` (optional): Select a table profile for the current screen (defaults to `sales`). Supported keys out of the box: `sales`/`allsales`, `myassignment`, `manager`, `qa`.
-  - `customApiName` (optional): Name of your unbound Dataverse Custom API to execute. If set, the control calls this API with the built query parameters. If not set, it falls back to `apimEndpoint`.
-  - `apimEndpoint` (optional): Fully qualified URL to call when `customApiName` is not provided.
   - `pageSize` (optional): Grid page size (default 10).
   - `columnDisplayNames` (optional): JSON mapping of dataset field → display label.
   - `columnConfig` (optional): JSON array configuring column behavior (width, sorting, cell type, etc.).
+
+## Security Review
+
+- Security review guide: `docs/security-review-readme.md`
+- Cross-repo behavior test strategy: `docs/cross-repo-behavior-testing.md`
+- Security gate test: `DetailsListVOA/tests/security-review-gate.test.ts`
+- Run the gate locally:
+  - `npx jest DetailsListVOA/tests/security-review-gate.test.ts --no-coverage`
 
 ## Column Display Name Overrides
 
@@ -47,9 +52,9 @@ Example:
 
 Each entry is matched to the dataset column by `ColName`, and supported properties are applied when rendering the grid.
 
-## Screen Profiles (tableKey)
+## Screen Profiles
 
-Use the `tableKey` property to select a profile for each screen without changing code. Profiles specify:
+Set `CONTROL_CONFIG.tableKey` to select a profile for each screen without changing code. Profiles specify:
 
 - Which columns behave as lookups (show a dropdown of distinct values in the column menu).
 - How to map the current search filters into API query parameters.
@@ -65,19 +70,19 @@ Implementation details live in `DetailsListVOA/TableConfigs.ts`:
 To add or customize a profile:
 
 1) Add a new key in `TABLE_CONFIGS` and provide `lookupFields` + `buildApiParams`.
-2) Set `tableKey` to that key on the screen using the control.
+2) Update `CONTROL_CONFIG.tableKey` to that key.
 
 ## Data Loading
 
 The control supports two data-calling modes:
 
 1) Dataverse Custom API (recommended)
-   - Set `customApiName` to the name of your unbound Custom API.
+   - Set `CONTROL_CONFIG.customApiName` to the name of your unbound Custom API.
    - The control calls `context.webAPI.execute` and passes all built parameters as strings.
    - Your Custom API can call APIM or any backend service and return a payload shaped like `TaskSearchResponse`.
 
 2) Direct HTTP endpoint
-   - If `customApiName` is not set, the control builds a URL using `apimEndpoint` and appends the same parameters.
+   - If `customApiName` is not set, the control builds a URL using `CONTROL_CONFIG.apimEndpoint` and appends the same parameters.
 
 ## Filtering and Sorting
 
@@ -96,7 +101,7 @@ The top panel contains quick filters (e.g., UPRN, Task ID, Address, Postcode, Ta
 ## Extending to Additional Screens
 
 - Create or adjust a profile in `TableConfigs.ts` for each screen.
-- Set `tableKey` on each screen instance to select the profile.
+- Update `CONTROL_CONFIG.tableKey` to select the profile.
 - If different screens need different API parameter names, implement a dedicated `buildApiParams` for each profile.
 
 ## Notes
@@ -104,3 +109,170 @@ The top panel contains quick filters (e.g., UPRN, Task ID, Address, Postcode, Ta
 - Column and filter matching is case-insensitive and uses "contains" semantics.
 - If a dataset column is missing but appears in the Custom API payload, the control will add it at runtime with a generated display name.
 - The control shows shimmer and overlay on sort or while loading.
+
+## Deployment
+
+There are two common ways to get this PCF control into a Dataverse environment: a quick developer push for rapid iteration, and packaging it in a solution for ALM/promotions.
+
+### Prerequisites
+
+- Node.js LTS and npm installed.
+- Power Platform CLI (`pac`) installed and authenticated to your environment.
+- Appropriate permissions in the target Dataverse environment.
+
+If your production API domain is not `api.contoso.gov.uk`, update `DetailsListVOA/ControlManifest.Input.xml` `<external-service-usage>` `<domain>` to your real domain and rebuild, as external service usage makes the control premium.
+
+### Quick Dev Push (for rapid testing)
+
+1. Install dependencies and build:
+   - `npm ci`
+   - `npm run build`
+2. Authenticate to your environment (one-time):
+   - `pac auth create --url https://<your-org>.crm.dynamics.com`
+3. Push the control to the environment:
+   - `pac pcf push --publisher-prefix <prefix>`
+
+This creates or updates an unmanaged, temporary solution in the environment for quick iteration. After pushing, add the control to a form/app in the maker UI.
+
+### Package as a Solution (for ALM)
+
+1. Create a solution workspace (once):
+   - `mkdir solution && cd solution`
+   - `pac solution init --publisher-name "dsync" --publisher-prefix svt`
+2. Add the PCF project reference (point to the `.pcfproj` file):
+   - `pac solution add-reference --path ..\\DetailsListVOA.pcfproj`
+   - Note: In this repo, the `.pcfproj` is at the repo root, not inside `DetailsListVOA`. If your project structure differs, point `--path` to the folder or `.pcfproj` that contains your PCF project.
+3. Build the control and create solution zips:
+   - In repo root (clean then build):
+     - `npm ci`
+     - `npm run rebuild`  (or `npm run clean && npm run build`)
+   - Build the Dataverse solution project via MSBuild:
+     - From `solution/` run one of (use the exact file name):
+       - `msbuild solution.cdsproj /t:Restore,Build /p:Configuration=Release`
+       - or `dotnet msbuild solution.cdsproj /t:Restore,Build /p:Configuration=Release`
+     - Outputs are written under `solution\bin\<Configuration>` and typically include both `*_unmanaged.zip` and `*_managed.zip`.
+   - (Optional) Copy to a stable name/location:
+     - Ensure folder: `mkdir .\bin`
+     - Copy unmanaged: `copy solution\bin\**\*_unmanaged.zip .\bin\DetailsListVOA_unmanaged.zip`
+     - Copy managed: `copy solution\bin\**\*_managed.zip .\bin\DetailsListVOA_managed.zip`
+4. Import into your target environment:
+   - `pac auth create --url https://<your-org>.crm.dynamics.com`
+   - From repo root (after copy): `pac solution import --path .\bin\DetailsListVOA_unmanaged.zip`
+   - Or import directly from `solution\bin\<Configuration>\*_unmanaged.zip`
+
+After import, the control appears in maker under code components and can be added to forms/canvas apps.
+
+#### Packing Notes
+
+- If MSBuild is not available, pack using Power Platform CLI SolutionPackager from the solution `src` folder:
+  - From `solution/`:
+    - `mkdir ..\\bin` (no-op if it exists)
+    - `Remove-Item ..\\bin\\DetailsListVOA_*.zip -ErrorAction SilentlyContinue`
+    - Unmanaged: `pac solution pack --folder src --zipFile ..\\bin\\DetailsListVOA_unmanaged.zip --packageType Unmanaged`
+    - Managed: `pac solution pack --folder src --zipFile ..\\bin\\DetailsListVOA_managed.zip --packageType Managed`
+  - Then import from `.\\bin\\DetailsListVOA_unmanaged.zip` (or managed).
+  
+- Alternatively, use PAC to build and create packages without MSBuild:
+  - From `solution/`:
+    - Build: `pac solution build --configuration Release`
+    - Unmanaged: `pac solution create-package --path solution.cdsproj --packageType Unmanaged --configuration Release --zipFile ..\\bin\\DetailsListVOA_unmanaged.zip`
+    - Managed: `pac solution create-package --path solution.cdsproj --packageType Managed --configuration Release --zipFile ..\\bin\\DetailsListVOA_managed.zip`
+
+### Configure In App
+
+Set the following properties in the app/form where the control is used:
+
+- `pageSize`, `columnDisplayNames`, `columnConfig`, `allowColumnReorder`, `perfLogsEnabled`: Tuning options; see sections above.
+
+Set the API and profile defaults in `DetailsListVOA/config/ControlConfig.ts`:
+
+- `customApiName` (optional): Name of an unbound Dataverse Custom API to execute. If set, the control uses `context.webAPI.execute` and passes built query parameters.
+- `apimEndpoint` (optional): Fully qualified HTTP URL used when `customApiName` is not provided.
+- `apiBaseUrl` (optional): Base URL used for sale details fetch on row invoke.
+- `tableKey` (optional): Profile key selecting column/parameter behavior (defaults to `sales`).
+
+### Useful Scripts
+
+- `npm start` — run the PCF test harness locally.
+- `npm run build` — build production bundle under `out/controls`.
+- `npm run clean` / `npm run rebuild` — clean or full rebuild.
+
+### One-Command PowerShell Automation
+
+Use the helper script to build, pack, and optionally import. Choose one of these invocation styles:
+
+- From PowerShell (recommended):
+  - Unmanaged: `& .\\scripts\\pcf-pack.ps1`
+  - Managed: `& .\\scripts\\pcf-pack.ps1 -Managed`
+  - Import after pack: `& .\\scripts\\pcf-pack.ps1 -EnvUrl https://<your-org>.crm.dynamics.com`
+  - If script execution is restricted: `Set-ExecutionPolicy -Scope Process Bypass; & .\\scripts\\pcf-pack.ps1`
+
+- From Command Prompt (cmd):
+  - Unmanaged: `.\\scripts\\pcf-pack.cmd`
+  - Managed: `.\\scripts\\pcf-pack.cmd -Managed`
+  - Import after pack: `.\\scripts\\pcf-pack.cmd -EnvUrl https://<your-org>.crm.dynamics.com`
+
+- From any shell with PowerShell 7:
+  - `pwsh -NoProfile -ExecutionPolicy Bypass -File .\\scripts\\pcf-pack.ps1 [args]`
+
+Notes:
+- First run will create a `solution/` folder (if missing) and initialize it with publisher `dsync` / prefix `svt`. Override with `-PublisherName` and `-PublisherPrefix`.
+- The script adds the project reference to `DetailsListVOA.pcfproj` if not already present, cleans previous zips, and writes outputs to `bin/`.
+- By default, the script uses SolutionPackager (pack from `solution/src`). Pass `-UsePacBuild` to use `pac solution build` + `pac solution create-package` instead. Add `-Managed` to also create the managed zip.
+- To silence `npm warn Unknown user config "python"` or `"unsafe-perm"`, pass `-FixNpmPythonWarn` and the script will remove these keys from your npm user/global config before running `npm ci`.
+
+### Troubleshooting
+
+- If the control is not visible after `pac pcf push`, clear app designer cache or open a new session.
+- If calls to your API fail, verify CORS and that the manifest `<external-service-usage>` domain matches the actual host.
+- If using `customApiName`, ensure the Custom API exists, user has privileges, and it returns the expected payload shape.
+- If you see `powershell.ps1 : A parameter cannot be found that matches parameter name 'ExecutionPolicy'`, a local script named `powershell.ps1` is shadowing the executable. Use `powershell.exe`/`pwsh` explicitly or invoke the script from PowerShell with `& .\\scripts\\pcf-pack.ps1`, or run `.\\scripts\\pcf-pack.cmd` from cmd.
+
+Solution name for the PCF
+
+If you are packaging from the solution/ folder (created by pac solution init), the solution’s UniqueName/LocalizedName is solution in solution/src/Other/Solution.xml (that is the name Power Apps will show for that solution unless you change it).
+
+<?xml version="1.0" encoding="utf-8"?>
+<ImportExportXml version="9.1.0.643" SolutionPackageVersion="9.1" languagecode="1033" generatedBy="CrmLive" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+  <SolutionManifest>
+    <!-- Unique Name of Cds Solution-->
+    <UniqueName>solution</UniqueName>
+    <LocalizedNames>
+      <!-- Localized Solution Name in language code -->
+      <LocalizedName description="solution" languagecode="1033" />
+    </LocalizedNames>
+    <Descriptions />
+    <Version>1.0</Version>
+    <!-- Solution Package Type: Unmanaged(0)/Managed(1)/Both(2)-->
+
+The PCF project itself also carries solution metadata under DetailsListVOA/src/Other/Solution.xml, where the UniqueName/LocalizedName is DetailsListVOA (publisher VOAWelshReform, prefix svt).
+
+    <?xml version="1.0" encoding="utf-8"?>
+<ImportExportXml version="9.1.0.643" SolutionPackageVersion="9.1" languagecode="1033" generatedBy="CrmLive" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+  <SolutionManifest>
+    <!-- Unique Name of Cds Solution-->
+    <UniqueName>DetailsListVOA</UniqueName>
+    <LocalizedNames>
+      <!-- Localized Solution Name in language code -->
+      <LocalizedName description="DetailsListVOA" languagecode="1033" />
+    </LocalizedNames>
+    <Descriptions />
+    <Version>1.0</Version>
+    <!-- Solution Package Type: Unmanaged(0)/Managed(1)/Both(2)-->
+    <Managed>2</Managed>
+    <Publisher>
+      <!-- Unique Publisher Name of Cds Solution -->
+      <UniqueName>VOAWelshReform</UniqueName>
+      <LocalizedNames>
+        <!-- Localized Cds Publisher Name in language code-->
+        <LocalizedName description="VOAWelshReform" languagecode="1033" />
+      </LocalizedNames>
+      <Descriptions>
+        <!-- Description of Cds Publisher in language code -->
+        <Description description="VOAWelshReform" languagecode="1033" />
+      </Descriptions>
+      <EMailAddress xsi:nil="true"></EMailAddress>
+      <SupportingWebsiteUrl xsi:nil="true"></SupportingWebsiteUrl>
+      <!-- Customization Prefix for the Cds Publisher-->
+      <CustomizationPrefix>svt</CustomizationPrefix>
+      <!-- Derived Option Value Prefix for the Customization Prefix of Cds Publisher -->

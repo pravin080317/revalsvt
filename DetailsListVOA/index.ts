@@ -3,7 +3,9 @@ import { IInputs, IOutputs } from './generated/ManifestTypes';
 import * as React from 'react';
 import { PCFContext } from './components/context/PCFContext';
 import { DetailsListHost } from './components/DetailsListHost/DetailsListHost';
-import { SVTSaleRecord, SDLTRecord } from './models/SVTModels';
+import { StatutorySpatialUnitBrowser } from './components/SpatialUnitBrowser/StatutorySpatialUnitBrowser';
+import { CONTROL_CONFIG } from './config/ControlConfig';
+import { executeUnboundCustomApi, normalizeCustomApiName, resolveCustomApiOperationType } from './services/CustomApi';
 
 export class DetailsListVOA implements ComponentFramework.ReactControl<IInputs, IOutputs> {
   private _notifyOutputChanged!: () => void;
@@ -13,6 +15,14 @@ export class DetailsListVOA implements ComponentFramework.ReactControl<IInputs, 
   private selectedSaleId?: string;
   private selectedTaskIdsJson?: string;
   private selectedSaleIdsJson?: string;
+  private selectedCount?: number;
+  private backRequestId?: string;
+  private actionType?: string;
+  private actionRequestId?: string;
+  private actionSequence = 0;
+  private viewSalePending?: boolean;
+  private viewSaleRequestSeq = 0;
+  private activeViewSaleRequestId?: number;
 
   public init(
     context: ComponentFramework.Context<IInputs>,
@@ -21,42 +31,76 @@ export class DetailsListVOA implements ComponentFramework.ReactControl<IInputs, 
   ): void {
     this._context = context;
     this._notifyOutputChanged = notifyOutputChanged;
+    try {
+      context.mode.trackContainerResize(true);
+    } catch {
+      // Ignore hosts that do not support container resize tracking.
+    }
   }
 
   public updateView(context: ComponentFramework.Context<IInputs>): React.ReactElement {
     this._context = context;
+    try {
+      const raw = (context.parameters as unknown as Record<string, { raw?: boolean | string }>).perfLogsEnabled?.raw;
+      const enabled = raw === true || String(raw ?? '').toLowerCase() === 'true';
+      (globalThis as unknown as { SVT_PERF?: unknown }).SVT_PERF = enabled;
+    } catch {
+      // ignore
+    }
 
     return React.createElement(
       PCFContext.Provider,
       { value: context },
-      React.createElement(DetailsListHost, {
-        context,
-        onRowInvoke: (args) => {
-          this.selectedTaskId = args?.taskId;
-          this.selectedSaleId = args?.saleId;
-          void this.onTaskClick(args?.taskId, args?.saleId);
-        },
-        onSelectionChange: (args) => {
-          // Selection should only emit IDs and not fetch details
-          this.selectedTaskId = args?.taskId;
-          this.selectedSaleId = args?.saleId;
-          this.selectedTaskIdsJson = JSON.stringify((args?.selectedTaskIds ?? []).filter((v) => !!v));
-          this.selectedSaleIdsJson = JSON.stringify((args?.selectedSaleIds ?? []).filter((v) => !!v));
-          this._saleDetails = '';
-          this._notifyOutputChanged();
-        },
-      }),
+      React.createElement(
+        React.Fragment,
+        null,
+        React.createElement(DetailsListHost, {
+          context,
+          onRowInvoke: (args) => {
+            this.selectedTaskId = args?.taskId;
+            this.selectedSaleId = args?.saleId;
+            return this.onTaskClick(args?.taskId, args?.saleId);
+          },
+          onSelectionChange: (args) => {
+            // Selection should only emit IDs and not fetch details
+            this.selectedTaskId = args?.taskId;
+            this.selectedSaleId = args?.saleId;
+            this.selectedTaskIdsJson = JSON.stringify((args?.selectedTaskIds ?? []).filter((v) => !!v));
+            this.selectedSaleIdsJson = JSON.stringify((args?.selectedSaleIds ?? []).filter((v) => !!v));
+            const taskCount = args?.selectedTaskIds?.length ?? 0;
+            const saleCount = args?.selectedSaleIds?.length ?? 0;
+            this.selectedCount = taskCount || saleCount;
+          },
+          onSelectionCountChange: (count) => {
+            if (this.selectedCount !== count) {
+              this.selectedCount = count;
+            }
+          },
+          onBackRequested: () => {
+            this._saleDetails = '';
+            this.viewSalePending = false;
+            this.emitAction('back');
+          },
+        }),
+        //React.createElement(StatutorySpatialUnitBrowser, null)
+      ),
     );
   }
 
   public getOutputs(): IOutputs {
-    return {
+    const outputs = {
       selectedTaskId: this.selectedTaskId,
       selectedSaleId: this.selectedSaleId,
       selectedTaskIdsJson: this.selectedTaskIdsJson,
       selectedSaleIdsJson: this.selectedSaleIdsJson,
+      selectedCount: this.selectedCount,
       saleDetails: this._saleDetails,
+      viewSalePending: this.viewSalePending,
+      actionType: this.actionType,
+      actionRequestId: this.actionRequestId,
+      backRequestId: this.backRequestId,
     } as IOutputs;
+    return outputs;
   }
 
   public destroy(): void {
@@ -64,102 +108,120 @@ export class DetailsListVOA implements ComponentFramework.ReactControl<IInputs, 
   }
 
   private async onTaskClick(taskId?: string, saleId?: string): Promise<void> {
-    this._saleDetails = '';
+    const requestId = this.beginViewSaleRequest();
 
-    if (!taskId || !saleId) {
-      this._notifyOutputChanged();
+    if (!saleId) {
+      // No API call needed — emit navigation immediately with empty details.
+      this.finishViewSaleRequest(requestId, JSON.stringify(this.getEmptySaleRecord()));
       return;
     }
 
-    const baseUrl = this._context.parameters.apiBaseUrl?.raw?.trim();
-
+    // Await the API response before emitting the navigation action.
+    // The PCF overlay spinner is shown on Page 1 (viewSalePending=true) while
+    // the API runs. Canvas only navigates to Page 2 once saleDetails is ready,
+    // ensuring the data is available as soon as Page 2 opens.
+    let detailsPayload = '';
     try {
-      if (!baseUrl) {
-        throw new Error('API base URL is not configured.');
+      const apiName = this.resolveViewSaleRecordApiName();
+      if (!apiName) {
+        throw new Error('View sale record API name is not configured.');
       }
 
-      const normalizedBaseUrl = baseUrl.replace(/\/+$/, '');
-      const apiUrl = `${normalizedBaseUrl}/sales/${saleId}`;
-      const response = await fetch(apiUrl);
-
-      if (!response.ok) {
-        throw new Error(`Request failed with status ${response.status}`);
-      }
-
-      const data = (await response.json()) as SVTSaleRecord;
-      this._saleDetails = JSON.stringify(data);
+      const customApiType = this.resolveCustomApiType();
+      const rawPayload = await executeUnboundCustomApi<unknown>(
+        this._context,
+        apiName,
+        { saleId },
+        { operationType: customApiType },
+      );
+      const payload = this.unwrapCustomApiPayload(rawPayload);
+      detailsPayload = typeof payload === 'string'
+        ? payload
+        : JSON.stringify(payload ?? this.getEmptySaleRecord());
     } catch (error) {
-      console.warn('Falling back to mock SVT sale record.', error);
-      const mock = this.getMockSaleRecord(taskId, saleId);
-      this._saleDetails = JSON.stringify(mock);
+      console.warn('Failed to fetch SVT sale record.', error);
+      detailsPayload = JSON.stringify(this.getEmptySaleRecord());
     }
 
+    this.finishViewSaleRequest(requestId, detailsPayload);
+  }
+
+  private beginViewSaleRequest(): number {
+    this.viewSaleRequestSeq += 1;
+    const requestId = this.viewSaleRequestSeq;
+    this.activeViewSaleRequestId = requestId;
+    this.viewSalePending = true;
+    this._saleDetails = '';
+    this._notifyOutputChanged();
+    return requestId;
+  }
+
+  private finishViewSaleRequest(requestId: number, detailsPayload: string): void {
+    if (this.activeViewSaleRequestId !== requestId) {
+      return;
+    }
+    this._saleDetails = detailsPayload;
+    this.viewSalePending = false;
+    // Emit once — saleDetails is populated before Canvas navigates to Page 2.
+    this.emitAction('viewSale');
+  }
+
+  private emitAction(type: 'back' | 'viewSale'): void {
+    if (type === 'back') {
+      // Ensure outputs change even when the last action was also "back".
+      this.selectedTaskId = '';
+      this.selectedSaleId = '';
+      this.selectedTaskIdsJson = '[]';
+      this.selectedSaleIdsJson = '[]';
+      this.selectedCount = 0;
+    }
+    this.actionType = type;
+    this.actionSequence += 1;
+    this.actionRequestId = `${this.actionSequence}-${Date.now()}`;
+    this.backRequestId = this.actionRequestId;
     this._notifyOutputChanged();
   }
 
-  private getMockSaleRecord(taskId?: string, saleId?: string): SVTSaleRecord {
-    const sdltTransactions: SDLTRecord[] = [
-      {
-        SDLTID: '47758',
-        TransactionPrice: '7000£',
-        TransactionPremium: '750',
-        TransactionDate: '17/08/2022',
-        GroundRent: '300',
-        Vendors: ['John', 'Smith'],
-        Vendees: ['Jane', 'Roger'],
-        VendorAgents: ['Agent1', 'Agent2'],
-        VendeeAgents: ['Agent3', 'Agent4'],
-        TypeofProperty: 'Terraced',
-        TenureType: 'FreeHold',
-        LeaseFrom: '17/12/2025',
-        LeaseTerm: '12',
-        IsMasterSaleRecord: true,
-      },
-      {
-        SDLTID: '32457',
-        TransactionPrice: '2000£',
-        TransactionPremium: '750',
-        TransactionDate: '17/09/1990',
-        GroundRent: '300',
-        Vendors: ['Mathew', 'Michael'],
-        Vendees: ['James', 'Anderson'],
-        VendorAgents: ['VendorAgent1', 'VendorAgent2'],
-        VendeeAgents: ['VendeeAgents1', 'VendeeAgents2'],
-        TypeofProperty: 'Terraced',
-        TenureType: 'FreeHold',
-        LeaseFrom: '17/09/1990',
-        LeaseTerm: '12',
-        IsMasterSaleRecord: false,
-      },
-    ];
+  private resolveViewSaleRecordApiName(): string {
+    const raw = (this._context.parameters as unknown as Record<string, { raw?: string }>).viewSaleRecordApiName?.raw;
+    const fromContext = normalizeCustomApiName(typeof raw === 'string' ? raw : undefined);
+    const fallback = normalizeCustomApiName(CONTROL_CONFIG.viewSaleRecordApiName);
+    return fromContext || fallback || '';
+  }
 
+  private resolveCustomApiType(): number {
+    const raw = (this._context.parameters as unknown as Record<string, { raw?: string }>).customApiType?.raw;
+    const fromContext = typeof raw === 'string' ? raw : undefined;
+    return resolveCustomApiOperationType(fromContext ?? CONTROL_CONFIG.customApiType);
+  }
+
+  private unwrapCustomApiPayload(payload: unknown): unknown {
+    if (payload && typeof payload === 'object') {
+      const record = payload as Record<string, unknown>;
+      const raw = record.Result ?? record.result;
+      if (typeof raw === 'string') {
+        try {
+          return JSON.parse(raw) as unknown;
+        } catch {
+          return raw;
+        }
+      }
+    }
+    return payload;
+  }
+
+  private getEmptySaleRecord(): Record<string, unknown> {
     return {
-      uprn: '18741001',
-      task_ID: taskId ?? '8789878991',
-      postcode: 'E14 4PH',
-      address: '1 Bruno Avenue, MT84 2VY',
-      billingAuthority: 'Cardiff',
-      band: 'C',
-      salePrice: '£395,000',
-      transactionDate: '17/08/2022',
-      latestModelPrice: '£380,000',
-      latestAdjustedPrice: '£375,000',
-      overallFlag: 'Investigate',
-      ratio: '1.05',
-      outlier: true,
-      flags: ['A1', 'A5', 'B2'],
-      usefulSale: 'Yes',
-      notes: 'Needs kitchen age update',
-      kitchenAge: '2015',
-      kitchenSpec: 'Modern',
-      bathroomAge: '2014',
-      bathroomSpec: 'Basic',
-      decorativeFinishes: 'Standard',
-      conditionScore: 82,
-      conditionCategory: 'B',
-      propertyType: 'Terraced',
-      LRPPDID: saleId ?? '452354',
-      SDLT: sdltTransactions,
+      taskDetails: {},
+      links: {},
+      bandingInfo: {},
+      propertyAttributes: {},
+      masterSale: {},
+      repeatSaleInfo: {},
+      welshLandTax: {},
+      landRegistryData: {},
+      salesParticularInfo: {},
+      salesVerificationInfo: {},
     };
   }
 

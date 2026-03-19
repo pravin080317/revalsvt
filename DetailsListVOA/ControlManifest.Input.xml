@@ -18,11 +18,90 @@
 
     <!-- Removed dataset-bound task properties for unbound API-first control -->
 
-    <!-- Optional canvas page or url to open when a row is invoked -->
-    <property name="navigationTarget" display-name-key="NavigationTarget" description-key="NavigationTarget description" of-type="SingleLine.Text" usage="input" required="false" />
     <property name="canvasScreenName" display-name-key="Canvas Screen Name" description-key="Name of the Canvas App screen to navigate to on row click (e.g., svt-sale-details)." of-type="SingleLine.Text" usage="input" required="false" default-value="" />
+    <property
+      name="tableKey"
+      display-name-key="Table Key"
+      description-key="Optional override for table/profile selection (e.g., sales, manager, qaassign, qaview)."
+      of-type="SingleLine.Text"
+      usage="input"
+      required="false"
+      default-value=""
+    />
+    <property
+      name="customApiName"
+      display-name-key="Custom API Name"
+      description-key="Name of the Dataverse Custom API used for search (e.g., voa_GetAllSalesRecord)."
+      of-type="SingleLine.Text"
+      usage="input"
+      required="false"
+      default-value="voa_GetAllSalesRecord"
+    />
+    <property
+      name="customApiType"
+      display-name-key="Custom API Type"
+      description-key="Custom API operation type: function (GET) or action (POST)."
+      of-type="SingleLine.Text"
+      usage="input"
+      required="false"
+      default-value="function"
+    />
+    <property
+      name="metadataApiName"
+      display-name-key="Metadata API Name"
+      description-key="Name of the Dataverse Custom API used to fetch metadata (e.g., voa_SvtGetSalesMetadata)."
+      of-type="SingleLine.Text"
+      usage="input"
+      required="false"
+      default-value="voa_SvtGetSalesMetadata"
+    />
+    <property
+      name="metadataApiType"
+      display-name-key="Metadata API Type"
+      description-key="Custom API operation type for metadata: function (GET) or action (POST)."
+      of-type="SingleLine.Text"
+      usage="input"
+      required="false"
+      default-value="function"
+    />
+    <property
+      name="taskAssignmentApiName"
+      display-name-key="Task Assignment API Name"
+      description-key="Name of the Dataverse Custom API used to assign tasks (e.g., voa_SvtTaskAssignment)."
+      of-type="SingleLine.Text"
+      usage="input"
+      required="false"
+      default-value="voa_SvtTaskAssignment"
+    />
+    <property
+      name="submitQcRemarksApiName"
+      display-name-key="Submit QC Remarks API Name"
+      description-key="Name of the Dataverse Custom API used to submit QC remarks and mark tasks as passed QC (e.g., voa_SvtSubmitQcRemarks)."
+      of-type="SingleLine.Text"
+      usage="input"
+      required="false"
+      default-value="voa_SvtSubmitQcRemarks"
+    />
+    <property
+      name="viewSaleRecordApiName"
+      display-name-key="View Sale Record API Name"
+      description-key="Name of the Dataverse Custom API used to fetch sale details by ID (e.g., voa_GetViewSaleRecordById)."
+      of-type="SingleLine.Text"
+      usage="input"
+      required="false"
+      default-value="voa_GetViewSaleRecordById"
+    />
     <!-- Number of records shown per page -->
-    <property name="pageSize" display-name-key="PageSize" description-key="PageSize description" of-type="Whole.None" usage="input" required="false" default-value="10" />
+    <property name="pageSize" display-name-key="PageSize" description-key="PageSize description" of-type="Whole.None" usage="input" required="false" default-value="500" />
+    <property
+      name="serverDrivenThreshold"
+      display-name-key="Server Driven Threshold"
+      description-key="If total records exceeds this threshold, the control switches to server-driven paging."
+      of-type="Whole.None"
+      usage="input"
+      required="false"
+      default-value="2000"
+    />
     <!-- Optional mapping of column logical names to display names as JSON -->
     <property
       name="columnDisplayNames"
@@ -43,54 +122,17 @@
       required="false"
       default-value="[]"
     />
-    <!-- Named, code-defined column profile. If set, merges with JSON in Column Configuration. -->
     <property
-      name="columnConfigProfile"
-      display-name-key="Column Configuration Profile"
-      description-key="Name of a built-in column profile (e.g., sales, manager)."
+      name="searchTrigger"
+      display-name-key="Search Trigger"
+      description-key="Updated on Search click to trigger a refresh."
       of-type="SingleLine.Text"
       usage="input"
       required="false"
       default-value=""
-    />
-    <property
-      name="apiBaseUrl"
-      display-name-key="API Base URL"
-      description-key="Base URL of the SVT sales API"
-      of-type="SingleLine.Text"
-      usage="input"
-      required="false"
-      default-value=""
-    />
-    <property
-      name="apimEndpoint"
-      display-name-key="APIM Endpoint"
-      description-key="Fully qualified URL of the APIM search endpoint"
-      of-type="SingleLine.Text"
-      usage="input"
-      required="false"
-      default-value="https://api.contoso.gov.uk/revaluation/tasks"
     />
     <!-- Removed search UI configuration properties; composition is component-based -->
     <!-- Removed sample search toggle -->
-    <property
-      name="customApiName"
-      display-name-key="Custom API Name"
-      description-key="Name of the Dataverse Custom API to execute (unbound). If set, the control will call this instead of the external endpoint."
-      of-type="SingleLine.Text"
-      usage="input"
-      required="false"
-      default-value=""
-    />
-    <property
-      name="tableKey"
-      display-name-key="Table Key"
-      description-key="Logical key for table config (e.g., sales, reviews)"
-      of-type="SingleLine.Text"
-      usage="input"
-      required="false"
-      default-value="sales"
-    />
     <property
       name="allowColumnReorder"
       display-name-key="Allow Column Reorder"
@@ -100,11 +142,25 @@
       required="false"
       default-value="false"
     />
+    <property
+      name="perfLogsEnabled"
+      display-name-key="Enable Performance Logs"
+      description-key="When on, control logs API and UI performance timings to the console."
+      of-type="TwoOptions"
+      usage="input"
+      required="false"
+      default-value="false"
+    />
     <property name="selectedTaskId" display-name-key="SelectedTaskId" description-key="SelectedTaskId description" of-type="SingleLine.Text" usage="output" required="false" />
     <property name="selectedSaleId" display-name-key="SelectedSaleId" description-key="SelectedSaleId description" of-type="SingleLine.Text" usage="output" required="false" />
     <property name="saleDetails" display-name-key="Sale Details" description-key="Serialized sale details JSON" of-type="SingleLine.Text" usage="output" required="false" />
+    <property name="viewSalePending" display-name-key="View Sale Pending" description-key="True while the control fetches sale details for navigation." of-type="TwoOptions" usage="output" required="false" />
+    <property name="actionType" display-name-key="Action Type" description-key="Last action type (back/viewSale)" of-type="SingleLine.Text" usage="output" required="false" />
+    <property name="actionRequestId" display-name-key="Action Request Id" description-key="Changes on each action to trigger OnChange" of-type="SingleLine.Text" usage="output" required="false" />
     <property name="selectedTaskIdsJson" display-name-key="Selected Task IDs (JSON)" description-key="JSON array of selected Task IDs" of-type="SingleLine.Text" usage="output" required="false" />
     <property name="selectedSaleIdsJson" display-name-key="Selected Sale IDs (JSON)" description-key="JSON array of selected Sale IDs" of-type="SingleLine.Text" usage="output" required="false" />
+    <property name="selectedCount" display-name-key="Selected Count" description-key="Count of selected rows" of-type="Whole.None" usage="output" required="false" />
+    <property name="backRequestId" display-name-key="Back Request Id" description-key="Updated when the user presses the back button." of-type="SingleLine.Text" usage="output" required="false" />
 
 
     <resources>
@@ -113,17 +169,8 @@
       <platform-library name="Fluent" version="9.46.2" />
       <css path="css/DetailsListVOA.css" order="1" />
     </resources>
-    <!-- UNCOMMENT TO ENABLE THE SPECIFIED API
     <feature-usage>
-      <uses-feature name="Device.captureAudio" required="true" />
-      <uses-feature name="Device.captureImage" required="true" />
-      <uses-feature name="Device.captureVideo" required="true" />
-      <uses-feature name="Device.getBarcodeValue" required="true" />
-      <uses-feature name="Device.getCurrentPosition" required="true" />
-      <uses-feature name="Device.pickFile" required="true" />
-      <uses-feature name="Utility" required="true" />
       <uses-feature name="WebAPI" required="true" />
     </feature-usage>
-    -->
   </control>
 </manifest>

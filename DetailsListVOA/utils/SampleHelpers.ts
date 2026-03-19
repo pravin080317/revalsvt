@@ -1,4 +1,4 @@
-import { SAMPLE_COLUMNS, SAMPLE_RECORDS, SampleRecord } from '../SampleData';
+import { SAMPLE_COLUMNS, SAMPLE_RECORDS, SampleRecord } from '../data/SampleData';
 
 function toText(value: unknown): string {
   if (typeof value === 'string') return value;
