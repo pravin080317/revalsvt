@@ -8,7 +8,7 @@ export const MANAGER_SEARCH_BY_OPTIONS: IDropdownOption[] = [
 export const MANAGER_WORKTHAT_BILLING: IDropdownOption[] = [
   { key: 'readyToAllocate', text: 'Is ready to allocate' },
   { key: 'currentlyAssigned', text: 'Is currently assigned' },
-  { key: 'hasBeenComplete', text: 'Has been complete' },
+  { key: 'hasBeenComplete', text: 'Has been completed' },
   { key: 'awaitingQc', text: 'Is awaiting or undergoing QC' },
 ];
 
@@ -43,13 +43,13 @@ export const QC_WORKTHAT_SELF_OPTIONS: IDropdownOption[] = [
 ];
 
 export const QC_WORKTHAT_CASEWORKER_OPTIONS: IDropdownOption[] = [
-  { key: 'caseworkerCompletedQcRequested', text: 'Has been complete by the selected caseworker where QC has been requested' },
-  { key: 'caseworkerCompleted', text: 'Has been complete by the selected caseworker' },
+  { key: 'caseworkerCompletedQcRequested', text: 'Has been completed by the selected caseworker where QC has been requested' },
+  { key: 'caseworkerCompleted', text: 'Has been completed by the selected caseworker' },
 ];
 
 export const QC_WORKTHAT_TASK_OPTIONS: IDropdownOption[] = [
-  { key: 'taskCompletedQcRequested', text: 'Has been complete by a caseworker where QC has been requested' },
-  { key: 'taskCompleted', text: 'Has been complete by a caseworker' },
+  { key: 'taskCompletedQcRequested', text: 'Has been completed by a caseworker where QC has been requested' },
+  { key: 'taskCompleted', text: 'Has been completed by a caseworker' },
 ];
 
 export const MANAGER_BILLING_AUTHORITY_OPTIONS: IDropdownOption[] = [
@@ -132,10 +132,12 @@ export const SCREEN_TEXT = {
       clearFilters: 'Clear filters',
       apply: 'Apply',
       clear: 'Clear',
+      close: 'Close',
       previous: 'Previous',
       next: 'Next',
       top: 'Top',
       back: 'Back',
+      moreActions: 'More actions',
     },
     toggles: {
       showFilters: 'Show Filters',
@@ -159,6 +161,9 @@ export const SCREEN_TEXT = {
       selectFirstHelperText: 'Uses the current page order.',
       selectFirstErrorText: 'Enter a number between 1 and {max}.',
       selectionSummaryText: 'Selected: {selected} of {pageTotal} on this page',
+      resultsSummaryText: 'Showing {from}-{to} of {total}',
+      resultsSummaryEmptyText: 'Showing 0 of 0',
+      resultsScrollHintText: 'Scroll for more columns',
     },
     tableActions: {
       viewSalesRecord: 'View Sales Record',
@@ -175,6 +180,9 @@ export const SCREEN_TEXT = {
       options: 'Options',
       min: 'Min',
       max: 'Max',
+    },
+    links: {
+      opensInNewTab: '(opens in new tab)',
     },
     filters: {
       numericModes: {
@@ -245,6 +253,9 @@ export const SCREEN_TEXT = {
         fromDate: 'Select the start date for completed tasks.',
         toDate: 'End date is set automatically based on the start date.',
       },
+      accessibility: {
+        requiredFieldKey: 'Fields marked with * are required',
+      },
       buttons: {
         search: 'Search',
         clearSearch: 'Clear search',
@@ -292,6 +303,9 @@ export const SCREEN_TEXT = {
         workThat: 'Choose a task status bucket.',
         fromDate: 'Select the start date for completed tasks.',
         toDate: 'End date is set automatically based on the start date.',
+      },
+      accessibility: {
+        requiredFieldKey: 'Fields marked with * are required',
       },
       buttons: {
         search: 'Search',
@@ -364,6 +378,9 @@ export const SCREEN_TEXT = {
         fromDate: 'Select the start date for completed tasks.',
         toDate: 'End date is set automatically based on the start date.',
       },
+      accessibility: {
+        requiredFieldKey: 'Fields marked with * are required',
+      },
       buttons: {
         search: 'Search',
         clearSearch: 'Clear search',
@@ -377,6 +394,9 @@ export const SCREEN_TEXT = {
     title: 'Sales Record Search',
     searchPanel: {
       searchByLabel: 'Search by',
+    },
+    accessibility: {
+      requiredFieldKey: 'Fields marked with * are required',
     },
     fields: {
       buildingNameNumber: 'Building Name/Number',
@@ -410,6 +430,9 @@ export const SCREEN_TEXT = {
       saleId: 'Format: S-1234567.',
       taskId: 'Use A- or M- prefix (e.g. A-1000001) or numbers only.',
       uprn: 'Digits only.',
+    },
+    hints: {
+      uprnInput: 'Digits only. Letters and symbols are removed automatically.',
     },
   },
   assignTasks: {

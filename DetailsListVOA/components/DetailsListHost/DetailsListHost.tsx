@@ -17,13 +17,13 @@ import { filterItemsByColumnFilters } from '../../utils/GridColumnFilters';
 import { toSortableDateKey } from '../../utils/DateSortUtils';
 import { deserializeColumnFiltersFromStorage, parseStoredSortState, serializeColumnFiltersForStorage, shouldPersistSortState } from '../../utils/GridStatePersistence';
 import { isGuidValue, normalizeSuid, normalizeUserId } from '../../utils/IdentifierUtils';
-import { buildPrefilterStorageKey, isSalesSearchDefaultFilters, resolveAssignmentScreenName, shouldShowResults } from '../../utils/ScreenBehavior';
-import { normalizePrefilterSearchBy } from '../../utils/PrefilterUtils';
+import { buildGridSessionKey, buildPrefilterStorageKey, isSalesSearchDefaultFilters, resolveAssignmentScreenName, shouldShowResults } from '../../utils/ScreenBehavior';
 import { resolveScreenConfig, toKnownTableKey, normalizeTableKey, type ScreenKind } from '../../utils/ScreenResolution';
 import { loadGridData } from '../../services/GridDataController';
 import { executeUnboundCustomApi, normalizeCustomApiName, resolveCustomApiOperationType } from '../../services/CustomApi';
 import { IInputs } from '../../generated/ManifestTypes';
 import { logPerf } from '../../utils/Perf';
+import { abbreviateSummaryFlagLabel } from '../../utils/TagSemanticUtils';
 
 export type { ScreenKind } from '../../utils/ScreenResolution';
 
@@ -56,8 +56,6 @@ const QC_ASSIGNMENT_SCREEN_NAME = 'quality control assignment';
 const normalizeGroupName = (value?: string): string => (value ?? '').trim().toLowerCase();
 const normalizeGroupList = (values?: string[]): string[] =>
   (Array.isArray(values) ? values.map((value) => normalizeGroupName(value)).filter((value) => value !== '') : []);
-const normalizePrefilterArray = (value: unknown): string[] =>
-  (Array.isArray(value) ? value.map((item) => String(item)) : []);
 const isAssignableUserInGroup = (user: AssignUser, teamNames: Set<string>, roleNames: Set<string>): boolean => {
   if (!user) return false;
   const team = normalizeGroupName(user.team);
@@ -71,6 +69,14 @@ const isAssignableUserInGroup = (user: AssignUser, teamNames: Set<string>, roleN
 
 const buildAssignableUsersCacheKey = (apiName: string, customApiType: number, screenName: string): string =>
   `${apiName}|${customApiType}|${screenName.trim().toLowerCase()}`;
+
+const normalizeAssignableUserId = (value: unknown): string => {
+  if (value === null || value === undefined) return '';
+  if (typeof value !== 'string' && typeof value !== 'number' && typeof value !== 'boolean') {
+    return '';
+  }
+  return normalizeUserId(String(value)).toLowerCase();
+};
 
 const resolveAssignedByUserId = (context: ComponentFramework.Context<IInputs>): string => {
   const fromContext = (context.userSettings as { userId?: string } | undefined)?.userId;
@@ -253,6 +259,8 @@ export const DetailsListHost: React.FC<DetailsListHostProps> = ({
     : undefined;
   const canvasScreenName = (context.parameters as unknown as Record<string, { raw?: string }>).canvasScreenName?.raw ?? '';
   const tableKeyRaw = (context.parameters as unknown as Record<string, { raw?: string }>).tableKey?.raw ?? '';
+  const columnDisplayNamesRaw = (context.parameters as unknown as Record<string, { raw?: string }>).columnDisplayNames?.raw?.trim() ?? '{}';
+  const columnConfigRaw = (context.parameters as unknown as Record<string, { raw?: string }>).columnConfig?.raw?.trim() ?? '[]';
   const screenName = canvasScreenName.toLowerCase();
   const fallbackTableKey = React.useMemo(
     () => normalizeTableKey((CONTROL_CONFIG.tableKey || 'sales').trim().toLowerCase()),
@@ -306,22 +314,20 @@ export const DetailsListHost: React.FC<DetailsListHostProps> = ({
   const [columnConfigs, setColumnConfigs] = React.useState<Record<string, ColumnConfig>>({});
 
   React.useEffect(() => {
-    const raw = (context.parameters as unknown as Record<string, { raw?: string }>).columnDisplayNames?.raw?.trim() ?? '{}';
     try {
-      const parsed = JSON.parse(raw) as Record<string, string>;
+      const parsed = JSON.parse(columnDisplayNamesRaw) as Record<string, string>;
       const map: Record<string, string> = {};
       Object.keys(parsed).forEach((k) => (map[k.toLowerCase()] = parsed[k]));
       setColumnDisplayNames(map);
     } catch {
       setColumnDisplayNames({});
     }
-  }, [context]);
+  }, [columnDisplayNamesRaw]);
 
   React.useEffect(() => {
-    const raw = (context.parameters as unknown as Record<string, { raw?: string }>).columnConfig?.raw?.trim() ?? '[]';
     try {
       const fromProfile = getProfileConfigs(profileKey);
-      const fromJson = JSON.parse(raw) as ColumnConfig[];
+      const fromJson = JSON.parse(columnConfigRaw) as ColumnConfig[];
       const merged = [...fromProfile, ...fromJson];
       const map: Record<string, ColumnConfig> = {};
       merged.forEach((c) => {
@@ -346,7 +352,7 @@ export const DetailsListHost: React.FC<DetailsListHostProps> = ({
     } catch {
       setColumnConfigs({});
     }
-  }, [context, profileKey]);
+  }, [columnConfigRaw, profileKey]);
 
   // State
   const [currentPage, setCurrentPage] = React.useState(0);
@@ -407,6 +413,8 @@ export const DetailsListHost: React.FC<DetailsListHostProps> = ({
   const caseworkerOptionsLoadKeyRef = React.useRef<string>('');
   const assignableUsersCacheLoadKeyRef = React.useRef<string>('');
   const assignableUsersCacheContextsRef = React.useRef<Set<string>>(new Set());
+  const metadataLoadKeyRef = React.useRef<string>('');
+  const prefilterSkipLogKeyRef = React.useRef<string>('');
   const handleAssignPanelToggle = React.useCallback((isOpen: boolean): boolean => {
     if (!isOpen) {
       setAssignPanelOpen(false);
@@ -437,6 +445,15 @@ export const DetailsListHost: React.FC<DetailsListHostProps> = ({
   }, [assignmentConfig, assignTasksText.messages.invalidStatus, screenKind]);
   // Defer persistence until after initial hydration to avoid add/remove flicker in localStorage
   const [hydrated, setHydrated] = React.useState(false);
+  const resetHostResultsState = React.useCallback(() => {
+    setApimLoading((prev) => (prev ? false : prev));
+    setHasLoadedApim((prev) => (prev ? false : prev));
+    setApimItems((prev) => (prev.length > 0 ? [] : prev));
+    setTotalCount((prev) => (prev !== 0 ? 0 : prev));
+    setServerDriven((prev) => (prev ? false : prev));
+    setApiFilterOptions((prev) => (Object.keys(prev).length > 0 ? {} : prev));
+    setLoadErrorMessage((prev) => (prev !== undefined ? undefined : prev));
+  }, []);
   const allowColumnReorder = (context.parameters as unknown as Record<string, { raw?: string | boolean }>).allowColumnReorder?.raw === true ||
     String((context.parameters as unknown as Record<string, { raw?: string | boolean }>).allowColumnReorder?.raw ?? '').toLowerCase() === 'true';
   const isManagerAssign = screenKind === 'managerAssign';
@@ -523,7 +540,7 @@ export const DetailsListHost: React.FC<DetailsListHostProps> = ({
   const caseworkerNameToIdMap = React.useMemo(() => {
     const map: Record<string, string> = {};
     assignableUsersCache.forEach((user) => {
-      const id = String(user?.id ?? '').trim();
+      const id = normalizeUserId(String(user?.id ?? ''));
       if (!id) return;
       const name = getUserDisplayName(user).trim();
       if (!name) return;
@@ -555,10 +572,62 @@ export const DetailsListHost: React.FC<DetailsListHostProps> = ({
     const mapped = caseworkerNameToIdMap[raw.toLowerCase()];
     return mapped ?? '';
   }, [caseworkerNameToIdMap]);
+  const summaryFlagOptions = React.useMemo(() => {
+    const values = apiFilterOptions.summaryflags ?? apiFilterOptions.summaryflag ?? [];
+    if (values.length === 0) return [];
+    return Array.from(new Set(
+      values
+        .map((value) => String(value ?? '').trim())
+        .filter((value) => value !== ''),
+    ));
+  }, [apiFilterOptions]);
+  const resolveSummaryFlagFilterValue = React.useCallback((rawValue: string): string => {
+    const trimmed = String(rawValue ?? '').trim();
+    if (!trimmed) return '';
+    if (summaryFlagOptions.length === 0) return trimmed;
+    const lower = trimmed.toLowerCase();
+    const exactLabel = summaryFlagOptions.find((option) => option.toLowerCase() === lower);
+    if (exactLabel) return exactLabel;
+    const exactAbbreviationMatches = summaryFlagOptions.filter(
+      (option) => abbreviateSummaryFlagLabel(option).toLowerCase() === lower,
+    );
+    if (exactAbbreviationMatches.length === 1) return exactAbbreviationMatches[0];
+    if (lower.length >= 2) {
+      const abbreviationPrefixMatches = summaryFlagOptions.filter(
+        (option) => abbreviateSummaryFlagLabel(option).toLowerCase().startsWith(lower),
+      );
+      if (abbreviationPrefixMatches.length === 1) return abbreviationPrefixMatches[0];
+    }
+    return trimmed;
+  }, [summaryFlagOptions]);
+  const normalizeSummaryFlagColumnFilters = React.useCallback(
+    (filters: Record<string, ColumnFilterValue>): Record<string, ColumnFilterValue> => {
+      const normalized: Record<string, ColumnFilterValue> = { ...filters };
+      Object.keys(normalized).forEach((field) => {
+        const key = normalizeFilterKey(field);
+        if (key !== 'summaryflags' && key !== 'summaryflag') return;
+        const current = normalized[field];
+        if (typeof current !== 'string') return;
+        const resolved = resolveSummaryFlagFilterValue(current);
+        if (!resolved) {
+          delete normalized[field];
+          return;
+        }
+        normalized[field] = resolved;
+      });
+      return normalized;
+    },
+    [resolveSummaryFlagFilterValue],
+  );
 
   const mapColumnFiltersForApi = React.useCallback(
-    (filters: Record<string, ColumnFilterValue>): Record<string, ColumnFilterValue> => {
-      const mapped: Record<string, ColumnFilterValue> = { ...filters };
+    (
+      filters: Record<string, ColumnFilterValue>,
+      options?: { normalizeSummaryFlags?: boolean },
+    ): Record<string, ColumnFilterValue> => {
+      const mapped: Record<string, ColumnFilterValue> = options?.normalizeSummaryFlags === false
+        ? { ...filters }
+        : normalizeSummaryFlagColumnFilters(filters);
       (['assignedto', 'qcassignedto'] as const).forEach((field) => {
         const current = mapped[field];
         if (!current) return;
@@ -584,7 +653,7 @@ export const DetailsListHost: React.FC<DetailsListHostProps> = ({
       });
       return mapped;
     },
-    [mapUserValueToId],
+    [mapUserValueToId, normalizeSummaryFlagColumnFilters],
   );
 
   const mapSearchFiltersForApi = React.useCallback(
@@ -602,16 +671,17 @@ export const DetailsListHost: React.FC<DetailsListHostProps> = ({
     [mapUserValueToId],
   );
 
-  const apiHeaderFilters = React.useMemo(
-    () => mapColumnFiltersForApi(headerFilters),
-    [headerFilters, mapColumnFiltersForApi],
-  );
   const hasFullResultSet = totalCount > 0 && apimItems.length >= totalCount;
   const clientSideThreshold = Math.max(1, pageSize);
   const clientSideEligible = hasLoadedApim
     && !serverDriven
     && hasFullResultSet
     && totalCount <= clientSideThreshold;
+  const shouldNormalizeSummaryFlagFilters = clientSideEligible;
+  const apiHeaderFilters = React.useMemo(
+    () => mapColumnFiltersForApi(headerFilters, { normalizeSummaryFlags: shouldNormalizeSummaryFlagFilters }),
+    [headerFilters, mapColumnFiltersForApi, shouldNormalizeSummaryFlagFilters],
+  );
   const activeClientSort = userSortActive ? clientSort : undefined;
   const serverClientSort = clientSideEligible ? undefined : activeClientSort;
   const columnFilterQuery = React.useMemo(
@@ -632,12 +702,12 @@ export const DetailsListHost: React.FC<DetailsListHostProps> = ({
   const mergeAssignableUsers = React.useCallback((prev: AssignUser[], next: AssignUser[]): AssignUser[] => {
     const map = new Map<string, AssignUser>();
     prev.forEach((u) => {
-      const id = String(u.id ?? '').trim().toLowerCase();
-      if (id) map.set(id, u);
+      const id = normalizeAssignableUserId(u.id);
+      if (id) map.set(id, { ...u, id });
     });
     next.forEach((u) => {
-      const id = String(u.id ?? '').trim().toLowerCase();
-      if (id) map.set(id, u);
+      const id = normalizeAssignableUserId(u.id);
+      if (id) map.set(id, { ...u, id });
     });
     return Array.from(map.values());
   }, []);
@@ -645,7 +715,7 @@ export const DetailsListHost: React.FC<DetailsListHostProps> = ({
   const userDisplayNameMap = React.useMemo(() => {
     const map: Record<string, string> = {};
     assignableUsersCache.forEach((user) => {
-      const id = String(user.id ?? '').trim().toLowerCase();
+      const id = normalizeAssignableUserId(user.id);
       if (!id) return;
       const name = getUserDisplayName(user);
       if (name) map[id] = name;
@@ -686,11 +756,7 @@ export const DetailsListHost: React.FC<DetailsListHostProps> = ({
     () => `voa-prefilters:${tableKey}:${screenName || 'default'}`,
     [screenName, tableKey],
   );
-  const prefilterAutoAppliedRef = React.useRef<string>('');
-  React.useEffect(() => {
-    prefilterAutoAppliedRef.current = '';
-  }, [prefilterStorageKey]);
-  const screenInstanceKey = React.useMemo(() => `${tableKey}:${screenName || 'default'}`, [screenName, tableKey]);
+  const screenInstanceKey = React.useMemo(() => buildGridSessionKey(tableKey, screenKind), [screenKind, tableKey]);
   const salesSearchStorageKey = React.useMemo(
     () => `voa-sales-search:${tableKey}:${screenName || 'default'}`,
     [screenName, tableKey],
@@ -734,42 +800,55 @@ export const DetailsListHost: React.FC<DetailsListHostProps> = ({
   // Hydrate from localStorage on table change (URL persistence disabled by policy)
   React.useEffect(() => {
     try {
-      let shouldRestoreFilters = false;
       let sessionScreens: Record<string, boolean> = {};
       try {
         const rawScreens = sessionStorage.getItem('voa-session-screens');
         if (rawScreens) {
           sessionScreens = JSON.parse(rawScreens) as Record<string, boolean>;
         }
-        shouldRestoreFilters = !!sessionScreens[screenInstanceKey];
-        if (!shouldRestoreFilters) {
-          shouldRestoreFilters = sessionStorage.getItem('voa-last-screen') === screenInstanceKey;
-        }
       } catch {
         // ignore session storage failures
       }
-      // Restore retained grid state only when returning to the same screen in-session or after reload.
+      // Restore directly from localStorage. In Power Apps hosted navigation, sessionStorage is not
+      // always stable across screen transitions even when the user returns to the same logical screen.
       const rawLocalFilters = localStorage.getItem(storageKey) ?? localStorage.getItem(storageKeyNC);
-      if (rawLocalFilters && shouldRestoreFilters) {
+      if (rawLocalFilters) {
         const normalized = deserializeColumnFiltersFromStorage(String(tableKey), rawLocalFilters) as Record<string, ColumnFilterValue>;
         lastAppliedFiltersRef.current = normalized;
         setHeaderFilters(normalized);
-        try { onColumnFiltersApply?.(toApiHeaderFilters(mapColumnFiltersForApi(normalized))); } catch { /* ignore */ }
+        try {
+          onColumnFiltersApply?.(
+            toApiHeaderFilters(
+              mapColumnFiltersForApi(normalized, { normalizeSummaryFlags: shouldNormalizeSummaryFlagFilters }),
+            ),
+          );
+        } catch {
+          /* ignore */
+        }
+      } else {
+        lastAppliedFiltersRef.current = {};
+        setHeaderFilters({});
       }
       // Sort
       const rawLocalSort = localStorage.getItem(storageKeySort) ?? localStorage.getItem(storageKeySortNC);
-      if (rawLocalSort && shouldRestoreFilters) {
+      if (rawLocalSort) {
         const parsed = parseStoredSortState(rawLocalSort);
         if (parsed) {
           setClientSort(parsed);
           setUserSortActive(true);
+        } else {
+          setUserSortActive(false);
         }
+      } else {
+        setUserSortActive(false);
       }
       // Page
       const rawLocalPage = localStorage.getItem(storageKeyPage) ?? localStorage.getItem(storageKeyPageNC);
-      if (rawLocalPage && shouldRestoreFilters) {
+      if (rawLocalPage) {
         const n = Number(rawLocalPage);
         if (!Number.isNaN(n) && n >= 0) setCurrentPage(n);
+      } else {
+        setCurrentPage(0);
       }
       try {
         sessionScreens[screenInstanceKey] = true;
@@ -795,6 +874,7 @@ export const DetailsListHost: React.FC<DetailsListHostProps> = ({
     storageKeyPageNC,
     tableKey,
     toApiHeaderFilters,
+    shouldNormalizeSummaryFlagFilters,
   ]);
   // Persist to localStorage whenever filters/page/sort change
   React.useEffect(() => {
@@ -867,7 +947,11 @@ export const DetailsListHost: React.FC<DetailsListHostProps> = ({
           ? value.split(',').map((v) => v.trim()).filter((v) => v !== '')
           : [];
         if (ids.length === 0) return undefined;
-        return ids.map((id) => userDisplayNameMap[id.toLowerCase()] ?? id);
+        return ids.map((id) => {
+          const normalizedId = normalizeAssignableUserId(id);
+          if (!normalizedId) return id;
+          return userDisplayNameMap[normalizedId] ?? id;
+        });
       };
       apimItems.forEach((item, index) => {
         const base: Record<string, unknown> = {};
@@ -1018,7 +1102,7 @@ export const DetailsListHost: React.FC<DetailsListHostProps> = ({
   }>({});
   React.useEffect(() => {
     const prevKind = lastScreenKindRef.current;
-    const screenKindChanged = prevKind !== screenKind;
+    const screenKindChanged = prevKind !== undefined && prevKind !== screenKind;
     const switchedSalesToManager = screenKindChanged && prevKind === 'salesSearch' && isManagerAssign;
     const switchedToCaseworker = screenKindChanged && isCaseworkerView;
     const switchedToQcAssign = screenKindChanged && isQcAssign;
@@ -1026,12 +1110,18 @@ export const DetailsListHost: React.FC<DetailsListHostProps> = ({
     lastScreenKindRef.current = screenKind;
 
     if (switchedSalesToManager || switchedToCaseworker || switchedToQcAssign || switchedToQcView) {
-      // Force a clean slate when entering a prefilter-driven screen.
+      let hasStoredPrefilter = false;
+      try {
+        hasStoredPrefilter = !!localStorage.getItem(prefilterStorageKey);
+        if (!hasStoredPrefilter && legacyPrefilterStorageKey !== prefilterStorageKey) {
+          hasStoredPrefilter = !!localStorage.getItem(legacyPrefilterStorageKey);
+        }
+      } catch {
+        hasStoredPrefilter = false;
+      }
+
       setPrefilters(undefined);
       setPrefilterApplied(false);
-      setCurrentPage(0);
-      setSearchFilters(createDefaultGridFilters());
-      setUserSortActive(false);
       setHasLoadedApim(false);
       setApimItems([]);
       setTotalCount(0);
@@ -1042,6 +1132,13 @@ export const DetailsListHost: React.FC<DetailsListHostProps> = ({
       setSelectedCount(0);
       onSelectionCountChange?.(0);
       onSelectionChange?.({ selectedTaskIds: [], selectedSaleIds: [] });
+      if (!hasStoredPrefilter) {
+        setCurrentPage(0);
+        setSearchFilters(createDefaultGridFilters());
+        setUserSortActive(false);
+        setHeaderFilters({});
+        lastAppliedFiltersRef.current = {};
+      }
       return;
     }
 
@@ -1050,30 +1147,30 @@ export const DetailsListHost: React.FC<DetailsListHostProps> = ({
       return;
     }
     if (isSalesSearch && !salesSearchApplied) {
+      prefilterSkipLogKeyRef.current = '';
+      resetHostResultsState();
+      return;
+    }
+    const pendingScreenKindChange = lastScreenKindRef.current !== undefined && lastScreenKindRef.current !== screenKind;
+    if (pendingScreenKindChange) {
+      prefilterSkipLogKeyRef.current = '';
       setApimLoading(false);
-      setHasLoadedApim(false);
-      setApimItems([]);
-      setTotalCount(0);
-      setServerDriven(false);
-      setApiFilterOptions({});
-      setLoadErrorMessage(undefined);
       return;
     }
     if (isPrefilterScreen && !prefilterApplied) {
-      console.debug('[Prefilter] host load skip', {
-        screen: screenKind,
-        prefilterApplied,
-        prefilters,
-      });
-      setApimLoading(false);
-      setHasLoadedApim(false);
-      setApimItems([]);
-      setTotalCount(0);
-      setServerDriven(false);
-      setApiFilterOptions({});
-      setLoadErrorMessage(undefined);
+      const skipKey = `${screenKind}|${prefilterApplied ? '1' : '0'}|${JSON.stringify(prefilters ?? null)}`;
+      if (prefilterSkipLogKeyRef.current !== skipKey) {
+        prefilterSkipLogKeyRef.current = skipKey;
+        console.debug('[Prefilter] host load skip', {
+          screen: screenKind,
+          prefilterApplied,
+          prefilters,
+        });
+      }
+      resetHostResultsState();
       return;
     }
+    prefilterSkipLogKeyRef.current = '';
     const trigger = String((context.parameters as unknown as Record<string, { raw?: string | number }>).searchTrigger?.raw ?? '');
     const sortKey = serverClientSort ? `${serverClientSort.name}:${serverClientSort.sortDirection}` : '';
     const nextSortKey = clientSideEligible ? lastRef.current.sort : sortKey;
@@ -1085,7 +1182,7 @@ export const DetailsListHost: React.FC<DetailsListHostProps> = ({
       || lastRef.current.sort !== nextSortKey
       || lastRef.current.nonce !== searchNonce
       || lastRef.current.columnFilters !== nextColumnFilters
-      || !hasLoadedApim;
+      || (!hasLoadedApim && !apimLoading);
     if (!changed) return;
     lastRef.current = {
       table: tableKey,
@@ -1133,7 +1230,7 @@ export const DetailsListHost: React.FC<DetailsListHostProps> = ({
       }
       setApiFilterOptions(normalizeFilterOptions(tableKey, res.filters));
     })();
-  }, [context, tableKey, sourceCode, searchFilters, currentPage, pageSize, clientSort, userSortActive, clientSideEligible, searchNonce, hasLoadedApim, prefilters, prefilterApplied, isCaseworkerView, currentUserId, isPrefilterScreen, isSalesSearch, salesSearchApplied, prefilterStorageKey, screenKind, columnFilterQuery, mapSearchFiltersForApi]);
+  }, [context, tableKey, sourceCode, searchFilters, currentPage, pageSize, clientSort, userSortActive, clientSideEligible, searchNonce, hasLoadedApim, apimLoading, prefilters, prefilterApplied, isCaseworkerView, currentUserId, isPrefilterScreen, isSalesSearch, salesSearchApplied, prefilterStorageKey, screenKind, columnFilterQuery, mapSearchFiltersForApi, resetHostResultsState]);
 
   React.useEffect(() => {
     if (!assignPanelOpen || !assignmentContextKey) {
@@ -1605,6 +1702,7 @@ export const DetailsListHost: React.FC<DetailsListHostProps> = ({
   React.useEffect(() => {
     const shouldLoad = isManagerAssign || isSalesSearch;
     if (!shouldLoad) {
+      metadataLoadKeyRef.current = '';
       setBillingAuthorityOptions([]);
       setBillingAuthorityOptionsError(undefined);
       setBillingAuthorityOptionsLoading(false);
@@ -1612,6 +1710,7 @@ export const DetailsListHost: React.FC<DetailsListHostProps> = ({
     }
 
     if (!metadataApiName) {
+      metadataLoadKeyRef.current = '';
       if (fallbackBillingAuthorityOptions.length > 0) {
         setBillingAuthorityOptions(fallbackBillingAuthorityOptions);
         setBillingAuthorityOptionsError(undefined);
@@ -1622,6 +1721,12 @@ export const DetailsListHost: React.FC<DetailsListHostProps> = ({
       setBillingAuthorityOptionsLoading(false);
       return;
     }
+
+    const metadataLoadKey = `${screenKind}|${metadataApiName}|${metadataApiType}`;
+    if (metadataLoadKeyRef.current === metadataLoadKey) {
+      return;
+    }
+    metadataLoadKeyRef.current = metadataLoadKey;
 
     let active = true;
     setBillingAuthorityOptionsLoading(true);
@@ -2008,54 +2113,6 @@ export const DetailsListHost: React.FC<DetailsListHostProps> = ({
     storageKeyNC,
   ]);
 
-  React.useEffect(() => {
-    if (!isPrefilterScreen || prefilterApplied) return;
-    const autoKey = `${prefilterStorageKey}|${screenKind}`;
-    if (prefilterAutoAppliedRef.current === autoKey) return;
-    let raw: string | null = null;
-    try {
-      raw = localStorage.getItem(prefilterStorageKey);
-      if (!raw && legacyPrefilterStorageKey !== prefilterStorageKey) {
-        raw = localStorage.getItem(legacyPrefilterStorageKey);
-      }
-    } catch {
-      raw = null;
-    }
-    if (!raw) return;
-    try {
-      const parsed = JSON.parse(raw) as {
-        searchBy?: unknown;
-        billingAuthorities?: unknown;
-        caseworkers?: unknown;
-        workThat?: unknown;
-        completedFrom?: unknown;
-        completedTo?: unknown;
-        applied?: unknown;
-      };
-      if (parsed?.applied === false) return;
-      const next: ManagerPrefilterState = {
-        searchBy: normalizePrefilterSearchBy(parsed?.searchBy, screenKind),
-        billingAuthorities: normalizePrefilterArray(parsed?.billingAuthorities),
-        caseworkers: normalizePrefilterArray(parsed?.caseworkers),
-        workThat: typeof parsed?.workThat === 'string' ? (parsed.workThat as ManagerPrefilterState['workThat']) : undefined,
-        completedFrom: typeof parsed?.completedFrom === 'string' ? parsed.completedFrom : undefined,
-        completedTo: typeof parsed?.completedTo === 'string' ? parsed.completedTo : undefined,
-      };
-      prefilterAutoAppliedRef.current = autoKey;
-      console.debug('[Prefilter] host auto-apply', { screen: screenKind, next });
-      applyPrefilters(next, { source: 'auto' });
-    } catch {
-      // ignore parse errors
-    }
-  }, [
-    applyPrefilters,
-    isPrefilterScreen,
-    legacyPrefilterStorageKey,
-    prefilterApplied,
-    prefilterStorageKey,
-    screenKind,
-  ]);
-
   const props: GridProps = {
     showSearchPanel: !isManagerAssign && !isCaseworkerView && !isQcAssign && !isQcView,
     screenKind,
@@ -2115,6 +2172,7 @@ export const DetailsListHost: React.FC<DetailsListHostProps> = ({
     },
     currentPage,
     totalPages,
+    pageSize,
     canNext,
     canPrev,
     searchFilters,
@@ -2140,8 +2198,11 @@ export const DetailsListHost: React.FC<DetailsListHostProps> = ({
       return Promise.resolve(options.filter((opt) => opt.toLowerCase().includes(q)));
     },
     onColumnFiltersChange: (f) => {
-      const normalized: Record<string, ColumnFilterValue> = {};
-      Object.entries(f).forEach(([k, v]) => (normalized[k.toLowerCase()] = v as ColumnFilterValue));
+      const normalizedBase: Record<string, ColumnFilterValue> = {};
+      Object.entries(f).forEach(([k, v]) => (normalizedBase[k.toLowerCase()] = v as ColumnFilterValue));
+      const normalized = shouldNormalizeSummaryFlagFilters
+        ? normalizeSummaryFlagColumnFilters(normalizedBase)
+        : normalizedBase;
       // No-op if unchanged to avoid duplicate apply calls
       const prev = lastAppliedFiltersRef.current;
       const same = areFiltersEqual(prev, normalized);
@@ -2162,7 +2223,13 @@ export const DetailsListHost: React.FC<DetailsListHostProps> = ({
           // ignore storage failures
         }
         setCurrentPage(0);
-        try { onColumnFiltersApply?.(toApiHeaderFilters(mapColumnFiltersForApi(normalized))); } catch { void 0; }
+        try {
+          onColumnFiltersApply?.(
+            toApiHeaderFilters(
+              mapColumnFiltersForApi(normalized, { normalizeSummaryFlags: shouldNormalizeSummaryFlagFilters }),
+            ),
+          );
+        } catch { void 0; }
       }
     },
     columnFilters: headerFilters,

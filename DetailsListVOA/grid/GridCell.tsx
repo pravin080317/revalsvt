@@ -1,9 +1,11 @@
-﻿import { DefaultButton, FontIcon, IColumn, IconButton, Image, IRawStyle, Link, mergeStyles } from '@fluentui/react';
+import { DefaultButton, FontIcon, IColumn, Image, IRawStyle, Link, mergeStyles } from '@fluentui/react';
 import * as React from 'react';
 import { IGridColumn } from '../Component.types';
 import { DatasetArray } from '../utils/DatasetArrayItem';
 import { ClassNames, FontStyles } from './Grid.styles';
 import { CellTypes } from '../config/ManifestConstants';
+import { SCREEN_TEXT } from '../constants/ScreenText';
+import { getFlaggedForReviewTagMeta, getSummaryFlagTagMeta, getTaskStatusTagMeta } from '../utils/TagSemanticUtils';
 
 const CSS_IMPORTANT = ' !important';
 
@@ -130,6 +132,9 @@ function wrapContent(cellContents: JSX.Element, column: IGridColumn, isBlank: bo
     // Set the width - if this is the root, then we always set the width to prevent overflow to the column to the right
     // If this is a sub column, then we can alow the content to overflow if the width is not set
     const constrainWidth = column.maxWidth !== undefined || column.isMultiline === true;
+    const isTagCell =
+        column.cellType?.toLowerCase() === CellTypes.Tag
+        || column.cellType?.toLowerCase() === CellTypes.IndicatorTag;
     let whiteSpace: string | undefined = undefined;
     if (constrainWidth) {
         whiteSpace = column.isMultiline === true ? 'normal' : 'nowrap';
@@ -146,10 +151,13 @@ function wrapContent(cellContents: JSX.Element, column: IGridColumn, isBlank: bo
     const cellStyle = {
         maxWidth: undefinedIf(constrainWidth, targetWidth),
         textOverflow: undefinedIf(constrainWidth, 'ellipsis'),
-        overflow: undefinedIf(constrainWidth, 'hidden'),
+        overflow: isTagCell ? 'visible' : undefinedIf(constrainWidth, 'hidden'),
         whiteSpace: whiteSpace,
+        display: isTagCell ? 'inline-flex' : undefined,
+        alignItems: isTagCell ? 'center' : undefined,
         paddingLeft: undefinedIf(!isBlank, effectivePaddingLeft),
-        paddingTop: undefinedIf(!isBlank, column.paddingTop),
+        paddingTop: undefinedIf(!isBlank, column.paddingTop ?? (isTagCell ? '1px' : undefined)),
+        paddingBottom: undefinedIf(!isBlank && isTagCell, '1px'),
         paddingRight: undefinedIf(!isBlank && moreCols, effectivePaddingRight),
         fontWeight: column.isBold ? FontStyles.Bold.fontWeight : FontStyles.Normal.fontWeight,
     } as IRawStyle;
@@ -209,6 +217,7 @@ function getTextTagCell(
     item: ComponentFramework.PropertyHelper.DataSetApi.EntityRecord | Record<string, unknown>,
 ) {
     const tagValues = getCellValue<string>(column.fieldName, item).filter((v) => (v ?? '').toString().trim() !== '');
+    const fieldName = (column.fieldName ?? '').toLowerCase();
     const tagColor = column.tagColor?.startsWith('#')
         ? column.tagColor
         : getCellValue<string>(column.tagColor, item)[0];
@@ -219,7 +228,9 @@ function getTextTagCell(
         background: tagColor || '#F4F6F7' + CSS_IMPORTANT,
         borderColor: (tagBorderColor || '#CAD0D5') + CSS_IMPORTANT,
     })}`;
-    const isSummaryFlags = (column.fieldName ?? '').toLowerCase() === 'summaryflags';
+    const isSummaryFlags = fieldName === 'summaryflags';
+    const isTaskStatus = fieldName === 'taskstatus';
+    const isFlaggedForReview = fieldName === 'flaggedforreview';
     const normalizedTagValues = isSummaryFlags
         ? tagValues.flatMap((value) => {
             const raw = value?.toString?.().trim() ?? '';
@@ -229,26 +240,37 @@ function getTextTagCell(
         })
         : tagValues;
     const isBlank = normalizedTagValues.length === 0;
+    const summaryFlagsTooltip = isSummaryFlags
+        ? normalizedTagValues.map((value) => value.toString().trim()).join(', ')
+        : undefined;
     const cellContents = !isBlank ? (
-        <span className={isSummaryFlags ? 'voa-summary-tags' : undefined}>
+        <span className={isSummaryFlags ? 'voa-summary-tags' : undefined} title={summaryFlagsTooltip ?? undefined}>
             {normalizedTagValues.map((t, idx) => {
                 const text = t.toString().trim();
-                const displayText = isSummaryFlags ? getSummaryTagLabel(text) : text;
-                const colors = isSummaryFlags ? getSummaryTagColors(text) : undefined;
-                const summaryClass = isSummaryFlags ? 'voa-summary-tag' : undefined;
-                const summaryStyle = colors
-                    ? { background: colors.background, borderColor: colors.borderColor, color: colors.color }
+                const semanticMeta =
+                    (isFlaggedForReview ? getFlaggedForReviewTagMeta(text) : undefined)
+                    ?? (isTaskStatus ? getTaskStatusTagMeta(text) : undefined)
+                    ?? (isSummaryFlags ? getSummaryFlagTagMeta(text) : undefined);
+                const summaryStyle = semanticMeta?.colors
+                    ? {
+                        background: semanticMeta.colors.background,
+                        borderColor: semanticMeta.colors.borderColor,
+                        color: semanticMeta.colors.color,
+                    }
                     : undefined;
                 const marginRight = isSummaryFlags ? 0 : 6;
                 return (
                     <span
                         key={idx}
-                        className={`${tagColorClass}${summaryClass ? ` ${summaryClass}` : ''}`}
-                        title={text}
-                        aria-label={`${column.name ?? column.fieldName ?? 'Tag'} ${text}`}
+                        className={[
+                            semanticMeta ? ClassNames.textTag : tagColorClass,
+                            semanticMeta?.className,
+                        ].filter(Boolean).join(' ')}
+                        title={semanticMeta?.titleText ?? semanticMeta?.spokenText ?? text}
+                        aria-label={`${column.name ?? column.fieldName ?? 'Tag'} ${semanticMeta?.spokenText ?? text}`}
                         style={{ marginRight, ...(summaryStyle ?? {}) }}
                     >
-                        {displayText}
+                        {semanticMeta?.label ?? text}
                     </span>
                 );
             })}
@@ -257,39 +279,6 @@ function getTextTagCell(
         <></>
     );
     return { isBlank, cellContents };
-}
-
-function getSummaryTagLabel(text: string): string {
-    const trimmed = (text ?? '').trim();
-    if (!trimmed) return '';
-    const tokens = trimmed.split(/[\s_-]+/).map((t) => t.trim()).filter((t) => t.length > 0);
-    if (tokens.length > 1) {
-        const initials = tokens.map((t) => t[0]).join('');
-        const digits = trimmed.replace(/[^0-9]/g, '');
-        return `${initials}${digits}`;
-    }
-    const letters = trimmed.replace(/[^a-zA-Z]/g, '');
-    const digits = trimmed.replace(/[^0-9]/g, '');
-    if (letters.length > 0 || digits.length > 0) {
-        const prefix = letters.length > 2 ? letters.slice(0, 2) : letters;
-        return `${prefix}${digits}`;
-    }
-    return trimmed.length > 2 ? trimmed.slice(0, 2) : trimmed;
-}
-
-function getSummaryTagColors(text: string): { background: string; borderColor: string; color: string } {
-    const palette = [
-        { background: '#E7F0F7', borderColor: '#2B6CB0', color: '#1B3F6B' },
-        { background: '#E9F6F2', borderColor: '#1E7A62', color: '#0F4F3F' },
-        { background: '#FFF3E0', borderColor: '#B26A00', color: '#6B3A00' },
-        { background: '#F3E8FF', borderColor: '#5A2D82', color: '#3A1B57' },
-        { background: '#FDECEE', borderColor: '#B71C1C', color: '#7A1212' },
-    ];
-    let hash = 0;
-    for (let i = 0; i < text.length; i += 1) {
-        hash = (hash + text.charCodeAt(i) * (i + 1)) % 997;
-    }
-    return palette[hash % palette.length];
 }
 
 function getIconCell(
@@ -305,14 +294,20 @@ function getIconCell(
         const ariaText = typeof rawAriaText === 'string' ? rawAriaText.trim() : String(rawAriaText ?? '').trim();
         const columnLabel = String(column.name ?? column.fieldName ?? '').trim();
         const cellLabel = ariaText || columnLabel;
-        const actionLabel = cellLabel || 'Open';
+        const actionLabel = cellLabel || (columnLabel ? `Open ${columnLabel}` : 'Open details');
         isBlank = !imageData || imageData === '';
         if (imageData) {
             const iconColor = column.tagColor?.startsWith('#')
                 ? column.tagColor
                 : getCellValue<string>(column.tagColor, item)[0];
             const actionDisabled = getCellValue<string>(column.cellActionDisabledColumn, item)[0];
-            const buttonContent: JSX.Element | null = getImageTag(imageData, column, iconColor, cellLabel);
+            const buttonContent: JSX.Element | null = getImageTag(
+                imageData,
+                column,
+                iconColor,
+                cellLabel,
+                column.cellType?.toLowerCase() === CellTypes.ClickableImage,
+            );
             const padding = column.imagePadding;
             if (column.cellType?.toLowerCase() === CellTypes.ClickableImage) {
                 const containerClass = `${ClassNames.imageButton} ${mergeStyles({ padding: padding })}`;
@@ -325,7 +320,10 @@ function getIconCell(
                         ariaLabel={actionLabel}
                         ariaDescription={ariaText && ariaText !== actionLabel ? ariaText : undefined}
                     >
-                        {buttonContent}
+                        <span className="voa-cell-action-button">
+                            {buttonContent}
+                            <span className="voa-cell-action-button__label">{actionLabel}</span>
+                        </span>
                     </DefaultButton>
                 );
             } else {
@@ -335,9 +333,9 @@ function getIconCell(
                     display: 'flex',
                 });
                 cellContents = (
-                    <div className={containerClass} title={cellLabel}>
+                    <div className={containerClass} title={actionLabel}>
                         {buttonContent}
-                        {cellLabel ? <span className="voa-sr-only">{cellLabel}</span> : null}
+                        {actionLabel ? <span className="voa-sr-only">{actionLabel}</span> : null}
                     </div>
                 );
             }
@@ -350,7 +348,13 @@ function getIconCell(
     return { isBlank, cellContents };
 }
 
-function getImageTag(imageData: string, column: IGridColumn, iconColor: string, ariaText?: string) {
+function getImageTag(
+    imageData: string,
+    column: IGridColumn,
+    iconColor: string,
+    ariaText?: string,
+    decorative = false,
+) {
     let buttonContent: JSX.Element | null = null;
     const iconName = imageData.substring('icon:'.length);
 
@@ -368,7 +372,7 @@ function getImageTag(imageData: string, column: IGridColumn, iconColor: string, 
         buttonContent = <FontIcon iconName={iconName} className={iconColorClass} aria-hidden="true" />;
     } else if (imageData.startsWith('data:') || imageData.startsWith('https:')) {
         const imageSize = validWidth ?? 32;
-        buttonContent = <Image src={imageData} width={imageSize} alt={ariaText ?? ''} />;
+        buttonContent = <Image src={imageData} width={imageSize} alt={decorative ? '' : ariaText ?? ''} />;
     }
     return buttonContent;
 }
@@ -382,14 +386,22 @@ function getExpandIconCell(
         const expanded =
             (item as ComponentFramework.PropertyHelper.DataSetApi.EntityRecord).getValue(column.fieldName) === true;
         const icon = expanded ? 'ChevronUp' : 'ChevronDown';
+        const actionText = expanded ? 'Collapse' : 'Expand';
         return (
-            <IconButton
-                className={ClassNames.expandIcon}
-                ariaLabel={expanded ? 'Collapse' : 'Expand'}
+            <button
+                type="button"
+                className="voa-expand-button"
+                aria-label={actionText}
                 data-is-focusable={true}
-                iconProps={{ iconName: icon }}
-                onClick={cellNavigation}
-            />
+                onClick={(ev) => {
+                    ev.preventDefault();
+                    ev.stopPropagation();
+                    cellNavigation();
+                }}
+            >
+                <FontIcon iconName={icon} className="voa-expand-button__icon" aria-hidden="true" />
+                <span className="voa-expand-button__label">{actionText}</span>
+            </button>
         );
     }
     return <></>;
@@ -411,10 +423,11 @@ function getLinkCell(
         ev?.stopPropagation();
         cellNavigation();
     };
+    const buttonClassName = ['voa-mda-link', 'voa-mda-link-button', linkClassName].filter(Boolean).join(' ');
     const cellContents = !isBlank ? (
-        <Link onClick={onClick} underline aria-label={label} className={linkClassName}>
+        <button type="button" onClick={onClick} aria-label={label} className={buttonClassName}>
             {cellText}
-        </Link>
+        </button>
     ) : (
         <></>
     );
@@ -428,7 +441,8 @@ function getAddressLinkCell(
 ) {
     const cellText = getCellValue<string>(column.fieldName, item)[0];
     const isBlank = !cellText || cellText === '';
-    const label = `${column.name ?? column.fieldName ?? 'Address'} ${cellText} (opens in new tab)`.trim();
+    const newTabText = SCREEN_TEXT.common.links.opensInNewTab;
+    const label = `${column.name ?? column.fieldName ?? 'Address'} ${cellText} ${newTabText}`.trim();
     const cellContents = !isBlank ? (
         <Link
             href={addressUrl}
@@ -441,7 +455,7 @@ function getAddressLinkCell(
                 ev.stopPropagation();
             }}
         >
-            {cellText}
+            {cellText} {newTabText}
         </Link>
     ) : (
         <></>
@@ -557,4 +571,5 @@ function getCellContent(
     }
     return { cellContents, isBlank };
 }
+
 

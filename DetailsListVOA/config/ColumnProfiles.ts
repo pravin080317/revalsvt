@@ -4,9 +4,9 @@ import { ColumnConfig } from '../Component.types';
 // Any JSON provided in `columnConfig` will be merged on top to override.
 
 const SALES_COLUMNS: ColumnConfig[] = [
-  // ID columns: center-aligned horizontally (fixed-width identifiers), vertically centered
+  // Sale ID is a link label (left); Task ID and UPRN are fixed-width identifiers (center).
   { ColName: 'saleid',           ColDisplayName: 'Sale ID',            ColWidth: 140, ColHorizontalAlign: 'left', ColVerticalAlign: 'center' },
-  { ColName: 'taskid',           ColDisplayName: 'Task ID',            ColWidth: 140, ColHorizontalAlign: 'left', ColVerticalAlign: 'center' },
+  { ColName: 'taskid',           ColDisplayName: 'Task ID',            ColWidth: 140, ColHorizontalAlign: 'center', ColVerticalAlign: 'center' },
   { ColName: 'uprn',             ColDisplayName: 'UPRN',               ColWidth: 120, ColHorizontalAlign: 'center', ColVerticalAlign: 'center' },
   // Text columns: left-aligned, vertically centered
   { ColName: 'address',          ColDisplayName: 'Address',            ColWidth: 280, ColMultiLine: true, ColCellType: 'link', ColHorizontalAlign: 'left', ColVerticalAlign: 'center' },
@@ -27,7 +27,7 @@ const SALES_COLUMNS: ColumnConfig[] = [
    { ColName: 'overallflag',      ColDisplayName: 'Overall Flag',       ColWidth: 220, ColCellType: 'tag', ColHorizontalAlign: 'left', ColVerticalAlign: 'center' },
    { ColName: 'summaryflags',     ColDisplayName: 'Summary Flag',       ColWidth: 170, ColCellType: 'tag', ColHorizontalAlign: 'left', ColVerticalAlign: 'center' },
   { ColName: 'taskstatus',       ColDisplayName: 'Task Status',        ColWidth: 190, ColCellType: 'tag', ColHorizontalAlign: 'left', ColVerticalAlign: 'center' },
-  { ColName: 'assignedto',       ColDisplayName: 'Assigned To',        ColWidth: 160, ColHorizontalAlign: 'left', ColVerticalAlign: 'center' },
+  { ColName: 'assignedto',       ColDisplayName: 'Caseworker Assigned To', ColWidth: 160, ColHorizontalAlign: 'left', ColVerticalAlign: 'center' },
    { ColName: 'assigneddate',     ColDisplayName: 'Assigned Date',      ColWidth: 160, ColHorizontalAlign: 'left', ColVerticalAlign: 'center', ColFormat: 'date' },
   { ColName: 'taskcompleteddate',ColDisplayName: 'Task Completed Date',ColWidth: 160, ColHorizontalAlign: 'left', ColVerticalAlign: 'center', ColFormat: 'date' },
   { ColName: 'qcassignedto',     ColDisplayName: 'QC Assigned To',     ColWidth: 170, ColHorizontalAlign: 'left', ColVerticalAlign: 'center' },
