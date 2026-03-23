@@ -46,6 +46,7 @@ interface ManagerJourneyShellProps {
   initialCountry?: string;
   initialListYear?: string;
   onContextChange?: (args: { country: string; listYear: string }) => void;
+  refreshNonce?: number;
 }
 
 
@@ -164,6 +165,7 @@ export const ManagerJourneyShell: React.FC<ManagerJourneyShellProps> = ({
   initialCountry,
   initialListYear,
   onContextChange,
+  refreshNonce,
 }) => {
   const initialCountryValue = React.useMemo(() => normalizeText(initialCountry), [initialCountry]);
   const initialListYearValue = React.useMemo(() => normalizeText(initialListYear), [initialListYear]);
@@ -310,7 +312,13 @@ export const ManagerJourneyShell: React.FC<ManagerJourneyShellProps> = ({
       {!isTableStep && (
         <header className="voa-home-header">
           <Text as="h1" variant="large" className="voa-home-header__title">{HOME_JOURNEY_COPY.headerTitle}</Text>
-          <Text variant="small" className="voa-home-header__meta">{HOME_JOURNEY_COPY.headerMeta}</Text>
+          {!userContextLoading && (
+            <div className="voa-home-context-summary voa-home-context-summary--persona" role="status" aria-live="polite">
+              <Text variant="small">
+                {HOME_JOURNEY_COPY.personaSummaryPrefix}: <strong>{personaSummary}</strong>
+              </Text>
+            </div>
+          )}
         </header>
       )}
 
@@ -338,14 +346,6 @@ export const ManagerJourneyShell: React.FC<ManagerJourneyShellProps> = ({
                   <Text as="h2" id="voa-home-tiles-title" variant="large" className="voa-home-stage-title">
                     {HOME_JOURNEY_COPY.tilesStageTitle}
                   </Text>
-                  <Text variant="small" className="voa-home-stage-desc">
-                    {HOME_JOURNEY_COPY.tilesStageDescription}
-                  </Text>
-                </div>
-                <div className="voa-home-context-summary voa-home-context-summary--persona" role="status" aria-live="polite">
-                  <Text variant="small">
-                    {HOME_JOURNEY_COPY.personaSummaryPrefix}: <strong>{personaSummary}</strong>
-                  </Text>
                 </div>
               </div>
 
@@ -360,13 +360,7 @@ export const ManagerJourneyShell: React.FC<ManagerJourneyShellProps> = ({
                     <Text as="h3" id="voa-home-context-title" variant="mediumPlus" className="voa-home-context-panel-title">
                       {HOME_JOURNEY_COPY.contextStageTitle}
                     </Text>
-                    <Text variant="small" className="voa-home-stage-desc">
-                      {HOME_JOURNEY_COPY.contextStageDescription}
-                    </Text>
                   </div>
-                  <Text variant="small" className="voa-home-required-hint">
-                    {HOME_JOURNEY_COPY.requiredFieldHint}
-                  </Text>
                 </div>
                 <div className="voa-home-context-grid">
                   <div className="voa-home-context-field" data-testid={HOME_JOURNEY_AUTOMATION_IDS.contextCountryField}>
@@ -468,27 +462,6 @@ export const ManagerJourneyShell: React.FC<ManagerJourneyShellProps> = ({
               aria-label={`${selectedTile.title} ${HOME_JOURNEY_COPY.tableAriaLabelSuffix}`}
               data-testid={HOME_JOURNEY_AUTOMATION_IDS.tableStage}
             >
-              <div className="voa-home-context-summary voa-home-context-summary--table" role="status" aria-live="polite">
-                <Text variant="small">
-                  {selectedTile.title} | {HOME_JOURNEY_COPY.countryLabel}: <strong>{country}</strong> | {HOME_JOURNEY_COPY.listYearLabel}: <strong>{listYear}</strong>
-                </Text>
-                <div className="voa-home-table-actions">
-                  <DefaultButton
-                    id={HOME_JOURNEY_AUTOMATION_IDS.tableBackToWorkspacesButton}
-                    text={HOME_JOURNEY_COPY.allTilesButton}
-                    iconProps={{ iconName: 'BulletedList' }}
-                    onClick={backToTiles}
-                    data-testid={HOME_JOURNEY_AUTOMATION_IDS.tableBackToWorkspacesButton}
-                  />
-                  <DefaultButton
-                    id={HOME_JOURNEY_AUTOMATION_IDS.tableChangeContextButton}
-                    text={HOME_JOURNEY_COPY.changeContextButton}
-                    iconProps={{ iconName: 'Edit' }}
-                    onClick={changeContext}
-                    data-testid={HOME_JOURNEY_AUTOMATION_IDS.tableChangeContextButton}
-                />
-                </div>
-              </div>
               <div className="voa-home-table-host">
                 <DetailsListHost
                   context={context}
@@ -500,6 +473,9 @@ export const ManagerJourneyShell: React.FC<ManagerJourneyShellProps> = ({
                   tableKeyOverride={selectedTile.tableKey}
                   countryOverride={country}
                   listYearOverride={listYear}
+                  contextSubtitle={`${country} · ${listYear}`}
+                  onEditContext={changeContext}
+                  refreshNonce={refreshNonce}
                 />
               </div>
             </section>

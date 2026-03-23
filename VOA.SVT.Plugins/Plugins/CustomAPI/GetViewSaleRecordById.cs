@@ -1,8 +1,12 @@
 using Microsoft.Xrm.Sdk;
 using Microsoft.Xrm.Sdk.Extensions;
+using Microsoft.Xrm.Sdk.Query;
 using System;
+using System.Collections.Generic;
+using System.Linq;
 using System.Net.Http;
 using System.Net.Http.Headers;
+using System.Text.RegularExpressions;
 using System.Web;
 using VOA.Common;
 using VOA.SVT.Plugins.CustomAPI.DataAccessLayer.Model;
@@ -130,7 +134,13 @@ namespace VOA.SVT.Plugins.CustomAPI
                         // Trace minimal response snippet (avoid PII / noisy logs)
                         localPluginContext.TracingService.Trace($"APIM response snippet: {Truncate(body, 200)}");
 
-                        // Return raw JSON back via Custom API output parameter (Result)
+                        // Enrich response with user display names for assignedTo / qcAssignedTo GUIDs
+                        body = EnrichWithUserDisplayNames(
+                            body,
+                            localPluginContext.SystemUserService,
+                            localPluginContext.TracingService);
+
+                        // Return enriched JSON back via Custom API output parameter (Result)
                         context.OutputParameters["Result"] = body;
                         localPluginContext.TracingService.Trace("SVT GetViewSaleRecordById completed successfully.");
                     }
@@ -200,6 +210,131 @@ namespace VOA.SVT.Plugins.CustomAPI
 
         private static string Truncate(string s, int maxLen)
             => string.IsNullOrEmpty(s) ? s : (s.Length > maxLen ? s.Substring(0, maxLen) : s);
+
+        /// <summary>
+        /// Extracts assignedTo and qcAssignedTo GUIDs from the APIM response,
+        /// resolves them to display names via the Dataverse systemuser table,
+        /// and injects assignedToName / qcAssignedToName into the JSON.
+        /// </summary>
+        private static string EnrichWithUserDisplayNames(
+            string responseBody,
+            IOrganizationService service,
+            ITracingService trace)
+        {
+            if (string.IsNullOrWhiteSpace(responseBody) || service == null)
+            {
+                return responseBody;
+            }
+
+            try
+            {
+                var guidsByField = new Dictionary<string, Guid>();
+                ExtractGuidField(responseBody, "assignedTo", guidsByField);
+                ExtractGuidField(responseBody, "qcAssignedTo", guidsByField);
+                ExtractGuidField(responseBody, "requestedBy", guidsByField);
+
+                if (guidsByField.Count == 0)
+                {
+                    trace?.Trace("EnrichWithUserDisplayNames: no GUID fields found to resolve.");
+                    return responseBody;
+                }
+
+                var uniqueIds = guidsByField.Values.Distinct().Where(id => id != Guid.Empty).ToArray();
+                var resolved = ResolveUserDisplayNames(service, uniqueIds, trace);
+
+                if (resolved.Count == 0)
+                {
+                    trace?.Trace("EnrichWithUserDisplayNames: no user names resolved.");
+                    return responseBody;
+                }
+
+                var enriched = responseBody;
+                foreach (var kvp in guidsByField)
+                {
+                    if (resolved.TryGetValue(kvp.Value, out var displayName))
+                    {
+                        var nameField = kvp.Key + "Name";
+                        var escapedName = displayName.Replace("\\", "\\\\").Replace("\"", "\\\"");
+                        // Insert "assignedToName":"Display Name" immediately after "assignedTo":"guid-value"
+                        var pattern = $"\"{ kvp.Key}\"\\s*:\\s*\"[^\"]*\"";
+                        enriched = Regex.Replace(enriched, pattern, match =>
+                            match.Value + $",\"{nameField}\":\"{escapedName}\"");
+                    }
+                }
+
+                trace?.Trace($"EnrichWithUserDisplayNames: injected {resolved.Count} display name(s).");
+                return enriched;
+            }
+            catch (Exception ex)
+            {
+                trace?.Trace($"EnrichWithUserDisplayNames failed (non-fatal): {ex.Message}");
+                return responseBody;
+            }
+        }
+
+        private static void ExtractGuidField(
+            string json,
+            string fieldName,
+            Dictionary<string, Guid> result)
+        {
+            var pattern = $"\"{ fieldName}\"\\s*:\\s*\"([0-9a-fA-F\\-]{{20,40}})\"";
+            var match = Regex.Match(json, pattern);
+            if (match.Success && Guid.TryParse(match.Groups[1].Value, out var guid) && guid != Guid.Empty)
+            {
+                result[fieldName] = guid;
+            }
+        }
+
+        private static Dictionary<Guid, string> ResolveUserDisplayNames(
+            IOrganizationService service,
+            Guid[] userIds,
+            ITracingService trace)
+        {
+            var users = new Dictionary<Guid, string>();
+            if (userIds == null || userIds.Length == 0)
+            {
+                return users;
+            }
+
+            var query = new QueryExpression("systemuser")
+            {
+                ColumnSet = new ColumnSet("systemuserid", "fullname", "firstname", "lastname"),
+                NoLock = true
+            };
+            query.Criteria.AddCondition("systemuserid", ConditionOperator.In,
+                userIds.Cast<object>().ToArray());
+
+            var result = service.RetrieveMultiple(query);
+            if (result?.Entities == null || result.Entities.Count == 0)
+            {
+                return users;
+            }
+
+            foreach (var entity in result.Entities)
+            {
+                var userId = entity.Id != Guid.Empty
+                    ? entity.Id
+                    : entity.GetAttributeValue<Guid>("systemuserid");
+
+                if (userId == Guid.Empty) continue;
+
+                var displayName = entity.GetAttributeValue<string>("fullname");
+                if (string.IsNullOrWhiteSpace(displayName))
+                {
+                    var firstName = entity.GetAttributeValue<string>("firstname") ?? string.Empty;
+                    var lastName = entity.GetAttributeValue<string>("lastname") ?? string.Empty;
+                    displayName = $"{firstName} {lastName}".Trim();
+                }
+
+                if (!string.IsNullOrWhiteSpace(displayName))
+                {
+                    users[userId] = displayName;
+                }
+            }
+
+            trace?.Trace($"ResolveUserDisplayNames: resolved {users.Count} of {userIds.Length} user(s).");
+            return users;
+        }
 
         private static string BuildFailureSamplePayload(string saleId, string message)
         {

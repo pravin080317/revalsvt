@@ -97,20 +97,23 @@ const toPadConfirmationText = (key?: string): string => {
     return '';
   }
 
-  if (normalized === 'confirmed') {
-    return 'Confirmed';
+  if (normalized === 'job-created') {
+    return 'Data enhancement job created';
   }
 
-  if (normalized === 'needs-update') {
-    return 'Needs update';
+  if (normalized === 'job-not-required') {
+    return 'Data enhancement job not required';
   }
 
-  if (normalized === 'further-review') {
-    return 'Further review';
+  if (normalized === 'pads-not-reviewed') {
+    return 'PADs not reviewed';
   }
 
   return normalizeTextValue(key);
 };
+
+const emptyToNull = (value: unknown): unknown =>
+  typeof value === 'string' && value.trim() === '' ? null : value;
 
 const mergeSalesParticularDraftDetails = (
   existing: Record<string, unknown>,
@@ -122,18 +125,18 @@ const mergeSalesParticularDraftDetails = (
   return {
     ...existing,
     salesParticular: toSalesParticularStatusText(draft.reviewStatusKey),
-    linkParticulars: draft.linkParticulars,
-    kitchenAge: draft.kitchenAge,
-    kitchenSpecification: draft.kitchenSpecification,
-    bathroomAge: draft.bathroomAge,
-    bathroomSpecification: draft.bathroomSpecification,
-    glazing: draft.glazing,
-    heating: draft.heating,
-    decorativeFinishes: draft.decorativeFinishes,
-    conditionScore: draft.conditionScore,
-    conditionCategory: draft.conditionCategory,
-    particularNotes: draft.particularsNotes,
-    particularsNotes: draft.particularsNotes,
+    linkParticulars: emptyToNull(draft.linkParticulars),
+    kitchenAge: emptyToNull(draft.kitchenAge),
+    kitchenSpecification: emptyToNull(draft.kitchenSpecification),
+    bathroomAge: emptyToNull(draft.bathroomAge),
+    bathroomSpecification: emptyToNull(draft.bathroomSpecification),
+    glazing: emptyToNull(draft.glazing),
+    heating: emptyToNull(draft.heating),
+    decorativeFinishes: emptyToNull(draft.decorativeFinishes),
+    conditionScore: emptyToNull(draft.conditionScore),
+    conditionCategory: emptyToNull(draft.conditionCategory),
+    particularNotes: emptyToNull(draft.particularsNotes),
+    particularsNotes: emptyToNull(draft.particularsNotes),
     padConfirmation: padConfirmationText,
   };
 };
@@ -148,18 +151,36 @@ export const resolveCurrentTaskIdFromDetails = (saleDetailsJson: string, selecte
     || normalizeTaskIdValue(selectedTaskId);
 };
 
+export const resolveCurrentSaleIdFromDetails = (saleDetailsJson: string, selectedSaleId?: string): string => {
+  const root = getSaleDetailsRoot(saleDetailsJson);
+  const primaryTaskDetails = toRecord(root.salesVerificationTaskDetails);
+  const legacyTaskDetails = toRecord(root.taskDetails);
+  return normalizeTextValue(primaryTaskDetails?.saleId)
+    || normalizeTextValue(primaryTaskDetails?.saleid)
+    || normalizeTextValue(legacyTaskDetails?.saleId)
+    || normalizeTextValue(legacyTaskDetails?.saleid)
+    || normalizeTextValue(root.saleId)
+    || normalizeTextValue(root.saleid)
+    || normalizeTextValue(selectedSaleId);
+};
+
+export const stripTaskIdPrefix = (value: string): string => {
+  const digitsOnly = value.replace(/\D/g, '');
+  return digitsOnly || value.trim();
+};
+
 export const resolveTaskIdForAuditLogs = (saleDetailsJson: string, selectedTaskId?: string): string => {
   const selected = normalizeTextValue(selectedTaskId);
   if (selected) {
-    return selected;
+    return stripTaskIdPrefix(selected);
   }
 
   const root = getSaleDetailsRoot(saleDetailsJson);
   const primaryTaskDetails = toRecord(root.salesVerificationTaskDetails);
   const legacyTaskDetails = toRecord(root.taskDetails);
   const taskIdRaw = primaryTaskDetails?.taskId ?? legacyTaskDetails?.taskId;
-  if (typeof taskIdRaw === 'string') {
-    return taskIdRaw.trim();
+  if (typeof taskIdRaw === 'string' && taskIdRaw.trim()) {
+    return stripTaskIdPrefix(taskIdRaw.trim());
   }
 
   return '';
@@ -353,10 +374,10 @@ export const mergeSalesVerificationDetails = (
 
   root.salesVerificationDetails = {
     ...salesVerificationDetails,
-    isSaleUseful: payload.isSaleUseful,
-    whyNotUseful: payload.whyNotUseful,
-    additionalNotes: payload.additionalNotes,
-    remarks: payload.remarks ?? salesVerificationDetails.remarks ?? '',
+    isSaleUseful: emptyToNull(payload.isSaleUseful),
+    whyNotUseful: emptyToNull(payload.whyNotUseful),
+    additionalNotes: emptyToNull(payload.additionalNotes),
+    remarks: emptyToNull(payload.remarks ?? salesVerificationDetails.remarks ?? ''),
   };
 
 

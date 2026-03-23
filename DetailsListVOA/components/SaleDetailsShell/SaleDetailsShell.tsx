@@ -1,5 +1,5 @@
 import * as React from 'react';
-import { DefaultButton, MessageBar, MessageBarType, Spinner, SpinnerSize, Stack, Text } from '@fluentui/react';
+import { DefaultButton, IconButton, MessageBar, MessageBarType, Spinner, SpinnerSize, Stack, Text } from '@fluentui/react';
 import { NEW_TAB_HINT_ID } from './constants';
 import { useSaleDetailsViewModel } from './useSaleDetailsViewModel';
 import { PromotedMasterRecordViewModel, SaleDetailsShellProps, SalesParticularDraftPayload } from './types';
@@ -27,9 +27,13 @@ export const SaleDetailsShell: React.FC<SaleDetailsShellProps> = ({
   canModifyTask = false,
   canProgressTask = false,
   canSubmitQcOutcome = false,
-  showQcSection = true,
+  showQcSection = false,
+  activeWorkspaceName = '',
+  country = '',
+  listYear = '',
   currentUserDisplayName = '',
   loading = false,
+  userLookup,
   onBack,
   onRefresh,
   onCreateManualTask,
@@ -40,7 +44,10 @@ export const SaleDetailsShell: React.FC<SaleDetailsShellProps> = ({
   onOpenQcLog,
   onOpenAuditHistory,
 }) => {
-  const model = useSaleDetailsViewModel(saleDetailsJson, sharePointCatalogChunks, fxEnvironmentUrl, vmsBaseUrl);
+  const model = useSaleDetailsViewModel(saleDetailsJson, sharePointCatalogChunks, fxEnvironmentUrl, vmsBaseUrl, userLookup);
+  const noTaskId = !model.taskId;
+  const noTaskStatus = !model.statusText || model.statusText === '-';
+  const sectionsDisabled = noTaskId || noTaskStatus;
   const refreshActionRule = React.useMemo(() => getRefreshActionRule({ loading }), [loading]);
   const [salesParticularDraft, setSalesParticularDraft] = React.useState<SalesParticularDraftPayload>({
     reviewStatusKey: model.salesParticular.reviewStatusKey,
@@ -65,7 +72,10 @@ export const SaleDetailsShell: React.FC<SaleDetailsShellProps> = ({
     model.initialPromotedMasterRecord,
   );
   const [promotionMessage, setPromotionMessage] = React.useState<string | undefined>(undefined);
+  const [masterHighlighted, setMasterHighlighted] = React.useState(false);
   const promotionMessageTimeoutRef = React.useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  const masterHighlightTimeoutRef = React.useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  const masterSectionRef = React.useRef<HTMLDivElement>(null);
 
   React.useEffect(() => {
     setPadConfirmationKey(model.initialPadConfirmationKey);
@@ -74,6 +84,7 @@ export const SaleDetailsShell: React.FC<SaleDetailsShellProps> = ({
   React.useEffect(() => {
     setPromotedMasterRecord(model.initialPromotedMasterRecord);
     setPromotionMessage(undefined);
+    setMasterHighlighted(false);
   }, [model.saleId, model.taskId, model.initialPromotedMasterRecord]);
 
   React.useEffect(() => {
@@ -103,6 +114,9 @@ export const SaleDetailsShell: React.FC<SaleDetailsShellProps> = ({
 
   React.useEffect(() => () => {
     clearPromotionMessageTimer();
+    if (masterHighlightTimeoutRef.current) {
+      clearTimeout(masterHighlightTimeoutRef.current);
+    }
   }, [clearPromotionMessageTimer]);
 
   const showPromotionMessage = React.useCallback((message: string) => {
@@ -168,6 +182,10 @@ export const SaleDetailsShell: React.FC<SaleDetailsShellProps> = ({
       ratio: record.ratio,
     });
     showPromotionMessage('WLTT Record is Promoted to Master');
+    setMasterHighlighted(true);
+    if (masterHighlightTimeoutRef.current) { clearTimeout(masterHighlightTimeoutRef.current); }
+    masterHighlightTimeoutRef.current = setTimeout(() => { setMasterHighlighted(false); }, 2000);
+    masterSectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
   }, [readOnly, showPromotionMessage]);
 
   const handleLrppdPromote = React.useCallback((record: (typeof model.lrppdRecords)[number]) => {
@@ -184,6 +202,10 @@ export const SaleDetailsShell: React.FC<SaleDetailsShellProps> = ({
       ratio: record.ratio,
     });
     showPromotionMessage('LR PPD Record is Promoted to Master');
+    setMasterHighlighted(true);
+    if (masterHighlightTimeoutRef.current) { clearTimeout(masterHighlightTimeoutRef.current); }
+    masterHighlightTimeoutRef.current = setTimeout(() => { setMasterHighlighted(false); }, 2000);
+    masterSectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
   }, [readOnly, showPromotionMessage]);
 
   const displayMasterSale = React.useMemo(() => {
@@ -202,7 +224,8 @@ export const SaleDetailsShell: React.FC<SaleDetailsShellProps> = ({
   }, [model.masterSale, promotedMasterRecord]);
 
   const activeAuditModel = activeAuditView === 'qc' ? model.qcAuditHistory : model.mainAuditHistory;
-  const activeAuditTitle = activeAuditView === 'qc' ? 'QC Audit Log' : 'Sales Verification Audit History';
+  const activeAuditTitle = activeAuditView === 'qc' ? 'QC Audit History' : 'Sales Audit History';
+  const activeAuditType: 'QC' | 'SL' = activeAuditView === 'qc' ? 'QC' : 'SL';
 
   return (
     <div className="voa-sale-details-shell" role="region" aria-label="Sale Record Details">
@@ -210,14 +233,30 @@ export const SaleDetailsShell: React.FC<SaleDetailsShellProps> = ({
         <header className="voa-sale-details-shell__header">
           <DefaultButton
             className="voa-sale-details-shell__header-btn"
-            text="Back"
+            text={activeWorkspaceName ? `Back to ${activeWorkspaceName}` : 'Back to Results'}
             iconProps={{ iconName: 'Back' }}
             onClick={onBack}
-            ariaLabel="Back"
+            ariaLabel={activeWorkspaceName
+              ? `Back to ${activeWorkspaceName} — return to the grid view`
+              : 'Back to Results — return to the grid view'}
           />
-          <Text as="h1" variant="xLarge" className="voa-sale-details-shell__title">
-            Sale Record
-          </Text>
+          <div className="voa-sale-details-shell__header-center">
+            <div className="voa-sale-details-shell__header-titles">
+              <Text as="h1" className="voa-sale-details-shell__title">
+                {model.saleId ? `Sale Record — ${model.saleId}` : 'Sale Record'}
+              </Text>
+              {(country || listYear) && (
+                <Text className="voa-sale-details-shell__context-subtitle" aria-label={`Context: ${[country, listYear].filter(Boolean).join(', ')}`}>
+                  {[country, listYear].filter(Boolean).join(' · ')}
+                </Text>
+              )}
+            </div>
+            {promotionMessage && (
+              <span className="voa-sale-details-shell__promotion" role="status" aria-live="polite">
+                {promotionMessage}
+              </span>
+            )}
+          </div>
           <DefaultButton
             className="voa-sale-details-shell__header-btn voa-sale-details-shell__header-btn--right"
             text="Refresh"
@@ -241,19 +280,9 @@ export const SaleDetailsShell: React.FC<SaleDetailsShellProps> = ({
           </MessageBar>
         )}
 
-        {promotionMessage && (
-          <MessageBar
-            messageBarType={MessageBarType.success}
-            isMultiline={false}
-            onDismiss={() => setPromotionMessage(undefined)}
-          >
-            {promotionMessage}
-          </MessageBar>
-        )}
-
         <span id={NEW_TAB_HINT_ID} className="voa-visually-hidden">Opens in a new browser tab.</span>
 
-        <Stack tokens={{ childrenGap: 12 }} className="voa-sale-details-sections">
+        <Stack key={`${model.saleId}::${model.taskId}`} tokens={{ childrenGap: 8 }} className="voa-sale-details-sections">
           <SalesVerificationTaskSection
             saleId={model.saleId}
             taskId={model.taskId}
@@ -262,6 +291,7 @@ export const SaleDetailsShell: React.FC<SaleDetailsShellProps> = ({
             assignedTo={model.assignedTo}
             qcAssignedTo={model.qcAssignedTo}
             onOpenAuditHistory={openMainAuditHistory}
+            onOpenQcLog={openQcAuditHistory}
             canCreateTask={canCreateManualTask}
             canModifyTask={canModifyTask}
             onCreateTask={onCreateManualTask
@@ -270,9 +300,9 @@ export const SaleDetailsShell: React.FC<SaleDetailsShellProps> = ({
             onModifyTask={onModifySvtTask}
           />
 
-          <HyperlinksSection links={model.externalLinks} newTabHintId={NEW_TAB_HINT_ID} />
+          <div id="section-hyperlinks"><HyperlinksSection links={model.externalLinks} newTabHintId={NEW_TAB_HINT_ID} /></div>
 
-          <BandingSection
+          <div id="section-banding"><BandingSection
             address={model.address}
             addressLink={model.addressLink}
             billingAuthority={model.billingAuthority}
@@ -280,9 +310,9 @@ export const SaleDetailsShell: React.FC<SaleDetailsShellProps> = ({
             bandingEffectiveDate={model.bandingEffectiveDate}
             composite={model.composite}
             newTabHintId={NEW_TAB_HINT_ID}
-          />
+          /></div>
 
-          <PadSection
+          <div id="section-pad"><PadSection
             padStatusDisplay={model.padStatusDisplay}
             padStatusLabel={model.padStatusLabel}
             isActiveRequestPresent={model.isActiveRequestPresent}
@@ -294,24 +324,27 @@ export const SaleDetailsShell: React.FC<SaleDetailsShellProps> = ({
             sourceCodes={model.sourceCodes}
             padConfirmationKey={padConfirmationKey}
             onPadConfirmationChange={setPadConfirmationKey}
-            readOnly={readOnly}
-          />
+            readOnly={readOnly || sectionsDisabled}
+            hereditamentUrl={model.addressLink}
+            dataEnhancementUrl={model.dataEnhancementUrl}
+            canCreateDataEnhancement={!readOnly && !sectionsDisabled && !showQcSection}
+          /></div>
 
-          <MasterSaleSection masterSale={displayMasterSale} />
-          <WlttSection
+          <div id="section-master" ref={masterSectionRef}><MasterSaleSection masterSale={displayMasterSale} highlighted={masterHighlighted} /></div>
+          <div id="section-wltt"><WlttSection
             records={model.wlttRecords}
             currentMasterRecordId={promotedMasterRecord?.source === 'WLTT' ? promotedMasterRecord.id : undefined}
             onPromoteRecord={handleWlttPromote}
-            readOnly={readOnly}
-          />
-          <LrppdSection
+            readOnly={readOnly || sectionsDisabled}
+          /></div>
+          <div id="section-lrppd"><LrppdSection
             records={model.lrppdRecords}
             currentMasterRecordId={promotedMasterRecord?.source === 'LRPPD' ? promotedMasterRecord.id : undefined}
             onPromoteRecord={handleLrppdPromote}
-            readOnly={readOnly}
-          />
-          <SalesParticularSection model={model.salesParticular} onOpenReference={openReferenceModal} readOnly={readOnly} onDraftChange={setSalesParticularDraft} />
-          <SalesVerificationSection
+            readOnly={readOnly || sectionsDisabled}
+          /></div>
+          <div id="section-particulars"><SalesParticularSection model={model.salesParticular} onOpenReference={openReferenceModal} readOnly={readOnly || sectionsDisabled} onDraftChange={setSalesParticularDraft} /></div>
+          <div id="section-verification"><SalesVerificationSection
             model={model.salesVerification}
             taskStatus={model.statusText}
             salesParticularModel={salesParticularDraft}
@@ -319,16 +352,27 @@ export const SaleDetailsShell: React.FC<SaleDetailsShellProps> = ({
             onCompleteTask={onCompleteSalesVerificationTask}
             onSubmitForQc={onSubmitSalesVerificationTaskForQc}
             onSubmitQcOutcome={onSubmitQcOutcome}
-            onOpenQcLog={openQcAuditHistory}
             promotedMasterRecord={promotedMasterRecord}
-            readOnly={readOnly}
-            canProgressTask={canProgressTask}
-            canSubmitQcOutcome={canSubmitQcOutcome}
-            showQcSection={showQcSection}
+            readOnly={readOnly || sectionsDisabled}
+            canProgressTask={canProgressTask && !sectionsDisabled}
+            canSubmitQcOutcome={canSubmitQcOutcome && !sectionsDisabled}
+            showQcSection={showQcSection && !sectionsDisabled}
+            isQcView={showQcSection}
             qcAssignedTo={model.qcAssignedTo}
             currentUserDisplayName={currentUserDisplayName}
-          />
+          /></div>
         </Stack>
+
+        <IconButton
+          className="voa-scroll-to-top"
+          iconProps={{ iconName: 'Up' }}
+          title="Scroll to top"
+          ariaLabel="Scroll to top of page"
+          onClick={() => {
+            const shell = document.querySelector('.voa-sale-details-shell');
+            if (shell) { shell.scrollTo({ top: 0, behavior: 'smooth' }); }
+          }}
+        />
       </div>
 
       <SalesParticularReferenceModal
@@ -342,6 +386,7 @@ export const SaleDetailsShell: React.FC<SaleDetailsShellProps> = ({
         isOpen={Boolean(activeAuditView)}
         title={activeAuditTitle}
         model={activeAuditModel}
+        auditType={activeAuditType}
         loading={auditHistoryLoading}
         onDismiss={closeAuditHistoryModal}
       />

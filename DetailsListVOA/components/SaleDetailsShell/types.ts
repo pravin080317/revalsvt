@@ -4,6 +4,8 @@ export type StatusTone = 'critical' | 'warning' | 'ok' | 'neutral';
 
 export type MasterSaleSource = 'WLTT' | 'LRPPD';
 
+export type AuditType = 'QC' | 'SL';
+
 export interface PromotedMasterRecordViewModel {
   source: MasterSaleSource;
   id: string;
@@ -14,16 +16,12 @@ export interface PromotedMasterRecordViewModel {
 }
 
 export type AttributeTone =
-  | 'sky'
-  | 'amber'
-  | 'red'
-  | 'violet'
   | 'teal'
+  | 'brick'
   | 'purple'
-  | 'indigo'
-  | 'magenta'
-  | 'slate'
-  | 'bluegray';
+  | 'berry'
+  | 'crimson'
+  | 'navy';
 
 
 export interface SalesParticularDraftPayload {
@@ -94,8 +92,12 @@ export interface SaleDetailsShellProps {
   canProgressTask?: boolean;
   canSubmitQcOutcome?: boolean;
   showQcSection?: boolean;
+  activeWorkspaceName?: string;
+  country?: string;
+  listYear?: string;
   currentUserDisplayName?: string;
   loading?: boolean;
+  userLookup?: Record<string, string>;
   onBack: () => void;
   onRefresh: () => void | Promise<void>;
   onCreateManualTask?: (saleId: string) => void | Promise<void>;
@@ -239,6 +241,7 @@ export interface SaleDetailsViewModel {
   externalLinks: ExternalLinkItem[];
   address: string;
   addressLink: string;
+  dataEnhancementUrl: string;
   billingAuthority: string;
   band: string;
   bandingEffectiveDate: string;

@@ -30,6 +30,7 @@ interface SalesVerificationTaskSectionProps {
   assignedTo: string;
   qcAssignedTo: string;
   onOpenAuditHistory?: () => void | Promise<void>;
+  onOpenQcLog?: () => void | Promise<void>;
   onCreateTask?: () => void | Promise<void>;
   onModifyTask?: () => void | Promise<void>;
   canCreateTask?: boolean;
@@ -44,6 +45,7 @@ export const SalesVerificationTaskSection: React.FC<SalesVerificationTaskSection
   assignedTo,
   qcAssignedTo,
   onOpenAuditHistory,
+  onOpenQcLog,
   onCreateTask,
   onModifyTask,
   canCreateTask = false,
@@ -72,9 +74,15 @@ export const SalesVerificationTaskSection: React.FC<SalesVerificationTaskSection
     }),
     [onOpenAuditHistory],
   );
+  const qcAuditHistoryActionRule = React.useMemo(
+    () => getAuditHistoryActionRule({
+      hasHandler: Boolean(onOpenQcLog),
+    }),
+    [onOpenQcLog],
+  );
   const canShowModifyTaskButton = React.useMemo(
-    () => canShowModifyTaskAction(statusText),
-    [statusText],
+    () => canShowModifyTaskAction(statusText) && assignedTo !== 'Unknown User',
+    [statusText, assignedTo],
   );
   const modifyTaskActionRule = React.useMemo(
     () => getModifyTaskActionRule({
@@ -191,13 +199,22 @@ export const SalesVerificationTaskSection: React.FC<SalesVerificationTaskSection
           <h3 id="actions-heading" className="voa-task-panel__title">Actions</h3>
           <div className="voa-task-actions">
             <DefaultButton
-              text="Audit History"
+              text="Sales Audit History"
               ariaLabel={auditHistoryActionRule.disabled
                 ? auditHistoryActionRule.reason ?? 'Audit history is currently unavailable.'
-                : 'Open audit history'}
+                : 'Open sales audit history'}
               title={auditHistoryActionRule.reason}
               disabled={auditHistoryActionRule.disabled}
               onClick={() => { void onOpenAuditHistory?.(); }}
+            />
+            <DefaultButton
+              text="QC Audit History"
+              ariaLabel={qcAuditHistoryActionRule.disabled
+                ? qcAuditHistoryActionRule.reason ?? 'QC audit history is currently unavailable.'
+                : 'Open QC audit history'}
+              title={qcAuditHistoryActionRule.reason}
+              disabled={qcAuditHistoryActionRule.disabled}
+              onClick={() => { void onOpenQcLog?.(); }}
             />
             {canShowModifyTaskButton && (
               <DefaultButton

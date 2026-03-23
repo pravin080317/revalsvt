@@ -6,6 +6,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Net.Http;
 using System.Net.Http.Headers;
+using System.Text;
 using System.Text.Json;
 using System.Text.RegularExpressions;
 using System.Web;
@@ -48,7 +49,7 @@ namespace VOA.SVT.Plugins.CustomAPI
             }
 
             var context = localPluginContext.PluginExecutionContext;
-            var taskId = NormalizeOptionalStringValue(GetInput(context, "taskId"));
+            var taskId = NormalizeTaskId(GetInput(context, "taskId"));
             var auditType = NormalizeAuditType(GetInput(context, "auditType"));
 
             if (string.IsNullOrWhiteSpace(taskId))
@@ -211,6 +212,21 @@ namespace VOA.SVT.Plugins.CustomAPI
 
         private static string NormalizeOptionalStringValue(string value)
             => string.IsNullOrWhiteSpace(value) ? null : value.Trim();
+
+        private static string NormalizeTaskId(string value)
+        {
+            if (string.IsNullOrWhiteSpace(value)) return null;
+            var sb = new StringBuilder();
+            foreach (var ch in value)
+            {
+                if (char.IsDigit(ch))
+                {
+                    sb.Append(ch);
+                }
+            }
+            var digits = sb.ToString();
+            return string.IsNullOrWhiteSpace(digits) ? value.Trim() : digits;
+        }
 
         private static string TransformAuditLogPayload(
             string responseBody,

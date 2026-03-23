@@ -16,8 +16,8 @@ describe('WRT-200 Master Sales Record AC', () => {
 
   test('AC1: Master Sale section appears under Property Attribute Details', () => {
     expect(shellSource).toContain('<PadSection');
-    expect(shellSource).toContain('<MasterSaleSection masterSale={displayMasterSale} />');
-    expect(shellSource.indexOf('<PadSection')).toBeLessThan(shellSource.indexOf('<MasterSaleSection masterSale={displayMasterSale} />'));
+    expect(shellSource).toContain('<MasterSaleSection masterSale={displayMasterSale} highlighted={masterHighlighted} />');
+    expect(shellSource.indexOf('<PadSection')).toBeLessThan(shellSource.indexOf('<MasterSaleSection masterSale={displayMasterSale} highlighted={masterHighlighted} />'));
     expect(sectionSource).toContain('Master Sale Details and Calculated Values');
   });
 
@@ -48,7 +48,12 @@ describe('WRT-200 Master Sales Record AC', () => {
     expect(viewModelSource).toContain("toUkDate(getValueFromRecordOrRoot(masterSaleRecord, details, ['transactionDate', 'masterSaleTransactionDate', 'TransactionDate']))");
     expect(viewModelSource).toContain("toUkCurrency(getValueFromRecordOrRoot(masterSaleRecord, details, ['modelValue', 'modelvalue', 'masterSaleModelValue', 'ModelValue']))");
     expect(viewModelSource).toContain("toUkCurrency(getValueFromRecordOrRoot(masterSaleRecord, details, ['hpiAdjustedPrice', 'masterSaleHpiAdjustedPrice', 'HpiAdjustedPrice']))");
-    expect(viewModelSource).toContain("latestRatioRange: formatValue(getValueFromRecordOrRoot(repeatSaleInfoRecord, details, ['latestRatioRange', 'laterRatioRange', 'LatestRatioRange', 'LaterRatioRange']))");
+    expect(viewModelSource).toContain("latestRatioRange: formatValue(roundTo2Dp(getValueFromRecordOrRoot(repeatSaleInfoRecord, details, ['latestRatioRange', 'laterRatioRange', 'LatestRatioRange', 'LaterRatioRange'])))");
+  });
+
+  test('AC4b: Previous and latest ratio ranges are rounded to 2 decimal places', () => {
+    expect(viewModelSource).toContain("previousRatioRange: formatValue(roundTo2Dp(getValueFromRecordOrRoot(repeatSaleInfoRecord, details, ['previousRatioRange', 'PreviousRatioRange'])))");
+    expect(viewModelSource).toContain('const roundTo2Dp = (raw: unknown): string =>');
   });
 
   test('AC5: Delimited text values are normalized for comma spacing and multiline flag display', () => {

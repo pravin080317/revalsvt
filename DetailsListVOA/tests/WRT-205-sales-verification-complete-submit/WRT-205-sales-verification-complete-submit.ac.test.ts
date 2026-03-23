@@ -10,6 +10,7 @@ function readRepoFile(relativePath: string): string {
 describe('WRT-205 Sales Verification Complete/Submit AC', () => {
   const shellSource = readRepoFile('DetailsListVOA/components/SaleDetailsShell/SaleDetailsShell.tsx');
   const sectionSource = readRepoFile('DetailsListVOA/components/SaleDetailsShell/sections/SalesVerificationSection.tsx');
+  const taskSectionSource = readRepoFile('DetailsListVOA/components/SaleDetailsShell/sections/SalesVerificationTaskSection.tsx');
   const rulesSource = readRepoFile('DetailsListVOA/components/SaleDetailsShell/rules/ViewSaleActionRules.ts');
   const runtimeSource = readRepoFile('DetailsListVOA/services/DetailsListRuntimeController.ts');
   const saleDetailsSource = readRepoFile('DetailsListVOA/services/runtime/sale-details.ts');
@@ -22,15 +23,18 @@ describe('WRT-205 Sales Verification Complete/Submit AC', () => {
     expect(sectionSource).toContain('aria-label="Sales verification actions"');
   });
 
-  test('AC2: complete action uses complete task runtime path and sets complete status merge rule', () => {
+  test('AC2: complete action uses submit API path and sets complete status merge rule', () => {
     expect(runtimeSource).toContain("type: 'completeSalesVerificationTask' | 'submitSalesVerificationTaskForQc'");
-    expect(runtimeSource).toContain('this._saleDetails = mergeSalesVerificationDetails(this._saleDetails, payload, type);');
+    expect(runtimeSource).toContain('const nextSaleDetails = mergeSalesVerificationDetails(this._saleDetails, payload, type);');
+    expect(runtimeSource).toContain('this._saleDetails = nextSaleDetails;');
+    expect(runtimeSource).toContain("'submitSalesVerificationApiName'");
+    expect(runtimeSource).toContain("parseApiMutationResult(response, 'Submit sales verification task failed.')");
     expect(saleDetailsSource).toContain("if (actionType === 'completeSalesVerificationTask') {");
     expect(saleDetailsSource).toContain("return 'Complete';");
   });
 
   test('AC3: mandatory validation prompt and required field checks are enforced before complete/submit', () => {
-    expect(sectionSource).toContain('Please ensure all mandatory fields are completed');
+    expect(sectionSource).toContain('Please complete the following mandatory fields');
     expect(sectionSource).toContain("'Select whether the sale is useful or not'");
     expect(sectionSource).toContain("'Enter why the sale is not useful'");
     expect(sectionSource).toContain('const SALES_PARTICULAR_REQUIRED_FIELDS');
@@ -72,10 +76,22 @@ describe('WRT-205 Sales Verification Complete/Submit AC', () => {
     expect(saleDetailsSource).toContain('taskstatus: taskStatus,');
   });
 
-  test('AC9: View QC Log action and ordering by most recent change are preserved', () => {
-    expect(sectionSource).toContain('text="View QC Log"');
+  test('AC9: QC Audit History action and ordering by most recent change are preserved', () => {
+    expect(taskSectionSource).toContain('text="QC Audit History"');
     expect(runtimeSource).toContain("await this.handleAuditHistoryOpen('QC');");
     expect(rulesSource).toContain("'QC log is available to the assigned caseworker, QC users, and managers.'");
     expect(viewModelSource).toContain('.sort((left, right) => right.sortValue - left.sortValue)');
   });
+
+  test('AC10: auto-navigate back to grid with success notification after submit', () => {
+    const controlShellSource = readRepoFile('DetailsListVOA/components/ControlShell/DetailsListControlShell.tsx');
+    // Controller sets showPcfSaleDetails = false + success message after submit
+    expect(runtimeSource).toContain('this.showPcfSaleDetails = false;');
+    expect(runtimeSource).toContain("'Sales verification task completed successfully.'");
+    expect(runtimeSource).toContain("'Sales verification task submitted for QC successfully.'");
+    // ControlShell renders success MessageBar
+    expect(controlShellSource).toContain('MessageBarType.success');
+    expect(controlShellSource).toContain('submitSuccessMessage');
+  });
 });
+

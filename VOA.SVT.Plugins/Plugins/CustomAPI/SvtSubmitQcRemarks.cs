@@ -50,8 +50,8 @@ namespace VOA.SVT.Plugins.CustomAPI
             var qcOutcome = NormalizeOptionalStringValue(GetInput(context, "qcOutcome"));
             var qcRemark = NormalizeOptionalStringValue(GetInput(context, "qcRemark"));
             var qcReviewedBy = NormalizeOptionalStringValue(GetInput(context, "qcReviewedBy"));
-            var country = NormalizeOptionalStringValue(GetInput(context, "country"));
-            var listYear = NormalizeOptionalStringValue(GetInput(context, "listYear"));
+            // var country = NormalizeOptionalStringValue(GetInput(context, "country"));
+            // var listYear = NormalizeOptionalStringValue(GetInput(context, "listYear"));
             if (taskIds.Count == 0)
             {
                 throw new InvalidPluginExecutionException("taskId is required.");
@@ -105,13 +105,13 @@ namespace VOA.SVT.Plugins.CustomAPI
             var targetUrl = apiConfig.Address.Trim();
             var payload = new Dictionary<string, object>
             {
-                ["taskId"] = taskIds,
+                ["qcTaskList"] = taskIds,
                 ["qcOutcome"] = qcOutcome ?? string.Empty,
                 ["qcRemark"] = qcRemark,
                 ["qcReviewedBy"] = qcReviewedBy ?? string.Empty
             };
-            if (!string.IsNullOrWhiteSpace(country)) payload["country"] = country.Trim();
-            if (!string.IsNullOrWhiteSpace(listYear)) payload["listYear"] = listYear.Trim();
+            // if (!string.IsNullOrWhiteSpace(country)) payload["country"] = country.Trim();
+            // if (!string.IsNullOrWhiteSpace(listYear)) payload["listYear"] = listYear.Trim();
             var jsonBody = JsonSerializer.Serialize(payload);
 
             trace?.Trace(

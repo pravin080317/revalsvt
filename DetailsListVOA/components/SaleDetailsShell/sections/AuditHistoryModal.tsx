@@ -8,12 +8,13 @@ import {
   SpinnerSize,
   Text,
 } from '@fluentui/react';
-import { AuditHistoryEntryViewModel, AuditHistoryViewModel } from '../types';
+import { AuditHistoryEntryViewModel, AuditHistoryViewModel, AuditType } from '../types';
 
 interface AuditHistoryModalProps {
   isOpen: boolean;
   title: string;
   model: AuditHistoryViewModel;
+  auditType?: AuditType;
   loading?: boolean;
   onDismiss: () => void;
 }
@@ -30,9 +31,11 @@ export const AuditHistoryModal: React.FC<AuditHistoryModalProps> = ({
   isOpen,
   title,
   model,
+  auditType,
   loading = false,
   onDismiss,
 }) => {
+  const isQc = auditType === 'QC';
   const safeModel = model ?? EMPTY_MODEL;
   const [searchText, setSearchText] = React.useState('');
 
@@ -57,7 +60,12 @@ export const AuditHistoryModal: React.FC<AuditHistoryModalProps> = ({
 
         const matchingChanges = metaMatch
           ? entry.changes
-          : entry.changes.filter((change) => normalize(`${change.fieldName} ${change.oldValue} ${change.newValue}`).includes(query));
+          : entry.changes.filter((change) => {
+            const parts = isQc
+              ? `${change.fieldName} ${change.newValue}`
+              : `${change.fieldName} ${change.oldValue} ${change.newValue}`;
+            return normalize(parts).includes(query);
+          });
 
         if (!metaMatch && matchingChanges.length === 0) {
           return undefined;
@@ -164,16 +172,16 @@ export const AuditHistoryModal: React.FC<AuditHistoryModalProps> = ({
                   <table className="voa-audit-entry__table">
                     <thead>
                       <tr>
-                        <th scope="col">Changed Field</th>
-                        <th scope="col">Old Value</th>
-                        <th scope="col">New Value</th>
+                        <th scope="col">Field</th>
+                        {!isQc && <th scope="col">Previous</th>}
+                        <th scope="col">{isQc ? 'Value' : 'Updated'}</th>
                       </tr>
                     </thead>
                     <tbody>
                       {entry.changes.map((change, index) => (
                         <tr key={`${entry.changeId}-${change.fieldName}-${index}`}>
                           <th scope="row">{change.fieldName}</th>
-                          <td>{change.oldValue}</td>
+                          {!isQc && <td>{change.oldValue}</td>}
                           <td>{change.newValue}</td>
                         </tr>
                       ))}

@@ -64,10 +64,20 @@ describe('WRT-366 View Sales Record through Quality Control Assignment AC', () =
     expect(shellSource).toContain('<MasterSaleSection');
     expect(shellSource).toContain('<WlttSection');
     expect(shellSource).toContain('<LrppdSection');
-    expect(shellSource).toContain('<SalesParticularSection model={model.salesParticular} onOpenReference={openReferenceModal} readOnly={readOnly} onDraftChange={setSalesParticularDraft} />');
+    expect(shellSource).toContain('<SalesParticularSection model={model.salesParticular} onOpenReference={openReferenceModal} readOnly={readOnly || sectionsDisabled} onDraftChange={setSalesParticularDraft} />');
     expect(shellSource).toContain('<SalesVerificationSection');
     expect(padSectionSource).toContain('text="Create Data Enhancement Job"');
     expect(padSectionSource).toContain('ariaLabel="Create Data Enhancement Job"');
-    expect(padSectionSource).toContain('disabled={readOnly}');
+    // Create Data Enhancement Job is disabled unless caseworker can create
+    expect(padSectionSource).toContain('disabled={!canCreateDataEnhancement || !dataEnhancementUrl}');
+    // View Hereditament is disabled when no URL
+    expect(padSectionSource).toContain('disabled={!hereditamentUrl}');
+    // Both buttons open a new tab on click
+    expect(padSectionSource).toContain("window.open(dataEnhancementUrl, '_blank', 'noopener,noreferrer')");
+    expect(padSectionSource).toContain("window.open(hereditamentUrl, '_blank', 'noopener,noreferrer')");
+    // Shell passes canCreateDataEnhancement only for caseworkers (not QC)
+    expect(shellSource).toContain('canCreateDataEnhancement={!readOnly && !sectionsDisabled && !showQcSection}');
+    expect(shellSource).toContain('hereditamentUrl={model.addressLink}');
+    expect(shellSource).toContain('dataEnhancementUrl={model.dataEnhancementUrl}');
   });
 });

@@ -31,6 +31,14 @@ export class DetailsListVOA implements ComponentFramework.ReactControl<IInputs, 
       // ignore
     }
 
+    try {
+      const raw = (context.parameters as unknown as Record<string, { raw?: boolean | string }>).debugConsole?.raw;
+      const enabled = raw === true || String(raw ?? '').toLowerCase() === 'true';
+      (globalThis as unknown as { SVT_DEBUG?: boolean }).SVT_DEBUG = enabled;
+    } catch {
+      // ignore
+    }
+
     const pcfViewSalesEnabled = this.runtime.isPcfViewSalesDetailsEnabledFlag();
     this.runtime.syncPcfViewSalesEnabled(pcfViewSalesEnabled);
 
@@ -52,6 +60,7 @@ export class DetailsListVOA implements ComponentFramework.ReactControl<IInputs, 
       saleDetailsCanProgressTask: this.runtime.canProgressSalesVerificationTask,
       saleDetailsCanSubmitQcOutcome: this.runtime.canSubmitQcOutcome,
       saleDetailsShowQcSection: this.runtime.shouldShowQcSection,
+      activeWorkspaceName: this.runtime.activeWorkspaceName,
       currentUserDisplayName: this.runtime.currentUserDisplayName,
       loading: this.runtime.isViewSalePending,
       requestContext,
@@ -72,6 +81,8 @@ export class DetailsListVOA implements ComponentFramework.ReactControl<IInputs, 
       onSubmitQcOutcome: (payload) => this.runtime.submitQcOutcome(payload),
       onOpenQcLog: () => this.runtime.openQcLog(),
       onOpenAuditHistory: () => this.runtime.openAuditHistory(),
+      submitSuccessMessage: this.runtime.submitSuccessMessage,
+      onDismissSubmitSuccess: () => this.runtime.clearSubmitSuccessMessage(),
     });
   }
 

@@ -15,7 +15,7 @@ describe('WRT-201 WLTT View and Promote AC', () => {
   const mergeSource = readRepoFile('DetailsListVOA/services/runtime/sale-details.ts');
 
   test('AC1: WLTT section is shown after Master Sale Details and Calculated Values', () => {
-    expect(shellSource).toContain('<MasterSaleSection masterSale={displayMasterSale} />');
+    expect(shellSource).toContain('<MasterSaleSection masterSale={displayMasterSale} highlighted={masterHighlighted} />');
     expect(shellSource).toContain('<WlttSection');
     expect(shellSource.indexOf('<MasterSaleSection')).toBeLessThan(shellSource.indexOf('<WlttSection'));
     expect(wlttSectionSource).toContain('Stamp Duty Land Tax / Welsh Land Transaction Tax');

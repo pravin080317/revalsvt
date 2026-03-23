@@ -47,6 +47,14 @@ export interface DetailsListHostProps {
   // Optional global request context overrides.
   countryOverride?: string;
   listYearOverride?: string;
+  // Optional context subtitle to display in the command bar (merged from journey banner).
+  contextSubtitle?: string;
+  // Callback to edit the context (country / list year).
+  onEditContext?: () => void;
+  // Expose the GUID→display-name map so sibling components (e.g. SaleDetailsShell) can resolve user names.
+  onUserDisplayNameMapChange?: (map: Record<string, string>) => void;
+  // Bumped by the parent when the grid becomes visible again (e.g. returning from details).
+  refreshNonce?: number;
 }
 
 type ColumnFilterValue = string | string[] | NumericFilter | DateRangeFilter;
@@ -271,6 +279,10 @@ export const DetailsListHost: React.FC<DetailsListHostProps> = ({
   tableKeyOverride,
   countryOverride,
   listYearOverride,
+  contextSubtitle,
+  onEditContext,
+  onUserDisplayNameMapChange,
+  refreshNonce,
 }) => {
   // Parse basic params
   const pageSize = (context.parameters as unknown as Record<string, { raw?: number }>).pageSize?.raw ?? 500;
@@ -412,6 +424,16 @@ export const DetailsListHost: React.FC<DetailsListHostProps> = ({
   const [prefilters, setPrefilters] = React.useState<ManagerPrefilterState | undefined>(undefined);
   const [prefilterApplied, setPrefilterApplied] = React.useState(false);
   const [searchNonce, setSearchNonce] = React.useState(0);
+
+  // When the parent bumps refreshNonce (e.g. returning from details), trigger a re-fetch.
+  const refreshNonceRef = React.useRef(refreshNonce);
+  React.useEffect(() => {
+    if (refreshNonce !== undefined && refreshNonce !== refreshNonceRef.current) {
+      refreshNonceRef.current = refreshNonce;
+      setSearchNonce((n) => n + 1);
+    }
+  }, [refreshNonce]);
+
   const [apiFilterOptions, setApiFilterOptions] = React.useState<FilterOptionsMap>({});
   const [billingAuthorityOptions, setBillingAuthorityOptions] = React.useState<string[]>([]);
   const [billingAuthorityOptionsLoading, setBillingAuthorityOptionsLoading] = React.useState(false);
@@ -751,6 +773,11 @@ export const DetailsListHost: React.FC<DetailsListHostProps> = ({
     return map;
   }, [assignableUsersCache, getUserDisplayName]);
   const hasUserDisplayNameMap = React.useMemo(() => Object.keys(userDisplayNameMap).length > 0, [userDisplayNameMap]);
+  React.useEffect(() => {
+    if (onUserDisplayNameMapChange && hasUserDisplayNameMap) {
+      onUserDisplayNameMapChange(userDisplayNameMap);
+    }
+  }, [userDisplayNameMap, hasUserDisplayNameMap, onUserDisplayNameMapChange]);
   const mapUserIdToDisplay = React.useCallback((value: string): string => {
     const raw = String(value ?? '').trim();
     if (!raw) return raw;
@@ -1696,9 +1723,17 @@ export const DetailsListHost: React.FC<DetailsListHostProps> = ({
   };
 
   const resolveCustomApiTypeForAssign = (): number => {
-    const raw = (context.parameters as unknown as Record<string, { raw?: string }>).customApiType?.raw;
+    const raw = (context.parameters as unknown as Record<string, { raw?: string }>).taskAssignmentApiType?.raw;
     const fromContext = typeof raw === 'string' ? raw : undefined;
-    return resolveCustomApiOperationType(fromContext ?? CONTROL_CONFIG.customApiType);
+    const fallback = CONTROL_CONFIG.taskAssignmentApiType ?? CONTROL_CONFIG.customApiType;
+    return resolveCustomApiOperationType(fromContext ?? fallback);
+  };
+
+  const resolveSubmitQcRemarksApiType = (): number => {
+    const raw = (context.parameters as unknown as Record<string, { raw?: string }>).submitQcRemarksApiType?.raw;
+    const fromContext = typeof raw === 'string' ? raw : undefined;
+    const fallback = CONTROL_CONFIG.submitQcRemarksApiType ?? CONTROL_CONFIG.customApiType;
+    return resolveCustomApiOperationType(fromContext ?? fallback);
   };
 
   function resolveAssignableUsersApiName(): string {
@@ -2070,7 +2105,7 @@ export const DetailsListHost: React.FC<DetailsListHostProps> = ({
         return;
       }
       const reviewedBy = resolveAssignedByUserId(context);
-      const customApiType = resolveCustomApiOperationType('action');
+      const customApiType = resolveSubmitQcRemarksApiType();
       const qcParams: Record<string, string> = {
         taskId: JSON.stringify(uniqueTaskIds),
         qcOutcome: markPassedQcText.qcOutcome,
@@ -2319,8 +2354,9 @@ export const DetailsListHost: React.FC<DetailsListHostProps> = ({
     rowInvokeEnabled: false,
   };
 
-  return <Grid {...(props as unknown as GridProps)} height={allocatedHeight} onBackRequested={onBackRequested} />;
+  return <Grid {...(props as unknown as GridProps)} height={allocatedHeight} onBackRequested={onBackRequested} contextSubtitle={contextSubtitle} onEditContext={onEditContext} />;
 };
 
 DetailsListHost.displayName = 'DetailsListHost';
+
 

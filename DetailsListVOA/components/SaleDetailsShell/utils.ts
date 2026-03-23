@@ -215,14 +215,14 @@ export const mapPadConfirmationToKey = (raw: string): string | undefined => {
   if (!normalized || normalized === '-') {
     return undefined;
   }
-  if (normalized.includes('confirm')) {
-    return 'confirmed';
+  if (normalized.includes('job') && normalized.includes('created')) {
+    return 'job-created';
   }
-  if (normalized.includes('update')) {
-    return 'needs-update';
+  if (normalized.includes('job') && normalized.includes('not')) {
+    return 'job-not-required';
   }
-  if (normalized.includes('review')) {
-    return 'further-review';
+  if (normalized.includes('pad') && normalized.includes('not')) {
+    return 'pads-not-reviewed';
   }
   return undefined;
 };

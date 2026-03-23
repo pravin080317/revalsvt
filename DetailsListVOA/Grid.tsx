@@ -96,6 +96,7 @@ import {
 import { type ScreenKind } from './utils/ScreenResolution';
 import { SCREEN_TEXT } from '../DetailsListVOA/constants/ScreenText';
 import { CONTROL_CONFIG } from './config/ControlConfig';
+import { HOME_JOURNEY_COPY } from '../DetailsListVOA/constants/HomeJourney';
 import {
   resolveAssignedUserIdsToDisable,
   resolveAssignmentStatusValidation,
@@ -169,6 +170,8 @@ export interface GridProps {
   onPrefilterDirty?: () => void;
   onSearchDirty?: () => void;
   onBackRequested?: () => void;
+  contextSubtitle?: string;
+  onEditContext?: () => void;
   disableViewSalesRecordAction?: boolean;
   rowInvokeEnabled?: boolean;
   assignUsers?: AssignUser[];
@@ -791,6 +794,8 @@ export const Grid = React.memo((props: GridProps) => {
     onPrefilterDirty,
     onSearchDirty,
     onBackRequested,
+    contextSubtitle,
+    onEditContext,
     disableViewSalesRecordAction = false,
     rowInvokeEnabled = true,
     assignUsers: assignUsersProp,
@@ -5307,6 +5312,11 @@ export const Grid = React.memo((props: GridProps) => {
                   <Text as="h1" variant={ultraCompactViewport ? 'mediumPlus' : 'large'} className="voa-command-bar__title">
                     {pageHeaderText}
                   </Text>
+                  {contextSubtitle && (
+                    <Text variant="small" className="voa-command-bar__context">
+                      {contextSubtitle}
+                    </Text>
+                  )}
                   {!compactViewport && (
                     <Text variant="small" className="voa-command-bar__meta" role="status" aria-live="polite">
                       {selectionSummaryText}
@@ -5315,6 +5325,15 @@ export const Grid = React.memo((props: GridProps) => {
                 </div>
               </div>
               <div className="voa-command-bar__actions">
+                {onEditContext && (
+                  <DefaultButton
+                    className="voa-edit-context-button"
+                    text={HOME_JOURNEY_COPY.changeContextButton}
+                    iconProps={{ iconName: 'Edit' }}
+                    ariaLabel={HOME_JOURNEY_COPY.changeContextButton}
+                    onClick={onEditContext}
+                  />
+                )}
                 {showSearchPanelToggle && (
                   <DefaultButton
                     className="voa-prefilter-toggle"

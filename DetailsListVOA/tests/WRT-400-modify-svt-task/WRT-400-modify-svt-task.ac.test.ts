@@ -58,7 +58,7 @@ describe('WRT-400 Modify SVT Task AC', () => {
   });
 
   test('AC6: audit history capability remains available after task modification', () => {
-    expect(taskSectionSource).toContain('text="Audit History"');
+    expect(taskSectionSource).toContain('text="Sales Audit History"');
     expect(runtimeSource).toContain('public async openAuditHistory(): Promise<void>');
     expect(runtimeSource).toContain("await this.handleAuditHistoryOpen('SL');");
   });

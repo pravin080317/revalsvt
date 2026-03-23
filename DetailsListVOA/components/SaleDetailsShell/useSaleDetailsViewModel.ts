@@ -1,5 +1,5 @@
 import * as React from 'react';
-import { SAMPLE_SALE_DETAILS, SAMPLE_USER_LOOKUP } from './sampleData';
+import { SAMPLE_SALE_DETAILS } from './sampleData';
 import {
   AttributeChip,
   AttributeTone,
@@ -31,6 +31,7 @@ import {
   parseCsvCodes,
   parseSaleDetails,
   resolveUserDisplayName,
+  isGuidLikeValue,
   toReadableLabel,
   toStatusTone,
   toUkCurrency,
@@ -38,7 +39,7 @@ import {
 } from './utils';
 import { buildReferenceImagesFromSharePointChunks } from './sharePointCatalog';
 import { normalizeSuid } from '../../utils/IdentifierUtils';
-import { buildHereditamentUrl } from '../../utils/HereditamentUrl';
+import { buildHereditamentUrl, buildDataEnhancementUrl } from '../../utils/HereditamentUrl';
 import { EXTERNAL_LINK_DISABLED_REASON, EXTERNAL_LINK_URL_PARTS } from './constants';
 const buildPadChip = (
   propertyAndBandingDetails: SaleDetailsRecord,
@@ -53,6 +54,7 @@ const buildPadChip = (
     getValue(padAttributeTooltipMap, attributeKey),
     getValue(padAttributeTooltipMap, attributeKey.toLowerCase()),
     getValue(propertyAndBandingDetails, `${attributeKey}Tooltip`),
+    getValue(propertyAndBandingDetails, `${attributeKey}Description`),
   );
 
   const colorFromMap = firstNonEmpty(
@@ -414,6 +416,91 @@ const getNormalizedRecordValue = (record: SaleDetailsRecord, candidates: string[
   return '';
 };
 
+const ASSIGNED_TO_NAME_KEYS = [
+  'assignedToName',
+  'assignedToDisplayName',
+  'assignedToUserName',
+  'caseworkerAssignedToName',
+  'caseworkerAssignedToDisplayName',
+  'caseworkerAssignedTo',
+  'assignedTo',
+  'assignedto',
+];
+
+const ASSIGNED_TO_ID_KEYS = [
+  'assignedToUserId',
+  'assignedToId',
+  'caseworkerAssignedToUserId',
+  'caseworkerAssignedToId',
+  'assignedtouserid',
+  'assignedtoid',
+  'caseworkerassignedtouserid',
+  'caseworkerassignedtoid',
+];
+
+const QC_ASSIGNED_TO_NAME_KEYS = [
+  'qcAssignedToName',
+  'qcAssignedToDisplayName',
+  'assignedToQcName',
+  'assignedToQcDisplayName',
+  'assignedToQcUserName',
+  'assignedToQc',
+  'qcAssignedTo',
+  'qcassignedto',
+  'assignedtoqc',
+];
+
+const QC_ASSIGNED_TO_ID_KEYS = [
+  'qcAssignedToUserId',
+  'qcAssignedToId',
+  'assignedToQcUserId',
+  'assignedToQcId',
+  'qcassignedtouserid',
+  'qcassignedtoid',
+  'assignedtoqcuserid',
+  'assignedtoqcid',
+];
+
+const resolveUserDisplayFromRecord = (
+  record: SaleDetailsRecord,
+  nameKeys: string[],
+  idKeys: string[],
+  lookup?: Record<string, string>,
+): string => {
+  const effectiveLookup = lookup ?? {};
+  for (const key of nameKeys) {
+    const raw = getNormalizedRecordValue(record, [key]);
+    if (!raw) {
+      continue;
+    }
+
+    const resolved = resolveUserDisplayName(raw, effectiveLookup).trim();
+    if (!resolved) {
+      continue;
+    }
+
+    if (!isGuidLikeValue(resolved)) {
+      return resolved;
+    }
+  }
+
+  for (const key of idKeys) {
+    const raw = getNormalizedRecordValue(record, [key]);
+    if (!raw) {
+      continue;
+    }
+
+    const resolved = resolveUserDisplayName(raw, effectiveLookup).trim();
+    if (!resolved || isGuidLikeValue(resolved)) {
+      continue;
+    }
+
+    return resolved;
+  }
+
+  return '';
+};
+
 const toDecimal = (raw: string): number | undefined => {
   const trimmed = raw.trim();
   if (!trimmed) {
@@ -422,6 +509,13 @@ const toDecimal = (raw: string): number | undefined => {
 
   const parsed = Number(trimmed.replace(/,/g, ''));
   return Number.isFinite(parsed) ? parsed : undefined;
+};
+
+const roundTo2Dp = (raw: unknown): string => {
+  const text = typeof raw === 'string' ? raw.trim() : typeof raw === 'number' ? String(raw) : '';
+  if (!text) return '';
+  const n = Number(text.replace(/,/g, ''));
+  return Number.isFinite(n) ? n.toFixed(2) : text;
 };
 
 const isInactiveScoringRecord = (record: SaleDetailsRecord): boolean => {
@@ -815,7 +909,9 @@ const mapAuditHistoryModel = (
   payload: SaleDetailsRecord,
   fallbackTaskId: string,
   fallbackRecords: SaleDetailsRecord[],
+  lookup?: Record<string, string>,
 ): AuditHistoryViewModel => {
+  const effectiveLookup = lookup ?? {};
   const taskId = formatValue(firstNonEmpty(getValue(payload, 'taskId'), fallbackTaskId));
   const errorMessage = toEditableInput(firstNonEmpty(getValue(payload, 'errorMessage'), getValue(payload, 'message')));
 
@@ -833,7 +929,7 @@ const mapAuditHistoryModel = (
       const parsedChangedOn = parseAuditDateTime(changedOnRaw);
 
       const changeId = formatValue(firstNonEmpty(getValue(record, 'changeID'), getValue(record, 'changeId'), `${index + 1}`));
-      const changedBy = formatValue(resolveUserDisplayName(getValue(record, 'changedBy'), SAMPLE_USER_LOOKUP));
+      const changedBy = formatValue(resolveUserDisplayName(getValue(record, 'changedBy'), effectiveLookup));
       const changedOn = formatValue(toUkDateTime(changedOnRaw));
       const eventType = formatValue(getValue(record, 'eventType'));
       const changes = mapAuditFieldChanges(record);
@@ -893,6 +989,7 @@ export const useSaleDetailsViewModel = (
   sharePointCatalogChunks?: SharePointCatalogChunks,
   fxEnvironmentUrl?: string,
   vmsBaseUrl?: string,
+  userLookup?: Record<string, string>,
 ): SaleDetailsViewModel => {
   const detailsFromPayload = React.useMemo(() => parseSaleDetails(saleDetailsJson), [saleDetailsJson]);
 
@@ -909,23 +1006,28 @@ export const useSaleDetailsViewModel = (
   );
 
   return React.useMemo(() => {
+    const effectiveLookup = userLookup ?? {};
     const salesVerificationTaskDetails = getRecordFromKeys(details, ['salesVerificationTaskDetails', 'taskDetails']);
     const propertyAndBandingDetails = getRecordFromKeys(details, ['propertyAndBandingDetails', 'bandingInfo']);
     const links = getRecord(details, 'links');
 
-    const saleId = formatValue(getValue(salesVerificationTaskDetails, 'saleId'));
-    const taskId = formatValue(getValue(salesVerificationTaskDetails, 'taskId'));
+    const saleId = formatValue(getNormalizedRecordValue(salesVerificationTaskDetails, ['saleId', 'saleid']));
+    const taskId = formatValue(getNormalizedRecordValue(salesVerificationTaskDetails, ['taskId', 'taskid']));
 
-    const statusText = formatValue(getValue(salesVerificationTaskDetails, 'taskStatus'));
+    const statusText = formatValue(getNormalizedRecordValue(salesVerificationTaskDetails, ['taskStatus', 'taskstatus', 'status']));
     const statusTone = toStatusTone(statusText);
 
-    const assignedTo = formatValue(resolveUserDisplayName(getValue(salesVerificationTaskDetails, 'assignedTo'), SAMPLE_USER_LOOKUP));
-    const qcAssignedTo = formatValue(resolveUserDisplayName(
-      firstNonEmpty(
-        getValue(salesVerificationTaskDetails, 'qcAssignedTo'),
-        getValue(salesVerificationTaskDetails, 'assignedToQc'),
-      ),
-      SAMPLE_USER_LOOKUP,
+    const assignedTo = formatValue(resolveUserDisplayFromRecord(
+      salesVerificationTaskDetails,
+      ASSIGNED_TO_NAME_KEYS,
+      ASSIGNED_TO_ID_KEYS,
+      effectiveLookup,
+    ));
+    const qcAssignedTo = formatValue(resolveUserDisplayFromRecord(
+      salesVerificationTaskDetails,
+      QC_ASSIGNED_TO_NAME_KEYS,
+      QC_ASSIGNED_TO_ID_KEYS,
+      effectiveLookup,
     ));
     const normalizeLinkValue = (value: string): string => {
       const trimmed = value.trim();
@@ -1006,6 +1108,7 @@ export const useSaleDetailsViewModel = (
       getValue(details, 'hereditamentId'),
     ));
     const addressLink = address !== '-' && suId ? buildHereditamentUrl(fxEnvironmentUrl ?? '', suId) : '';
+    const dataEnhancementUrl = buildDataEnhancementUrl(fxEnvironmentUrl ?? '');
 
     const billingAuthorityCode = getValue(propertyAndBandingDetails, 'billingAuthority');
     const billingAuthorityName = getValue(propertyAndBandingDetails, 'billingAuthorityName');
@@ -1051,31 +1154,34 @@ export const useSaleDetailsViewModel = (
 
     const attributeGroups = [
       [
-        buildPadChip(propertyAndBandingDetails, padAttributeColorMap, padAttributeTooltipMap, 'dwellingGroup', 'sky'),
-        buildPadChip(propertyAndBandingDetails, padAttributeColorMap, padAttributeTooltipMap, 'dwellingType', 'amber'),
-        buildPadChip(propertyAndBandingDetails, padAttributeColorMap, padAttributeTooltipMap, 'ageCode', 'red'),
-        buildPadChip(propertyAndBandingDetails, padAttributeColorMap, padAttributeTooltipMap, 'dwellingArea', 'violet'),
-        buildPadChip(propertyAndBandingDetails, padAttributeColorMap, padAttributeTooltipMap, 'heating', 'teal'),
+        buildPadChip(propertyAndBandingDetails, padAttributeColorMap, padAttributeTooltipMap, 'dwellingGroup', 'teal'),
+        buildPadChip(propertyAndBandingDetails, padAttributeColorMap, padAttributeTooltipMap, 'dwellingType', 'teal'),
+        buildPadChip(propertyAndBandingDetails, padAttributeColorMap, padAttributeTooltipMap, 'ageCode', 'brick'),
+        buildPadChip(propertyAndBandingDetails, padAttributeColorMap, padAttributeTooltipMap, 'dwellingArea', 'purple'),
+        buildPadChip(propertyAndBandingDetails, padAttributeColorMap, padAttributeTooltipMap, 'heating', 'purple'),
       ],
       [
-        buildPadChip(propertyAndBandingDetails, padAttributeColorMap, padAttributeTooltipMap, 'mainroomCount', 'purple'),
-        buildPadChip(propertyAndBandingDetails, padAttributeColorMap, padAttributeTooltipMap, 'bedroomCount', 'indigo'),
-        buildPadChip(propertyAndBandingDetails, padAttributeColorMap, padAttributeTooltipMap, 'bathroomCount', 'magenta'),
-        buildPadChip(propertyAndBandingDetails, padAttributeColorMap, padAttributeTooltipMap, 'floorCount', 'slate'),
+        buildPadChip(propertyAndBandingDetails, padAttributeColorMap, padAttributeTooltipMap, 'mainroomCount', 'berry'),
+        buildPadChip(propertyAndBandingDetails, padAttributeColorMap, padAttributeTooltipMap, 'bedroomCount', 'berry'),
+        buildPadChip(propertyAndBandingDetails, padAttributeColorMap, padAttributeTooltipMap, 'bathroomCount', 'berry'),
+        buildPadChip(propertyAndBandingDetails, padAttributeColorMap, padAttributeTooltipMap, 'floorCount', 'berry'),
       ],
       [
-        buildPadChip(propertyAndBandingDetails, padAttributeColorMap, padAttributeTooltipMap, 'floorLevel', 'bluegray'),
-        buildPadChip(propertyAndBandingDetails, padAttributeColorMap, padAttributeTooltipMap, 'parkingCode', 'indigo'),
-        buildPadChip(propertyAndBandingDetails, padAttributeColorMap, padAttributeTooltipMap, 'reasonCode', 'slate'),
+        buildPadChip(propertyAndBandingDetails, padAttributeColorMap, padAttributeTooltipMap, 'floorLevel', 'teal'),
+        buildPadChip(propertyAndBandingDetails, padAttributeColorMap, padAttributeTooltipMap, 'parkingCode', 'crimson'),
+        buildPadChip(propertyAndBandingDetails, padAttributeColorMap, padAttributeTooltipMap, 'reasonCode', 'crimson'),
       ],
       [
-        buildPadChip(propertyAndBandingDetails, padAttributeColorMap, padAttributeTooltipMap, 'conservatoryType', 'bluegray'),
-        buildPadChip(propertyAndBandingDetails, padAttributeColorMap, padAttributeTooltipMap, 'conservatoryArea', 'bluegray'),
+        buildPadChip(propertyAndBandingDetails, padAttributeColorMap, padAttributeTooltipMap, 'conservatoryType', 'navy'),
+        buildPadChip(propertyAndBandingDetails, padAttributeColorMap, padAttributeTooltipMap, 'conservatoryArea', 'navy'),
       ],
     ].map((group) => group.filter((chip) => chip.value.trim().length > 0));
 
     const vscCodes = parseCsvCodes(getValue(propertyAndBandingDetails, 'valueSignificantCodes'));
-    const sourceCodes = parseCsvCodes(getValue(propertyAndBandingDetails, 'sourceCodes'));
+    const sourceCodes = parseCsvCodes(firstNonEmpty(
+      getValue(propertyAndBandingDetails, 'sourceCodes'),
+      getValue(propertyAndBandingDetails, 'sourceCode'),
+    ));
 
     const initialPadConfirmationKey = mapPadConfirmationToKey(getValue(propertyAndBandingDetails, 'padConfirmation'));
 
@@ -1092,8 +1198,8 @@ export const useSaleDetailsViewModel = (
       reviewFlags: formatValue(normalizeMasterSaleListText(getValueFromRecordOrRoot(masterSaleRecord, details, ['reviewFlags', 'masterSaleReviewFlags', 'ReviewFlags']))),
       hpiAdjustedPrice: formatValue(toUkCurrency(getValueFromRecordOrRoot(masterSaleRecord, details, ['hpiAdjustedPrice', 'masterSaleHpiAdjustedPrice', 'HpiAdjustedPrice']))),
       summaryFlags: formatValue(normalizeMasterSaleListText(getValueFromRecordOrRoot(masterSaleRecord, details, ['summaryFlags', 'masterSaleSummaryFlags', 'SummaryFlags']))),
-      previousRatioRange: formatValue(getValueFromRecordOrRoot(repeatSaleInfoRecord, details, ['previousRatioRange', 'PreviousRatioRange'])),
-      latestRatioRange: formatValue(getValueFromRecordOrRoot(repeatSaleInfoRecord, details, ['latestRatioRange', 'laterRatioRange', 'LatestRatioRange', 'LaterRatioRange'])),
+      previousRatioRange: formatValue(roundTo2Dp(getValueFromRecordOrRoot(repeatSaleInfoRecord, details, ['previousRatioRange', 'PreviousRatioRange']))),
+      latestRatioRange: formatValue(roundTo2Dp(getValueFromRecordOrRoot(repeatSaleInfoRecord, details, ['latestRatioRange', 'laterRatioRange', 'LatestRatioRange', 'LaterRatioRange']))),
     };
 
     const wlttRecords = getRecordArray(details, 'welshLandTax').map((record) => ({
@@ -1365,7 +1471,7 @@ export const useSaleDetailsViewModel = (
       glazing: toEditableInput(getValue(salesParticularDetails, 'glazing')),
       heating: toEditableInput(getValue(salesParticularDetails, 'heating')),
       decorativeFinishes: toEditableInput(getValue(salesParticularDetails, 'decorativeFinishes')),
-      conditionScore: toEditableInput(getValue(salesParticularDetails, 'conditionScore')),
+      conditionScore: toEditableInput(roundTo2Dp(getValue(salesParticularDetails, 'conditionScore'))),
       conditionCategory: toEditableInput(getValue(salesParticularDetails, 'conditionCategory')),
       particularsNotes: toEditableInput(
         firstNonEmpty(
@@ -1394,17 +1500,8 @@ export const useSaleDetailsViewModel = (
           getValue(salesParticularDetails, 'bathroomSpecificationTooltip'),
           'Compare bathroom specification using reference images',
         ),
-        glazing: firstNonEmpty(
-          getValue(salesParticularTooltips, 'glazing'),
-          getValue(salesParticularDetails, 'glazingTooltip'),
-          'Compare glazing using reference images',
-        ),
-        heating: firstNonEmpty(
-          getValue(salesParticularTooltips, 'heating'),
-          getValue(salesParticularTooltips, 'heatingElements'),
-          getValue(salesParticularDetails, 'heatingTooltip'),
-          'Compare heating using reference images',
-        ),
+        glazing: '',
+        heating: '',
         decorativeFinishes: firstNonEmpty(
           getValue(salesParticularTooltips, 'decorativeFinishes'),
           getValue(salesParticularDetails, 'decorativeFinishesTooltip'),
@@ -1425,14 +1522,14 @@ export const useSaleDetailsViewModel = (
       remarks: toEditableInput(getValue(salesVerificationDetails, 'remarks')),
       qcOutcome: toEditableInput(getValue(qualityControlOutcome, 'qcOutcome')),
       qcRemark: toEditableInput(getValue(qualityControlOutcome, 'qcRemark')),
-      qcReviewedBy: formatValue(resolveUserDisplayName(getValue(qualityControlOutcome, 'qcReviewedBy'), SAMPLE_USER_LOOKUP)),
+      qcReviewedBy: formatValue(resolveUserDisplayName(getValue(qualityControlOutcome, 'qcReviewedBy'), effectiveLookup)),
     };
 
     const mainAuditHistorySource = resolveAuditPayload(details, 'main');
     const qcAuditHistorySource = resolveAuditPayload(details, 'qc');
 
-    const mainAuditHistory = mapAuditHistoryModel(mainAuditHistorySource.payload, taskId, mainAuditHistorySource.historyRecords);
-    const qcAuditHistory = mapAuditHistoryModel(qcAuditHistorySource.payload, taskId, qcAuditHistorySource.historyRecords);
+    const mainAuditHistory = mapAuditHistoryModel(mainAuditHistorySource.payload, taskId, mainAuditHistorySource.historyRecords, effectiveLookup);
+    const qcAuditHistory = mapAuditHistoryModel(qcAuditHistorySource.payload, taskId, qcAuditHistorySource.historyRecords, effectiveLookup);
 
     return {
       saleId,
@@ -1444,6 +1541,7 @@ export const useSaleDetailsViewModel = (
       externalLinks,
       address,
       addressLink,
+      dataEnhancementUrl,
       billingAuthority,
       band,
       bandingEffectiveDate,
@@ -1467,7 +1565,7 @@ export const useSaleDetailsViewModel = (
       mainAuditHistory,
       qcAuditHistory,
     } as SaleDetailsViewModel;
-  }, [chunkedReferenceImages, details, fxEnvironmentUrl, vmsBaseUrl]);
+  }, [chunkedReferenceImages, details, fxEnvironmentUrl, userLookup, vmsBaseUrl]);
 };
 
 

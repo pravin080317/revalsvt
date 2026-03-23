@@ -105,7 +105,7 @@ export const HOME_JOURNEY_TILE_DEFINITIONS: HomeJourneyTileDefinition[] = [
 
 export const HOME_JOURNEY_VISIBLE_TILE_KEYS_BY_PERSONA: Record<HomeJourneyPersona, HomeJourneyTileKey[]> = {
   manager: ['salesSearch', 'managerAssign', 'caseworkerView', 'qcAssign', 'qcView'],
-  qa: ['qcAssign', 'qcView'],
+  qa: ['salesSearch', 'qcAssign', 'qcView'],
   user: ['salesSearch', 'caseworkerView'],
   none: ['salesSearch'],
   unknown: [],
@@ -125,7 +125,7 @@ export const HOME_JOURNEY_COPY = {
   loadingUserContext: 'Loading user context...',
   contextStageTitle: 'Set your working context',
   contextStageDescription:
-    'Choose country and list year. This context is applied across searches, task lists, and record details.',
+    'Select country and list year to set your working context.',
   requiredFieldHint: 'Country and list year are required.',
   countryLabel: 'Country',
   countryPlaceholder: 'Choose country',
@@ -138,7 +138,7 @@ export const HOME_JOURNEY_COPY = {
   personaSummaryPrefix: 'Role',
   changeContextButton: 'Edit context',
   tilesStageTitle: 'Choose a workspace',
-  tilesStageDescription: 'Workspaces are shown based on your role.',
+  tilesStageDescription: 'Select a workspace below.',
   noTilesMessage: 'No workspaces are available for your role. Contact your service administrator.',
   allTilesButton: 'All workspaces',
   tableAriaLabelSuffix: 'workspace table',

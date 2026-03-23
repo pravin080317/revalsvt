@@ -1,4 +1,5 @@
 import * as React from 'react';
+import { MessageBar, MessageBarType } from '@fluentui/react';
 import { IInputs } from '../../generated/ManifestTypes';
 import { PCFContext } from '../context/PCFContext';
 import { DetailsListHost } from '../DetailsListHost/DetailsListHost';
@@ -19,6 +20,7 @@ interface DetailsListControlShellProps {
   saleDetailsCanProgressTask: boolean;
   saleDetailsCanSubmitQcOutcome: boolean;
   saleDetailsShowQcSection: boolean;
+  activeWorkspaceName: string;
   currentUserDisplayName: string;
   loading: boolean;
   requestContext: {
@@ -42,11 +44,13 @@ interface DetailsListControlShellProps {
   onDetailsRefresh: () => Promise<void>;
   onCreateManualTask: (saleId: string) => Promise<void>;
   onModifySvtTask: () => Promise<void>;
-  onCompleteSalesVerificationTask: (payload: SalesVerificationActionPayload) => void;
-  onSubmitSalesVerificationTaskForQc: (payload: SalesVerificationActionPayload) => void;
-  onSubmitQcOutcome: (payload: QcOutcomeActionPayload) => void;
+  onCompleteSalesVerificationTask: (payload: SalesVerificationActionPayload) => void | Promise<void>;
+  onSubmitSalesVerificationTaskForQc: (payload: SalesVerificationActionPayload) => void | Promise<void>;
+  onSubmitQcOutcome: (payload: QcOutcomeActionPayload) => void | Promise<void>;
   onOpenQcLog: () => Promise<void>;
   onOpenAuditHistory: () => Promise<void>;
+  submitSuccessMessage?: string;
+  onDismissSubmitSuccess?: () => void;
 }
 
 export const DetailsListControlShell: React.FC<DetailsListControlShellProps> = ({
@@ -62,6 +66,7 @@ export const DetailsListControlShell: React.FC<DetailsListControlShellProps> = (
   saleDetailsCanProgressTask,
   saleDetailsCanSubmitQcOutcome,
   saleDetailsShowQcSection,
+  activeWorkspaceName,
   currentUserDisplayName,
   loading,
   requestContext,
@@ -82,6 +87,8 @@ export const DetailsListControlShell: React.FC<DetailsListControlShellProps> = (
   onSubmitQcOutcome,
   onOpenQcLog,
   onOpenAuditHistory,
+  submitSuccessMessage,
+  onDismissSubmitSuccess,
 }) => {
   const sharedHostProps = React.useMemo(
     () => ({
@@ -93,6 +100,21 @@ export const DetailsListControlShell: React.FC<DetailsListControlShellProps> = (
     [context, onRowInvoke, onSelectionChange, onSelectionCountChange],
   );
 
+  const [userDisplayNameMap, setUserDisplayNameMap] = React.useState<Record<string, string>>({});
+  const handleUserDisplayNameMapChange = React.useCallback((map: Record<string, string>) => {
+    setUserDisplayNameMap(map);
+  }, []);
+
+  // Bump refreshNonce when returning from details so the grid re-fetches data.
+  const [refreshNonce, setRefreshNonce] = React.useState(0);
+  const prevShowPcfDetailsRef = React.useRef(showPcfDetails);
+  React.useEffect(() => {
+    if (prevShowPcfDetailsRef.current && !showPcfDetails) {
+      setRefreshNonce((n) => n + 1);
+    }
+    prevShowPcfDetailsRef.current = showPcfDetails;
+  }, [showPcfDetails]);
+
   const gridElement = React.useMemo(
     () => (
       useManagerJourney
@@ -102,6 +124,7 @@ export const DetailsListControlShell: React.FC<DetailsListControlShellProps> = (
             initialCountry={requestContext.country}
             initialListYear={requestContext.listYear}
             onContextChange={onContextChange}
+            refreshNonce={refreshNonce}
           />
         ) : (
           <DetailsListHost
@@ -109,10 +132,12 @@ export const DetailsListControlShell: React.FC<DetailsListControlShellProps> = (
             onBackRequested={onBackToCanvas}
             countryOverride={requestContext.country}
             listYearOverride={requestContext.listYear}
+            onUserDisplayNameMapChange={handleUserDisplayNameMapChange}
+            refreshNonce={refreshNonce}
           />
         )
     ),
-    [onBackToCanvas, onContextChange, requestContext.country, requestContext.listYear, sharedHostProps, useManagerJourney],
+    [handleUserDisplayNameMapChange, onBackToCanvas, onContextChange, refreshNonce, requestContext.country, requestContext.listYear, sharedHostProps, useManagerJourney],
   );
 
   const detailElement = React.useMemo(
@@ -129,8 +154,12 @@ export const DetailsListControlShell: React.FC<DetailsListControlShellProps> = (
         canProgressTask={saleDetailsCanProgressTask}
         canSubmitQcOutcome={saleDetailsCanSubmitQcOutcome}
         showQcSection={saleDetailsShowQcSection}
+        activeWorkspaceName={activeWorkspaceName}
+        country={requestContext.country}
+        listYear={requestContext.listYear}
         currentUserDisplayName={currentUserDisplayName}
         loading={loading}
+        userLookup={userDisplayNameMap}
         onBack={onDetailsBack}
         onRefresh={onDetailsRefresh}
         onCreateManualTask={onCreateManualTask}
@@ -165,17 +194,42 @@ export const DetailsListControlShell: React.FC<DetailsListControlShellProps> = (
       saleDetailsCanSubmitQcOutcome,
       saleDetailsShowQcSection,
       currentUserDisplayName,
+      userDisplayNameMap,
+      requestContext.country,
+      requestContext.listYear,
     ],
   );
+
+  // Auto-dismiss the success notification after 5 seconds
+  React.useEffect(() => {
+    if (!submitSuccessMessage) return;
+    const timer = setTimeout(() => {
+      onDismissSubmitSuccess?.();
+    }, 5000);
+    return () => clearTimeout(timer);
+  }, [submitSuccessMessage, onDismissSubmitSuccess]);
 
   return (
     <PCFContext.Provider value={context}>
       <>
         <div style={{ display: showPcfDetails ? 'none' : 'block', height: '100%' }}>
+          {submitSuccessMessage && (
+            <MessageBar
+              messageBarType={MessageBarType.success}
+              onDismiss={onDismissSubmitSuccess}
+              dismissButtonAriaLabel="Dismiss"
+              style={{ marginBottom: 8 }}
+            >
+              {submitSuccessMessage}
+            </MessageBar>
+          )}
           {gridElement}
         </div>
         {pcfViewSalesEnabled ? (
-          <div style={{ display: showPcfDetails ? 'block' : 'none', height: '100%' }}>
+          <div
+            className={showPcfDetails ? 'voa-details-view-wrap voa-details-view-wrap--active' : 'voa-details-view-wrap'}
+            style={{ display: showPcfDetails ? 'block' : 'none', height: '100%' }}
+          >
             {detailElement}
           </div>
         ) : null}
@@ -183,6 +237,7 @@ export const DetailsListControlShell: React.FC<DetailsListControlShellProps> = (
     </PCFContext.Provider>
   );
 };
+
 
 
 

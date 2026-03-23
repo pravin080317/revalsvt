@@ -17,6 +17,9 @@ interface PadSectionProps {
   padConfirmationKey?: string;
   onPadConfirmationChange: (nextKey?: string) => void;
   readOnly?: boolean;
+  hereditamentUrl?: string;
+  dataEnhancementUrl?: string;
+  canCreateDataEnhancement?: boolean;
 }
 
 export const PadSection: React.FC<PadSectionProps> = ({
@@ -32,6 +35,9 @@ export const PadSection: React.FC<PadSectionProps> = ({
   padConfirmationKey,
   onPadConfirmationChange,
   readOnly = false,
+  hereditamentUrl = '',
+  dataEnhancementUrl = '',
+  canCreateDataEnhancement = false,
 }) => {
   const attributeChips = React.useMemo(
     () => attributeGroups.reduce<AttributeChip[]>((all, group) => all.concat(group), []),
@@ -62,13 +68,15 @@ export const PadSection: React.FC<PadSectionProps> = ({
             text="Create Data Enhancement Job"
             ariaLabel="Create Data Enhancement Job"
             className="voa-pad-action-btn voa-pad-action-btn--green"
-            disabled={readOnly}
+            disabled={!canCreateDataEnhancement || !dataEnhancementUrl}
+            onClick={() => { if (dataEnhancementUrl) { window.open(dataEnhancementUrl, '_blank', 'noopener,noreferrer'); } }}
           />
           <DefaultButton
             text="View Hereditament"
             ariaLabel="View Hereditament"
             className="voa-pad-action-btn voa-pad-action-btn--blue"
-            disabled={readOnly}
+            disabled={!hereditamentUrl}
+            onClick={() => { if (hereditamentUrl) { window.open(hereditamentUrl, '_blank', 'noopener,noreferrer'); } }}
           />
         </div>
       </div>

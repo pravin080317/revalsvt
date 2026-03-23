@@ -2,10 +2,12 @@ import { IInputs, IOutputs } from '../generated/ManifestTypes';
 import { QcOutcomeActionPayload, SalesVerificationActionPayload } from '../components/SaleDetailsShell/types';
 import { CONTROL_CONFIG } from '../config/ControlConfig';
 import { executeUnboundCustomApi } from './CustomApi';
+import { svtDebug } from '../utils/debug';
 import {
   extractTaskIdFromUnknown,
   parseManualTaskCreationResult,
   parseModifyTaskResult,
+  parseApiMutationResult,
   resolveConfiguredApiName,
   resolveConfiguredApiType,
   resolveCurrentUserDisplayName,
@@ -21,8 +23,10 @@ import {
   mergeModifyTaskDetails,
   mergeQcOutcomeDetails,
   mergeSalesVerificationDetails,
+  resolveCurrentSaleIdFromDetails,
   resolveCurrentTaskIdFromDetails,
   resolveTaskIdForAuditLogs,
+  stripTaskIdPrefix,
   toRecord,
 } from './runtime/sale-details';
 import {
@@ -45,6 +49,7 @@ const QA_ROLE_NAME = 'voa - svt qa';
 const EDITABLE_CASEWORKER_STATUSES = new Set(['assigned', 'assigned qc failed']);
 const EDITABLE_QC_STATUSES = new Set(['assigned to qc', 'reassigned to qc']);
 const MODIFY_TASK_ALLOWED_STATUSES = new Set(['complete', 'complete passed qc']);
+const PRE_QC_STATUSES = new Set(['assigned', 'complete']);
 const ENABLE_COUNTRY_LIST_YEAR_API_PARAMS = CONTROL_CONFIG.enableCountryListYearApiParams === true;
 
 export class DetailsListRuntimeController {
@@ -74,9 +79,10 @@ export class DetailsListRuntimeController {
   private hasManagerAccess = false;
   private hasQaAccess = false;
   private saleDetailsCanSubmitQcOutcome = false;
-  private saleDetailsShowQcSection = true;
+  private saleDetailsShowQcSection = false;
   private hasResolvedCaseworkerAccess = false;
   private caseworkerAccessRequest?: Promise<boolean>;
+  private submitSuccessNotification?: string;
 
   public init(context: ComponentFramework.Context<IInputs>, notifyOutputChanged: () => void): void {
     this._context = context;
@@ -122,6 +128,14 @@ export class DetailsListRuntimeController {
     return this.saleDetailsReadOnlyMessage;
   }
 
+  public get submitSuccessMessage(): string | undefined {
+    return this.submitSuccessNotification;
+  }
+
+  public clearSubmitSuccessMessage(): void {
+    this.submitSuccessNotification = undefined;
+  }
+
   public get canCreateManualTask(): boolean {
     return this.hasManagerAccess;
   }
@@ -140,6 +154,10 @@ export class DetailsListRuntimeController {
 
   public get shouldShowQcSection(): boolean {
     return this.saleDetailsShowQcSection;
+  }
+
+  public get activeWorkspaceName(): string {
+    return this.selectedScreenKind ?? '';
   }
 
   public get currentUserDisplayName(): string {
@@ -190,6 +208,7 @@ export class DetailsListRuntimeController {
   }
 
   public async handleRowInvoke(args: { taskId?: string; saleId?: string; screenKind?: string; tableKey?: string }): Promise<void> {
+    svtDebug.log('Runtime', 'handleRowInvoke', args);
     this.selectedTaskId = args?.taskId;
     this.selectedSaleId = args?.saleId;
     this.selectedScreenKind = normalizeTextValue(args?.screenKind);
@@ -219,26 +238,31 @@ export class DetailsListRuntimeController {
   }
 
   public handleBackToCanvas(): void {
+    svtDebug.log('Runtime', 'handleBackToCanvas');
     this._saleDetails = '';
+    this.activeViewSaleRequestId = undefined;
     this.viewSalePending = false;
     this.showPcfSaleDetails = false;
     this.saleDetailsReadOnly = false;
     this.saleDetailsReadOnlyMessage = undefined;
     this.saleDetailsCanSubmitQcOutcome = false;
-    this.saleDetailsShowQcSection = true;
+    this.saleDetailsShowQcSection = false;
     this.selectedScreenKind = undefined;
     this.selectedTableKey = undefined;
     this.emitAction('back');
   }
 
   public handleDetailsBack(): void {
+    svtDebug.log('Runtime', 'handleDetailsBack');
+    this.activeViewSaleRequestId = undefined;
     this.showPcfSaleDetails = false;
     this.viewSalePending = false;
+    this._saleDetails = '';
     this.saleDetailsReadOnly = false;
     this.saleDetailsReadOnlyMessage = undefined;
     this.saleDetailsCanSubmitQcOutcome = false;
-    this.saleDetailsShowQcSection = true;
-    this._notifyOutputChanged();
+    this.saleDetailsShowQcSection = false;
+    this.emitAction('back');
   }
 
   public async refreshDetails(): Promise<void> {
@@ -246,6 +270,7 @@ export class DetailsListRuntimeController {
   }
 
   public async createManualTask(saleId: string): Promise<void> {
+    svtDebug.log('Runtime', 'createManualTask', { saleId });
     const normalizedSaleId = normalizeTextValue(saleId) || normalizeTextValue(this.selectedSaleId);
     if (!hasDisplayText(normalizedSaleId)) {
       throw new Error('Sale ID is not available for manual task creation.');
@@ -309,6 +334,7 @@ export class DetailsListRuntimeController {
   }
 
   public async modifySvtTask(): Promise<void> {
+    svtDebug.log('Runtime', 'modifySvtTask', { selectedTaskId: this.selectedTaskId });
     const existingTaskId = resolveCurrentTaskIdFromDetails(this._saleDetails, this.selectedTaskId);
     if (!hasDisplayText(existingTaskId)) {
       throw new Error('Task ID is not available for modify SVT task.');
@@ -380,29 +406,196 @@ export class DetailsListRuntimeController {
     this._notifyOutputChanged();
   }
 
-  public handleSalesVerificationTaskAction(
+  public async handleSalesVerificationTaskAction(
     type: 'completeSalesVerificationTask' | 'submitSalesVerificationTaskForQc',
     payload: SalesVerificationActionPayload,
-  ): void {
-    this._saleDetails = mergeSalesVerificationDetails(this._saleDetails, payload, type);
-    const access = this.resolveSaleDetailsAccess(this._saleDetails);
-    this.saleDetailsReadOnly = access.readOnly;
-    this.saleDetailsReadOnlyMessage = access.reason;
-    const qcAccess = this.resolveQcSectionAccess(this._saleDetails);
-    this.saleDetailsCanSubmitQcOutcome = qcAccess.canSubmit;
-    this.saleDetailsShowQcSection = qcAccess.showSection;
+  ): Promise<void> {
+    svtDebug.log('Runtime', 'handleSalesVerificationTaskAction', { type, payload });
+    await this.ensureCaseworkerAccess();
+    if (!this.hasCaseworkerAccess) {
+      throw new Error('Sales verification actions are restricted to caseworker role/team.');
+    }
+
+    const saleId = resolveCurrentSaleIdFromDetails(this._saleDetails, this.selectedSaleId);
+    if (!hasDisplayText(saleId)) {
+      throw new Error('Sale ID is not available for sales verification update.');
+    }
+
+    const apiName = resolveConfiguredApiName(
+      this._context,
+      'submitSalesVerificationApiName',
+      CONTROL_CONFIG.submitSalesVerificationApiName,
+    );
+    if (!apiName) {
+      throw new Error('Submit sales verification API name is not configured.');
+    }
+
+    const nextSaleDetails = mergeSalesVerificationDetails(this._saleDetails, payload, type);
+    const payloadJson = this.buildSalesVerificationSubmitPayload(nextSaleDetails, resolveCurrentUserId(this._context));
+    const saleSubmitRemarks = normalizeTextValue(payload.remarks);
+
+    const response = await executeUnboundCustomApi<unknown>(
+      this._context,
+      apiName,
+      {
+        saleId,
+        saleSubmitPayload: payloadJson,
+        saleSubmitRemarks,
+      },
+      {
+        operationType: resolveConfiguredApiType(
+          this._context,
+          'submitSalesVerificationApiType',
+          CONTROL_CONFIG.submitSalesVerificationApiType,
+        ),
+      },
+    );
+
+    const parsed = parseApiMutationResult(response, 'Submit sales verification task failed.');
+    if (!parsed.success) {
+      throw new Error(parsed.message || 'Submit sales verification task failed.');
+    }
+
+    this._saleDetails = nextSaleDetails;
+    this.selectedSaleId = normalizeTextValue(saleId) || this.selectedSaleId;
+    this.selectedTaskId = resolveCurrentTaskIdFromDetails(nextSaleDetails, this.selectedTaskId);
+    this.updateSaleDetailsAccessState();
+
+    // Auto-navigate back to grid with success notification
+    this.showPcfSaleDetails = false;
+    this.activeViewSaleRequestId = undefined;
+    this.viewSalePending = false;
+    this.submitSuccessNotification = type === 'completeSalesVerificationTask'
+      ? 'Sales verification task completed successfully.'
+      : 'Sales verification task submitted for QC successfully.';
+
     this.emitAction(type);
   }
 
-  public submitQcOutcome(payload: QcOutcomeActionPayload): void {
+  public async submitQcOutcome(payload: QcOutcomeActionPayload): Promise<void> {
+    svtDebug.log('Runtime', 'submitQcOutcome', { payload });
+    await this.ensureCaseworkerAccess();
+    if (!this.hasQaAccess && !this.hasManagerAccess) {
+      throw new Error('Submit QC outcome is restricted to QA or manager role/team.');
+    }
+
+    const taskId = resolveCurrentTaskIdFromDetails(this._saleDetails, this.selectedTaskId);
+    if (!hasDisplayText(taskId)) {
+      throw new Error('Task ID is not available for QC outcome submission.');
+    }
+
+    const apiName = resolveConfiguredApiName(
+      this._context,
+      'submitQcRemarksApiName',
+      CONTROL_CONFIG.submitQcRemarksApiName,
+    );
+    if (!apiName) {
+      throw new Error('Submit QC remarks API name is not configured.');
+    }
+
+    const normalizedTaskId = this.normalizeTaskIdForModifyTask(taskId);
+    if (!normalizedTaskId) {
+      throw new Error('Task ID is invalid for QC outcome submission.');
+    }
+
+    const { country, listYear } = resolveActiveRequestContext(
+      this._context,
+      this.managerJourneyActive,
+      this.managerJourneyContext,
+    );
+
+    const qcParams: Record<string, string> = {
+      taskId: JSON.stringify([normalizedTaskId]),
+      qcOutcome: payload.qcOutcome,
+      qcRemark: normalizeTextValue(payload.qcRemark),
+      qcReviewedBy: resolveCurrentUserId(this._context),
+    };
+    if (ENABLE_COUNTRY_LIST_YEAR_API_PARAMS) {
+      if (country) qcParams.country = country;
+      if (listYear) qcParams.listYear = listYear;
+    }
+
+    const response = await executeUnboundCustomApi<unknown>(
+      this._context,
+      apiName,
+      qcParams,
+      {
+        operationType: resolveConfiguredApiType(
+          this._context,
+          'submitQcRemarksApiType',
+          CONTROL_CONFIG.submitQcRemarksApiType,
+        ),
+      },
+    );
+
+    const parsed = parseApiMutationResult(response, 'Submit QC outcome failed.');
+    if (!parsed.success) {
+      throw new Error(parsed.message || 'Submit QC outcome failed.');
+    }
+
     this._saleDetails = mergeQcOutcomeDetails(this._saleDetails, payload);
+    this.selectedTaskId = normalizeTextValue(taskId) || this.selectedTaskId;
+    this.updateSaleDetailsAccessState();
+
+    // Auto-navigate back to grid with success notification (same as caseworker submission)
+    this.showPcfSaleDetails = false;
+    this.activeViewSaleRequestId = undefined;
+    this.viewSalePending = false;
+    this.submitSuccessNotification = 'QC outcome submitted successfully.';
+
+    this.emitAction('submitQcOutcome');
+  }
+
+  private buildSalesVerificationSubmitPayload(detailsPayload: string, currentUserId?: string): string {
+    const root = this.parseSaleRecordRoot(detailsPayload);
+    const rawTask = toRecord(root.salesVerificationTaskDetails)
+      ?? toRecord(root.taskDetails)
+      ?? {};
+    const rawTaskId = typeof rawTask.taskId === 'string' ? stripTaskIdPrefix(rawTask.taskId) : rawTask.taskId;
+    rawTask.taskId = rawTaskId;
+    if (currentUserId) {
+      rawTask.requestedBy = currentUserId;
+    }
+    const rawParticulars = toRecord(root.salesParticularDetails)
+      ?? toRecord(root.salesParticularInfo)
+      ?? {};
+    const rawVerification = toRecord(root.salesVerificationDetails)
+      ?? toRecord(root.salesVerificationInfo)
+      ?? {};
+
+    const pick = (source: Record<string, unknown>, keys: string[]): Record<string, unknown> => {
+      const result: Record<string, unknown> = {};
+      for (const key of keys) {
+        if (key in source) {
+          result[key] = source[key];
+        }
+      }
+      return result;
+    };
+
+    return JSON.stringify({
+      salesVerificationTaskDetails: pick(rawTask, [
+        'taskId', 'taskStatus', 'requestedBy', 'salesSource', 'wlttId', 'lrppdId',
+      ]),
+      salesParticularDetails: pick(rawParticulars, [
+        'salesParticular', 'linkParticulars',
+        'kitchenAge', 'kitchenSpecification', 'bathroomAge', 'bathroomSpecification',
+        'glazing', 'heating', 'decorativeFinishes',
+        'conditionScore', 'conditionCategory', 'particularNotes', 'padConfirmation',
+      ]),
+      salesVerificationDetails: pick(rawVerification, [
+        'isSaleUseful', 'whyNotUseful', 'additionalNotes', 'remarks',
+      ]),
+    });
+  }
+
+  private updateSaleDetailsAccessState(): void {
     const access = this.resolveSaleDetailsAccess(this._saleDetails);
     this.saleDetailsReadOnly = access.readOnly;
     this.saleDetailsReadOnlyMessage = access.reason;
     const qcAccess = this.resolveQcSectionAccess(this._saleDetails);
     this.saleDetailsCanSubmitQcOutcome = qcAccess.canSubmit;
     this.saleDetailsShowQcSection = qcAccess.showSection;
-    this.emitAction('submitQcOutcome');
   }
 
   public async openQcLog(): Promise<void> {
@@ -414,11 +607,13 @@ export class DetailsListRuntimeController {
   }
 
   private async onTaskClick(taskId?: string, saleId?: string): Promise<void> {
+    svtDebug.log('Runtime', 'onTaskClick', { taskId, saleId });
     const pcfViewSalesEnabled = isPcfViewSalesDetailsEnabled(this._context);
+    const emitViewAction = !(pcfViewSalesEnabled && this.showPcfSaleDetails);
     const requestId = this.beginViewSaleRequest({ retainSaleDetails: pcfViewSalesEnabled && this.showPcfSaleDetails });
 
     if (!saleId) {
-      this.finishViewSaleRequest(requestId, JSON.stringify(getEmptySaleRecord()), pcfViewSalesEnabled);
+      this.finishViewSaleRequest(requestId, JSON.stringify(getEmptySaleRecord()), pcfViewSalesEnabled, emitViewAction);
       return;
     }
 
@@ -433,7 +628,11 @@ export class DetailsListRuntimeController {
         throw new Error('View sale record API name is not configured.');
       }
 
-      const customApiType = resolveConfiguredApiType(this._context, 'customApiType', CONTROL_CONFIG.customApiType);
+      const viewSaleApiType = resolveConfiguredApiType(
+        this._context,
+        'viewSaleRecordApiType',
+        CONTROL_CONFIG.viewSaleRecordApiType ?? CONTROL_CONFIG.customApiType,
+      );
       const { country, listYear } = resolveActiveRequestContext(
         this._context,
         this.managerJourneyActive,
@@ -449,7 +648,7 @@ export class DetailsListRuntimeController {
         this._context,
         apiName,
         viewSaleParams,
-        { operationType: customApiType },
+        { operationType: viewSaleApiType },
       );
       const payload = unwrapCustomApiPayload(rawPayload);
       detailsPayload = typeof payload === 'string'
@@ -461,7 +660,7 @@ export class DetailsListRuntimeController {
     }
 
     await this.ensureCaseworkerAccess();
-    this.finishViewSaleRequest(requestId, detailsPayload, pcfViewSalesEnabled);
+    this.finishViewSaleRequest(requestId, detailsPayload, pcfViewSalesEnabled, emitViewAction);
   }
 
   private beginViewSaleRequest(options?: { retainSaleDetails?: boolean }): number {
@@ -474,16 +673,23 @@ export class DetailsListRuntimeController {
       this.saleDetailsReadOnly = false;
       this.saleDetailsReadOnlyMessage = undefined;
       this.saleDetailsCanSubmitQcOutcome = false;
-      this.saleDetailsShowQcSection = true;
+      this.saleDetailsShowQcSection = false;
     }
     this._notifyOutputChanged();
     return requestId;
   }
 
-  private finishViewSaleRequest(requestId: number, detailsPayload: string, showPcfDetails: boolean): void {
+  private finishViewSaleRequest(
+    requestId: number,
+    detailsPayload: string,
+    showPcfDetails: boolean,
+    emitViewAction: boolean,
+  ): void {
     if (this.activeViewSaleRequestId !== requestId) {
+      svtDebug.warn('Runtime', 'finishViewSaleRequest — stale request, ignoring', { requestId, activeId: this.activeViewSaleRequestId });
       return;
     }
+    svtDebug.log('Runtime', 'finishViewSaleRequest', { requestId, showPcfDetails, emitViewAction, payloadLength: detailsPayload.length });
     this._saleDetails = detailsPayload;
     this.viewSalePending = false;
     this.showPcfSaleDetails = showPcfDetails;
@@ -493,7 +699,11 @@ export class DetailsListRuntimeController {
     const qcAccess = this.resolveQcSectionAccess(detailsPayload);
     this.saleDetailsCanSubmitQcOutcome = qcAccess.canSubmit;
     this.saleDetailsShowQcSection = qcAccess.showSection;
-    this.emitAction(showPcfDetails ? 'viewSalePcf' : 'viewSale');
+    if (emitViewAction) {
+      this.emitAction(showPcfDetails ? 'viewSalePcf' : 'viewSale');
+      return;
+    }
+    this._notifyOutputChanged();
   }
 
   private async handleAuditHistoryOpen(auditType: AuditType): Promise<void> {
@@ -502,6 +712,7 @@ export class DetailsListRuntimeController {
   }
 
   private async fetchAuditHistory(auditType: AuditType): Promise<void> {
+    svtDebug.log('Runtime', 'fetchAuditHistory', { auditType });
     const taskId = resolveTaskIdForAuditLogs(this._saleDetails, this.selectedTaskId);
     if (!taskId) {
       this._saleDetails = mergeAuditHistoryDetails(this._saleDetails, auditType, {
@@ -577,6 +788,7 @@ export class DetailsListRuntimeController {
   }
 
   private async resolveCaseworkerAccess(): Promise<boolean> {
+    svtDebug.log('Runtime', 'resolveCaseworkerAccess — resolving user context');
     const apiName = resolveConfiguredApiName(
       this._context,
       'userContextApiName',
@@ -603,13 +815,21 @@ export class DetailsListRuntimeController {
     const payload = unwrapCustomApiPayload(rawPayload);
     this.hasManagerAccess = this.hasManagerEvidence(payload);
     this.hasQaAccess = this.hasQaEvidence(payload);
-    return this.hasCaseworkerEvidence(payload);
+    const hasCaseworker = this.hasCaseworkerEvidence(payload);
+    svtDebug.log('Runtime', 'resolveCaseworkerAccess result', {
+      hasCaseworker,
+      hasManager: this.hasManagerAccess,
+      hasQa: this.hasQaAccess,
+      userId: resolveCurrentUserId(this._context),
+      displayName: resolveCurrentUserDisplayName(this._context),
+    });
+    return hasCaseworker;
   }
 
   private hasCaseworkerEvidence(payload: unknown): boolean {
     const root = this.toUserContextRecord(payload);
     const persona = normalizeTextValue(root.svtPersona ?? root.persona).toLowerCase();
-    if (persona === 'user') {
+    if (persona === 'user' || persona === 'caseworker' || persona === 'svt user') {
       return true;
     }
 
@@ -640,7 +860,7 @@ export class DetailsListRuntimeController {
   private hasManagerEvidence(payload: unknown): boolean {
     const root = this.toUserContextRecord(payload);
     const persona = normalizeTextValue(root.svtPersona ?? root.persona).toLowerCase();
-    if (persona === 'manager') {
+    if (persona === 'manager' || persona === 'svt manager') {
       return true;
     }
 
@@ -672,7 +892,7 @@ export class DetailsListRuntimeController {
   private hasQaEvidence(payload: unknown): boolean {
     const root = this.toUserContextRecord(payload);
     const persona = normalizeTextValue(root.svtPersona ?? root.persona).toLowerCase();
-    if (persona === 'qa' || persona === 'quality control') {
+    if (persona === 'qa' || persona === 'quality control' || persona === 'svt qa') {
       return true;
     }
 
@@ -831,7 +1051,7 @@ export class DetailsListRuntimeController {
       .map((value) => this.normalizeIdentityToken(value))
       .filter((value) => value !== '');
 
-    if (qcAssignedCandidates.length === 0) {
+    if (qcAssignedCandidates.length === 0 && this.isTaskStatusEditableByQc(detailsPayload)) {
       const fallbackAssigned = this.extractAssignedToCandidates(detailsPayload)
         .map((value) => this.normalizeIdentityToken(value))
         .filter((value) => value !== '');
@@ -897,6 +1117,17 @@ export class DetailsListRuntimeController {
     const isUnassigned = this.isSaleRecordUnassigned(detailsPayload);
     const canEditAsCaseworker = taskExists && this.canEditAsAssignedCaseworker(detailsPayload);
 
+    svtDebug.log('Runtime', 'resolveSaleDetailsAccess', {
+      taskExists,
+      isUnassigned,
+      canEditAsCaseworker,
+      hasCaseworkerAccess: this.hasCaseworkerAccess,
+      hasManagerAccess: this.hasManagerAccess,
+      hasQaAccess: this.hasQaAccess,
+      isManagerContext: this.isManagerAssignmentContext(),
+      taskStatus: this.resolveTaskStatusFromSaleRecord(detailsPayload),
+    });
+
     if (canEditAsCaseworker) {
       return { readOnly: false };
     }
@@ -927,7 +1158,7 @@ export class DetailsListRuntimeController {
 
   private resolveQcSectionAccess(detailsPayload: string): { canSubmit: boolean; showSection: boolean } {
     if (!this.hasQaAccess) {
-      return { canSubmit: false, showSection: true };
+      return { canSubmit: false, showSection: false };
     }
 
     const assignedToCurrentQcUser = this.isSaleRecordQcAssignedToCurrentUser(detailsPayload);
@@ -1037,6 +1268,16 @@ export class DetailsListRuntimeController {
       'assignedtousername',
       'assignedToDisplayName',
       'assignedtodisplayname',
+      'caseworkerAssignedTo',
+      'caseworkerassignedto',
+      'caseworkerAssignedToUserId',
+      'caseworkerassignedtouserid',
+      'caseworkerAssignedToId',
+      'caseworkerassignedtoid',
+      'caseworkerAssignedToName',
+      'caseworkerassignedtoname',
+      'caseworkerAssignedToDisplayName',
+      'caseworkerassignedtodisplayname',
     ];
 
     for (const record of taskDetailsCandidates) {
@@ -1048,9 +1289,24 @@ export class DetailsListRuntimeController {
       }
     }
 
-    if (Object.prototype.hasOwnProperty.call(root, 'assignedTo')) {
-      this.collectIdentityValues(root.assignedTo, values);
-    }
+    [
+      'assignedTo',
+      'assignedto',
+      'assignedToName',
+      'assignedtoname',
+      'assignedToDisplayName',
+      'assignedtodisplayname',
+      'caseworkerAssignedTo',
+      'caseworkerassignedto',
+      'caseworkerAssignedToName',
+      'caseworkerassignedtoname',
+      'caseworkerAssignedToDisplayName',
+      'caseworkerassignedtodisplayname',
+    ].forEach((key) => {
+      if (Object.prototype.hasOwnProperty.call(root, key)) {
+        this.collectIdentityValues(root[key], values);
+      }
+    });
 
     return Array.from(values);
   }
@@ -1102,6 +1358,7 @@ export class DetailsListRuntimeController {
 
 
   private emitAction(type: RuntimeActionType): void {
+    svtDebug.log('Runtime', 'emitAction', { type, sequence: this.actionSequence + 1 });
     if (type === 'back') {
       this.selectedTaskId = '';
       this.selectedSaleId = '';

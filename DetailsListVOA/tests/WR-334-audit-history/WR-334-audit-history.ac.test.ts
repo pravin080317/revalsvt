@@ -9,7 +9,6 @@ function readRepoFile(relativePath: string): string {
 
 describe('WR-334 Audit History AC', () => {
   const taskSectionSource = readRepoFile('DetailsListVOA/components/SaleDetailsShell/sections/SalesVerificationTaskSection.tsx');
-  const verificationSectionSource = readRepoFile('DetailsListVOA/components/SaleDetailsShell/sections/SalesVerificationSection.tsx');
   const modalSource = readRepoFile('DetailsListVOA/components/SaleDetailsShell/sections/AuditHistoryModal.tsx');
   const viewModelSource = readRepoFile('DetailsListVOA/components/SaleDetailsShell/useSaleDetailsViewModel.ts');
   const rulesSource = readRepoFile('DetailsListVOA/components/SaleDetailsShell/rules/ViewSaleActionRules.ts');
@@ -17,15 +16,15 @@ describe('WR-334 Audit History AC', () => {
   const saleDetailsRuntimeSource = readRepoFile('DetailsListVOA/services/runtime/sale-details.ts');
   const pluginSource = readRepoFile('VOA.SVT.Plugins/Plugins/CustomAPI/SvtGetAuditLogs.cs');
 
-  test('AC1: Audit History button fetches Sales Log history using auditType SL', () => {
-    expect(taskSectionSource).toContain('text="Audit History"');
+  test('AC1: Sales Audit History button fetches Sales Log history using auditType SL', () => {
+    expect(taskSectionSource).toContain('text="Sales Audit History"');
     expect(runtimeSource).toContain('public async openAuditHistory(): Promise<void>');
     expect(runtimeSource).toContain("await this.handleAuditHistoryOpen('SL');");
     expect(runtimeSource).toContain('{ taskId, auditType },');
   });
 
-  test('AC2: View QC Log fetches QC history using auditType QC', () => {
-    expect(verificationSectionSource).toContain('text="View QC Log"');
+  test('AC2: QC Audit History button fetches QC history using auditType QC', () => {
+    expect(taskSectionSource).toContain('text="QC Audit History"');
     expect(runtimeSource).toContain('public async openQcLog(): Promise<void>');
     expect(runtimeSource).toContain("await this.handleAuditHistoryOpen('QC');");
     expect(saleDetailsRuntimeSource).toContain("const scopeKey = auditType === 'QC' ? 'qc' : 'sl';");

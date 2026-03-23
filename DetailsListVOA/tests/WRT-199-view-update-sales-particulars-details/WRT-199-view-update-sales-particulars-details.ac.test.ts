@@ -17,7 +17,7 @@ describe('WRT-199 View and Update Sales Particulars AC', () => {
 
   test('AC1: Sales Particulars section is visible under HM Land Registry Price Paid Data and before Sales Verification', () => {
     expect(shellSource).toContain('<LrppdSection');
-    expect(shellSource).toContain('<SalesParticularSection model={model.salesParticular} onOpenReference={openReferenceModal} readOnly={readOnly} onDraftChange={setSalesParticularDraft} />');
+    expect(shellSource).toContain('<SalesParticularSection model={model.salesParticular} onOpenReference={openReferenceModal} readOnly={readOnly || sectionsDisabled} onDraftChange={setSalesParticularDraft} />');
     expect(shellSource).toContain('<SalesVerificationSection');
     expect(shellSource.indexOf('<LrppdSection')).toBeLessThan(shellSource.indexOf('<SalesParticularSection'));
     expect(shellSource.indexOf('<SalesParticularSection')).toBeLessThan(shellSource.indexOf('<SalesVerificationSection'));

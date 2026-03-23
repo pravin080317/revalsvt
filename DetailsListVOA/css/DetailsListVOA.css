@@ -604,6 +604,15 @@
   line-height: 1.3;
 }
 
+.voa-command-bar__context {
+  color: #1a5c2e;
+  font-weight: 600;
+  font-size: 12px;
+  max-width: 100%;
+  overflow-wrap: anywhere;
+  line-height: 1.3;
+}
+
 .voa-command-bar__actions {
   display: flex;
   align-items: flex-start;
@@ -1103,7 +1112,8 @@
 }
 
 .voa-grid-pagination {
-  position: static;
+  position: sticky;
+  bottom: 0;
   flex: 0 0 auto;
   background: #ffffff;
   padding: 8px 8px;
@@ -2045,12 +2055,12 @@
   --voa-home-card-blue: #0f5f7d;
   display: flex;
   flex-direction: column;
-  gap: clamp(10px, 1.1vw, 16px);
+  gap: clamp(6px, 0.7vw, 10px);
   height: 100%;
   min-height: 0;
   max-width: 1520px;
   margin: 0 auto;
-  padding: clamp(10px, 1vw, 14px) clamp(12px, 1.4vw, 20px) clamp(12px, 1.2vw, 16px);
+  padding: clamp(6px, 0.6vw, 10px) clamp(10px, 1vw, 16px) clamp(8px, 0.8vw, 12px);
   background:
     radial-gradient(1400px 420px at -10% -30%, rgba(13, 127, 116, 0.14), transparent 45%),
     radial-gradient(900px 260px at 110% -30%, rgba(15, 95, 125, 0.12), transparent 40%),
@@ -2082,10 +2092,11 @@
 
 .voa-home-header {
   display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 2px;
-  padding: 2px 0 6px;
+  flex-direction: row;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 1px 0 4px;
   text-align: left;
   border-bottom: 1px solid #ccd9e6;
 }
@@ -2093,13 +2104,14 @@
 .voa-home-header__title {
   color: var(--voa-home-ink);
   font-weight: 700;
-  font-size: clamp(26px, 2vw, 32px);
+  font-size: clamp(20px, 1.6vw, 24px);
   letter-spacing: -0.01em;
 }
 
 .voa-home-header__meta {
   color: var(--voa-home-muted);
   font-weight: 600;
+  font-size: 13px;
 }
 
 .voa-home-loading {
@@ -2113,12 +2125,12 @@
 .voa-home-tiles-stage {
   display: flex;
   flex-direction: column;
-  gap: clamp(10px, 1vw, 14px);
-  padding: clamp(14px, 1.2vw, 20px);
+  gap: clamp(6px, 0.7vw, 10px);
+  padding: clamp(10px, 0.8vw, 14px);
   border: 1px solid #d4e1ec;
-  border-radius: 16px;
+  border-radius: 10px;
   background: linear-gradient(180deg, #ffffff 0%, #fbfdff 100%);
-  box-shadow: 0 4px 14px rgba(16, 37, 56, 0.08);
+  box-shadow: 0 2px 8px rgba(16, 37, 56, 0.06);
 }
 
 .voa-home-table-stage {
@@ -2130,7 +2142,7 @@
 .voa-home-stage-title {
   color: var(--voa-home-ink);
   font-weight: 700;
-  font-size: clamp(30px, 2.2vw, 36px);
+  font-size: clamp(18px, 1.4vw, 22px);
   letter-spacing: -0.01em;
   margin: 0;
 }
@@ -2139,7 +2151,8 @@
   max-width: 78ch;
   color: #365269;
   margin: 0;
-  line-height: 1.45;
+  font-size: 13px;
+  line-height: 1.35;
 }
 
 .voa-home-tiles-header {
@@ -2147,7 +2160,7 @@
   flex-wrap: wrap;
   align-items: flex-start;
   justify-content: space-between;
-  gap: clamp(10px, 1vw, 14px);
+  gap: clamp(6px, 0.7vw, 10px);
 }
 
 .voa-home-tiles-heading {
@@ -2155,6 +2168,18 @@
   flex-direction: column;
   gap: 4px;
   min-width: min(320px, 100%);
+}
+
+/* ── Details-view fade-in transition ── */
+.voa-details-view-wrap {
+  opacity: 0;
+  transform: translateY(6px);
+  transition: opacity 0.25s ease-out, transform 0.25s ease-out;
+}
+
+.voa-details-view-wrap--active {
+  opacity: 1;
+  transform: translateY(0);
 }
 
 .voa-home-context-summary {
@@ -2172,11 +2197,12 @@
 .voa-home-context-summary--persona {
   align-self: flex-start;
   border-radius: 999px;
-  padding: 8px 14px;
+  padding: 5px 10px;
   border: 1px solid #c6d8eb;
   background: linear-gradient(180deg, #f4f9ff 0%, #e9f3ff 100%);
   color: #183b58;
   font-weight: 600;
+  font-size: 13px;
 }
 
 .voa-home-context-summary--persona strong {
@@ -2190,7 +2216,7 @@
 
 .voa-home-context-stage--inline {
   border: 1px solid #cadeee;
-  border-radius: 14px;
+  border-radius: 8px;
   background: linear-gradient(180deg, #f9fcff 0%, #f4f9ff 100%);
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.92), 0 2px 6px rgba(16, 37, 56, 0.06);
 }
@@ -2200,13 +2226,13 @@
   flex-wrap: wrap;
   align-items: flex-start;
   justify-content: space-between;
-  gap: 10px;
+  gap: 6px;
 }
 
 .voa-home-context-intro-copy {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 3px;
   min-width: min(340px, 100%);
 }
 
@@ -2214,6 +2240,7 @@
   margin: 0;
   color: #133857;
   font-weight: 700;
+  font-size: 15px;
 }
 
 .voa-home-required-hint {
@@ -2221,18 +2248,19 @@
   align-items: center;
   align-self: flex-start;
   margin: 0;
-  padding: 6px 10px;
+  padding: 4px 8px;
   border-radius: 999px;
   border: 1px solid #c8d8ec;
   background: #edf4ff;
   color: #2a4b67;
   font-weight: 600;
+  font-size: 12px;
 }
 
 .voa-home-context-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(min(270px, 100%), 1fr));
-  gap: clamp(10px, 1vw, 14px);
+  gap: clamp(8px, 0.8vw, 12px);
   align-items: end;
 }
 
@@ -2249,17 +2277,17 @@
 
 .voa-home-context-field .ms-Dropdown-title,
 .voa-home-context-field .ms-ComboBox {
-  min-height: 44px;
-  border-radius: 10px;
+  min-height: 38px;
+  border-radius: 6px;
   border-color: #b8cadc;
   background: #ffffff;
   box-shadow: 0 1px 2px rgba(16, 37, 56, 0.04);
 }
 
 .voa-home-context-field .ms-ComboBox .ms-ComboBox-Input {
-  height: 42px;
-  padding-left: 12px;
-  padding-right: 12px;
+  height: 36px;
+  padding-left: 10px;
+  padding-right: 10px;
 }
 
 .voa-home-context-field .ms-Dropdown:focus-within .ms-Dropdown-title,
@@ -2306,7 +2334,7 @@
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(min(290px, 100%), 1fr));
   align-items: stretch;
-  gap: clamp(10px, 1.1vw, 16px);
+  gap: clamp(8px, 0.8vw, 12px);
   width: 100%;
   max-width: 1180px;
   margin: 0 auto;
@@ -2322,18 +2350,18 @@
   overflow: hidden;
   width: 100%;
   height: 100%;
-  min-height: clamp(180px, 21vh, 218px);
+  min-height: clamp(130px, 16vh, 160px);
   border: 1px solid rgba(7, 92, 84, 0.78);
-  border-radius: 14px;
+  border-radius: 10px;
   background: linear-gradient(145deg, var(--voa-home-accent) 0%, var(--voa-home-card-blue) 100%);
   color: #ffffff;
-  padding: clamp(16px, 1.1vw, 20px);
+  padding: clamp(12px, 0.8vw, 16px);
   text-align: left;
   display: flex;
   flex-direction: column;
-  gap: clamp(10px, 1.1vw, 14px);
+  gap: clamp(6px, 0.7vw, 10px);
   cursor: pointer;
-  box-shadow: 0 6px 18px rgba(9, 31, 49, 0.18);
+  box-shadow: 0 4px 12px rgba(9, 31, 49, 0.14);
   transition:
     transform 150ms cubic-bezier(0.2, 0.75, 0.35, 1),
     box-shadow 170ms ease,

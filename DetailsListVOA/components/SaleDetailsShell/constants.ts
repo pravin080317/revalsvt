@@ -15,9 +15,9 @@ export const EXTERNAL_LINK_URL_PARTS = {
 } as const;
 
 export const PAD_CONFIRMATION_OPTIONS: IDropdownOption[] = [
-  { key: 'confirmed', text: 'Confirmed' },
-  { key: 'needs-update', text: 'Needs update' },
-  { key: 'further-review', text: 'Further review' },
+  { key: 'job-created', text: 'Data enhancement job created' },
+  { key: 'job-not-required', text: 'Data enhancement job not required' },
+  { key: 'pads-not-reviewed', text: 'PADs not reviewed' },
 ];
 
 export const statusIconByTone: Record<StatusTone, string> = {
