@@ -12,6 +12,7 @@ namespace VOA.SVT.Plugins.CustomAPI
             public const string Persona = "svtPersona";
             public const string ResolutionSource = "resolutionSource";
             public const string HasAccess = "hasSvtAccess";
+            public const string EntraObjectId = "entraObjectId";
             public const string MatchedTeam = "matchedTeamName";
             public const string MatchedTeams = "matchedTeamNames";
             public const string MatchedRole = "matchedRoleName";
@@ -53,6 +54,7 @@ namespace VOA.SVT.Plugins.CustomAPI
             context.OutputParameters[OutputNames.Persona] = persona.ToString();
             context.OutputParameters[OutputNames.ResolutionSource] = source;
             context.OutputParameters[OutputNames.HasAccess] = persona != UserPersona.None;
+            context.OutputParameters[OutputNames.EntraObjectId] = result?.EntraObjectId ?? string.Empty;
             context.OutputParameters[OutputNames.MatchedTeam] = result?.MatchedTeamName ?? string.Empty;
             context.OutputParameters[OutputNames.MatchedTeams] = matchedTeams.Count > 0
                 ? string.Join(";", matchedTeams)

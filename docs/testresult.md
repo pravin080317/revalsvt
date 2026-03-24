@@ -1,10 +1,12 @@
-Yes. The best way is to split it into 3 outputs:
+# Azure DevOps Test Reporting Layout
+
+The test reporting flow is best split into 3 outputs:
 
 - `Tests` tab: shows every test case name, pass/fail, duration, and failure stack trace.
 - `Code Coverage` tab: shows coverage summary and coverage artifact.
 - Optional HTML artifact: a nicer report you can download/share with stakeholders.
 
-For your PCF/Jest pipeline, I’d do this:
+Recommended approach for the PCF/Jest pipeline:
 
 1. Keep `jest-junit` for Azure DevOps native test reporting.
 2. Use `PublishTestResults@2` so Azure DevOps shows each test in the `Tests` tab.
@@ -100,6 +102,7 @@ Sources:
 - `jest-junit` official repo: https://github.com/jest-community/jest-junit
 - `jest-stare` docs: https://dkelosky.github.io/jest-stare/
 
-If you want, I can give you a stripped-down HMRC version with:
-1. only `Tests` tab, or
-2. `Tests` tab + HTML showcase report.
+Two practical variants can be used depending on reporting needs:
+
+1. only `Tests` tab.
+2. `Tests` tab plus HTML showcase report.

@@ -69,7 +69,7 @@ export const LrppdSection: React.FC<LrppdSectionProps> = ({
   return (
     <section className="voa-sale-details-card voa-source-card" aria-labelledby="lrppd-heading">
       <div className="voa-sale-details-card__header voa-source-card__header">
-        <Text as="h2" id="lrppd-heading" variant="large" className="voa-sale-details-card__title">
+        <Text as="h2" id="lrppd-heading" variant="large" className="voa-sale-details-card__title" title="HM Land Registry Price Paid Data (LRPPD)">
           HM Land Registry Price Paid Data
         </Text>
         <RecordNavigator
@@ -85,20 +85,20 @@ export const LrppdSection: React.FC<LrppdSectionProps> = ({
 
       <div className="voa-source-card__grid">
         <div className="voa-source-card__column">
-          <KvpRow label="ID" value={currentRecord.lrppdId} />
+          <KvpRow label="ID" value={currentRecord.lrppdId} labelTitle="Unique LRPPD record identifier" />
           <KvpRow label="Address" value={currentRecord.address} />
-          <KvpRow label="Transaction Price" value={currentRecord.transactionPrice} />
+          <KvpRow label="Transaction Price" value={currentRecord.transactionPrice} labelTitle="Price paid as recorded by HM Land Registry" />
         </div>
 
         <div className="voa-source-card__column">
-          <KvpRow label="Type of Property" value={currentRecord.typeOfProperty} />
-          <KvpRow label="Tenure Type" value={currentRecord.tenureType} />
-          <KvpRow label="Price Paid Category" value={currentRecord.pricePaidCategory} />
+          <KvpRow label="Type of Property" value={currentRecord.typeOfProperty} labelTitle="D = Detached, S = Semi-detached, T = Terraced, F = Flat/Maisonette" />
+          <KvpRow label="Tenure Type" value={currentRecord.tenureType} labelTitle="F = Freehold, L = Leasehold" />
+          <KvpRow label="Price Paid Category" value={currentRecord.pricePaidCategory} labelTitle="A = Standard price, B = Additional price (e.g. right-to-buy)" />
         </div>
 
         <div className="voa-source-card__column voa-source-card__column--with-action">
-          <KvpRow label="Old/New" value={currentRecord.oldNew} />
-          <KvpRow label="Transaction Date" value={currentRecord.transactionDate} />
+          <KvpRow label="Old/New" value={currentRecord.oldNew} labelTitle="Y = Newly built, N = Established property" />
+          <KvpRow label="Transaction Date" value={currentRecord.transactionDate} labelTitle="Date the transaction completed" />
 
           <div
             className={`voa-master-status-box ${isCurrentMaster ? 'voa-master-status-box--current' : 'voa-master-status-box--promote'}`}
@@ -113,6 +113,7 @@ export const LrppdSection: React.FC<LrppdSectionProps> = ({
                 ariaLabel="Promote selected HM Land Registry Price Paid Data record to master sale"
                 className="voa-promote-btn"
                 disabled={promoteActionRule.disabled}
+                title={promoteActionRule.reason}
                 onClick={() => onPromoteRecord?.(currentRecord)}
               />
             )}

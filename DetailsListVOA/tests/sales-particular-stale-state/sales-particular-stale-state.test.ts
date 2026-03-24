@@ -72,16 +72,19 @@ describe('SalesParticularSection state initialisation', () => {
   });
 
   test('onDraftChange effect fires whenever field values change', () => {
-    // The effect that updates the shell draft must depend on all required fields
+    // The memoized draft passed to the shell must include all required fields
+    const draftPayloadRegion = salesParticularSource.slice(
+      salesParticularSource.indexOf('const draftPayload = React.useMemo'),
+      salesParticularSource.indexOf('React.useLayoutEffect(() => {'),
+    );
+
     REQUIRED_FIELDS.forEach((field) => {
-      const draftEffectRegion = salesParticularSource.slice(
-        salesParticularSource.indexOf('onDraftChange?.({'),
-        salesParticularSource.indexOf('], [') > salesParticularSource.indexOf('onDraftChange?.({')
-          ? salesParticularSource.indexOf('], [', salesParticularSource.indexOf('onDraftChange?.({')) + 200
-          : salesParticularSource.indexOf('onDraftChange?.({') + 500,
-      );
-      expect(draftEffectRegion).toContain(field);
+      expect(draftPayloadRegion).toContain(field);
     });
+  });
+
+  test('onDraftChange uses useLayoutEffect to avoid one-render stale draft lag', () => {
+    expect(salesParticularSource).toContain('React.useLayoutEffect(() => {');
   });
 });
 

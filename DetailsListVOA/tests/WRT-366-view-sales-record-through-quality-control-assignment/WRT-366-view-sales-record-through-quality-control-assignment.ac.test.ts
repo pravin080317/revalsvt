@@ -76,7 +76,7 @@ describe('WRT-366 View Sales Record through Quality Control Assignment AC', () =
     expect(padSectionSource).toContain("window.open(dataEnhancementUrl, '_blank', 'noopener,noreferrer')");
     expect(padSectionSource).toContain("window.open(hereditamentUrl, '_blank', 'noopener,noreferrer')");
     // Shell passes canCreateDataEnhancement only for caseworkers (not QC)
-    expect(shellSource).toContain('canCreateDataEnhancement={!readOnly && !sectionsDisabled && !showQcSection}');
+    expect(shellSource).toContain('canCreateDataEnhancement={!readOnly && !sectionsDisabled && canProgressTask && !showQcSection}');
     expect(shellSource).toContain('hereditamentUrl={model.addressLink}');
     expect(shellSource).toContain('dataEnhancementUrl={model.dataEnhancementUrl}');
   });

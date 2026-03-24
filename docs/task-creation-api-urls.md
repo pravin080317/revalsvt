@@ -1,6 +1,6 @@
-# Task Creation (Manual) - Plugin and APIM URL Examples
+# Task Creation (Manual and Bulk) - Plugin and APIM URL Examples
 
-This document shows the exact URL shapes and payloads used for manual task creation.
+This document shows the exact URL shapes and payloads used for manual task creation and the proposed bulk task creation requirement.
 
 ## Placeholders and operators used
 - {org} = Dynamics org host (example: contoso.crm.dynamics.com)
@@ -85,3 +85,27 @@ The Custom API returns a JSON string in the `Result` output parameter:
 ## Source code used
 - Plugin: `VOA.SVT.Plugins/Plugins/CustomAPI/SvtManualTaskCreation.cs`
 - Related contract doc: `docs/svtManualTaskCreation.md`
+
+## Bulk task creation requirement
+Bulk task creation should be implemented as a new unbound Custom API that loops the existing single-sale APIM endpoint.
+
+Recommended API:
+
+- Custom API name: `voa_SvtBulkTaskCreation`
+- Request body:
+
+```json
+{
+  "saleIds": "[\"S-1000001\",\"S-1000002\"]",
+  "sourceType": "M",
+  "createdBy": "11111111-1111-1111-1111-111111111111"
+}
+```
+
+Plugin behaviour:
+
+- Iterate each sale ID.
+- Call the same APIM URL pattern already used for manual task creation.
+- Aggregate success and failure details into one `Result` JSON string.
+
+See `docs/svtBulkTaskCreation.md` for the full requirement.

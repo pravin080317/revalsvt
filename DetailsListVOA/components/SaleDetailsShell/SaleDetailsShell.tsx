@@ -48,6 +48,7 @@ export const SaleDetailsShell: React.FC<SaleDetailsShellProps> = ({
   const noTaskId = !model.taskId;
   const noTaskStatus = !model.statusText || model.statusText === '-';
   const sectionsDisabled = noTaskId || noTaskStatus;
+  const isQcWorkspace = activeWorkspaceName.trim().toLowerCase() === 'qc view';
   const refreshActionRule = React.useMemo(() => getRefreshActionRule({ loading }), [loading]);
   const [salesParticularDraft, setSalesParticularDraft] = React.useState<SalesParticularDraftPayload>({
     reviewStatusKey: model.salesParticular.reviewStatusKey,
@@ -73,9 +74,11 @@ export const SaleDetailsShell: React.FC<SaleDetailsShellProps> = ({
   );
   const [promotionMessage, setPromotionMessage] = React.useState<string | undefined>(undefined);
   const [masterHighlighted, setMasterHighlighted] = React.useState(false);
+  const [showScrollToTop, setShowScrollToTop] = React.useState(false);
   const promotionMessageTimeoutRef = React.useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const masterHighlightTimeoutRef = React.useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const masterSectionRef = React.useRef<HTMLDivElement>(null);
+  const shellRef = React.useRef<HTMLDivElement>(null);
 
   React.useEffect(() => {
     setPadConfirmationKey(model.initialPadConfirmationKey);
@@ -86,6 +89,12 @@ export const SaleDetailsShell: React.FC<SaleDetailsShellProps> = ({
     setPromotionMessage(undefined);
     setMasterHighlighted(false);
   }, [model.saleId, model.taskId, model.initialPromotedMasterRecord]);
+
+  React.useEffect(() => {
+    if (shellRef.current) {
+      shellRef.current.scrollTop = 0;
+    }
+  }, [model.saleId, model.taskId]);
 
   React.useEffect(() => {
     setSalesParticularDraft({
@@ -118,6 +127,21 @@ export const SaleDetailsShell: React.FC<SaleDetailsShellProps> = ({
       clearTimeout(masterHighlightTimeoutRef.current);
     }
   }, [clearPromotionMessageTimer]);
+
+  React.useEffect(() => {
+    const shell = shellRef.current;
+    if (!shell) {
+      return undefined;
+    }
+
+    const updateScrollState = (): void => {
+      setShowScrollToTop(shell.scrollTop > 240);
+    };
+
+    updateScrollState();
+    shell.addEventListener('scroll', updateScrollState, { passive: true });
+    return () => shell.removeEventListener('scroll', updateScrollState);
+  }, []);
 
   const showPromotionMessage = React.useCallback((message: string) => {
     clearPromotionMessageTimer();
@@ -228,7 +252,7 @@ export const SaleDetailsShell: React.FC<SaleDetailsShellProps> = ({
   const activeAuditType: 'QC' | 'SL' = activeAuditView === 'qc' ? 'QC' : 'SL';
 
   return (
-    <div className="voa-sale-details-shell" role="region" aria-label="Sale Record Details">
+    <div className="voa-sale-details-shell" role="region" aria-label="Sale Record Details" ref={shellRef}>
       <div className="voa-sale-details-shell__content">
         <header className="voa-sale-details-shell__header">
           <DefaultButton
@@ -327,7 +351,7 @@ export const SaleDetailsShell: React.FC<SaleDetailsShellProps> = ({
             readOnly={readOnly || sectionsDisabled}
             hereditamentUrl={model.addressLink}
             dataEnhancementUrl={model.dataEnhancementUrl}
-            canCreateDataEnhancement={!readOnly && !sectionsDisabled && !showQcSection}
+            canCreateDataEnhancement={!readOnly && !sectionsDisabled && canProgressTask && !showQcSection}
           /></div>
 
           <div id="section-master" ref={masterSectionRef}><MasterSaleSection masterSale={displayMasterSale} highlighted={masterHighlighted} /></div>
@@ -357,22 +381,23 @@ export const SaleDetailsShell: React.FC<SaleDetailsShellProps> = ({
             canProgressTask={canProgressTask && !sectionsDisabled}
             canSubmitQcOutcome={canSubmitQcOutcome && !sectionsDisabled}
             showQcSection={showQcSection && !sectionsDisabled}
-            isQcView={showQcSection}
+            isQcView={isQcWorkspace}
             qcAssignedTo={model.qcAssignedTo}
             currentUserDisplayName={currentUserDisplayName}
           /></div>
         </Stack>
 
-        <IconButton
-          className="voa-scroll-to-top"
-          iconProps={{ iconName: 'Up' }}
-          title="Scroll to top"
-          ariaLabel="Scroll to top of page"
-          onClick={() => {
-            const shell = document.querySelector('.voa-sale-details-shell');
-            if (shell) { shell.scrollTo({ top: 0, behavior: 'smooth' }); }
-          }}
-        />
+        {showScrollToTop && (
+          <IconButton
+            className="voa-scroll-to-top"
+            iconProps={{ iconName: 'Up' }}
+            title="Scroll to top"
+            ariaLabel="Scroll to top of page"
+            onClick={() => {
+              shellRef.current?.scrollTo({ top: 0, behavior: 'smooth' });
+            }}
+          />
+        )}
       </div>
 
       <SalesParticularReferenceModal

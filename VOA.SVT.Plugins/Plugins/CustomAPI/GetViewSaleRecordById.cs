@@ -298,10 +298,10 @@ namespace VOA.SVT.Plugins.CustomAPI
 
             var query = new QueryExpression("systemuser")
             {
-                ColumnSet = new ColumnSet("systemuserid", "fullname", "firstname", "lastname"),
+                ColumnSet = new ColumnSet("azureactivedirectoryobjectid", "fullname", "firstname", "lastname"),
                 NoLock = true
             };
-            query.Criteria.AddCondition("systemuserid", ConditionOperator.In,
+            query.Criteria.AddCondition("azureactivedirectoryobjectid", ConditionOperator.In,
                 userIds.Cast<object>().ToArray());
 
             var result = service.RetrieveMultiple(query);
@@ -312,11 +312,8 @@ namespace VOA.SVT.Plugins.CustomAPI
 
             foreach (var entity in result.Entities)
             {
-                var userId = entity.Id != Guid.Empty
-                    ? entity.Id
-                    : entity.GetAttributeValue<Guid>("systemuserid");
-
-                if (userId == Guid.Empty) continue;
+                var entraOid = entity.GetAttributeValue<Guid>("azureactivedirectoryobjectid");
+                if (entraOid == Guid.Empty) continue;
 
                 var displayName = entity.GetAttributeValue<string>("fullname");
                 if (string.IsNullOrWhiteSpace(displayName))
@@ -328,7 +325,7 @@ namespace VOA.SVT.Plugins.CustomAPI
 
                 if (!string.IsNullOrWhiteSpace(displayName))
                 {
-                    users[userId] = displayName;
+                    users[entraOid] = displayName;
                 }
             }
 

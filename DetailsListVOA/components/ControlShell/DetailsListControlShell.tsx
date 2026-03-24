@@ -23,6 +23,7 @@ interface DetailsListControlShellProps {
   activeWorkspaceName: string;
   currentUserDisplayName: string;
   loading: boolean;
+  entraObjectId?: string;
   requestContext: {
     country: string;
     listYear: string;
@@ -68,6 +69,7 @@ export const DetailsListControlShell: React.FC<DetailsListControlShellProps> = (
   saleDetailsShowQcSection,
   activeWorkspaceName,
   currentUserDisplayName,
+  entraObjectId,
   loading,
   requestContext,
   sharePointCatalogChunks,
@@ -125,6 +127,7 @@ export const DetailsListControlShell: React.FC<DetailsListControlShellProps> = (
             initialListYear={requestContext.listYear}
             onContextChange={onContextChange}
             refreshNonce={refreshNonce}
+            entraObjectId={entraObjectId}
           />
         ) : (
           <DetailsListHost
@@ -134,6 +137,7 @@ export const DetailsListControlShell: React.FC<DetailsListControlShellProps> = (
             listYearOverride={requestContext.listYear}
             onUserDisplayNameMapChange={handleUserDisplayNameMapChange}
             refreshNonce={refreshNonce}
+            entraObjectId={entraObjectId}
           />
         )
     ),

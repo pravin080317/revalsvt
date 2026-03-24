@@ -18,6 +18,7 @@ namespace VOA.SVT.Plugins.Helpers
     {
         public UserPersona Persona { get; set; }
         public string ResolutionSource { get; set; }
+        public string EntraObjectId { get; set; }
         public string MatchedTeamName { get; set; }
         public IReadOnlyList<string> MatchedTeamNames { get; set; }
         public string MatchedRoleName { get; set; }
@@ -49,6 +50,7 @@ namespace VOA.SVT.Plugins.Helpers
 
             var teamResult = ResolveFromTeams(service, userId, trace);
             var roleResult = ResolveFromRoles(service, userId, trace);
+            var entraObjectId = ResolveEntraObjectId(service, userId, trace);
 
             var persona = teamResult.Persona != UserPersona.None
                 ? teamResult.Persona
@@ -63,6 +65,7 @@ namespace VOA.SVT.Plugins.Helpers
             {
                 Persona = persona,
                 ResolutionSource = source,
+                EntraObjectId = entraObjectId,
                 MatchedTeamName = teamResult.MatchedTeamName ?? string.Empty,
                 MatchedTeamNames = teamResult.MatchedTeamNames ?? Array.Empty<string>(),
                 MatchedRoleName = roleResult.MatchedRoleName ?? string.Empty,
@@ -250,6 +253,47 @@ namespace VOA.SVT.Plugins.Helpers
                 MatchedTeamNames = Array.Empty<string>(),
                 MatchedRoleNames = matchedRoles
             };
+        }
+
+        private static string ResolveEntraObjectId(IOrganizationService service, Guid userId, ITracingService trace)
+        {
+            if (userId == Guid.Empty)
+            {
+                return string.Empty;
+            }
+
+            try
+            {
+                var qe = new QueryExpression("systemuser")
+                {
+                    ColumnSet = new ColumnSet("azureactivedirectoryobjectid"),
+                    NoLock = true
+                };
+                qe.Criteria.AddCondition("systemuserid", ConditionOperator.Equal, userId);
+
+                var result = service.RetrieveMultiple(qe);
+                var entity = result?.Entities?.FirstOrDefault();
+                if (entity == null)
+                {
+                    trace?.Trace($"ResolveEntraObjectId: no systemuser found for {userId}");
+                    return string.Empty;
+                }
+
+                var entraOid = entity.GetAttributeValue<Guid>("azureactivedirectoryobjectid");
+                if (entraOid == Guid.Empty)
+                {
+                    trace?.Trace($"ResolveEntraObjectId: azureactivedirectoryobjectid is empty for {userId}");
+                    return string.Empty;
+                }
+
+                trace?.Trace($"ResolveEntraObjectId: resolved {entraOid} for systemuserid {userId}");
+                return entraOid.ToString();
+            }
+            catch (Exception ex)
+            {
+                trace?.Trace($"ResolveEntraObjectId failed: {ex.Message}");
+                return string.Empty;
+            }
         }
 
         public static bool HasCaseworkerAccess(UserContextResult result)

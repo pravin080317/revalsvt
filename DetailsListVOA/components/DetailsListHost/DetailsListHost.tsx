@@ -55,6 +55,8 @@ export interface DetailsListHostProps {
   onUserDisplayNameMapChange?: (map: Record<string, string>) => void;
   // Bumped by the parent when the grid becomes visible again (e.g. returning from details).
   refreshNonce?: number;
+  // Azure Entra Object ID resolved from the user context plugin (preferred over systemuserid).
+  entraObjectId?: string;
 }
 
 type ColumnFilterValue = string | string[] | NumericFilter | DateRangeFilter;
@@ -283,6 +285,7 @@ export const DetailsListHost: React.FC<DetailsListHostProps> = ({
   onEditContext,
   onUserDisplayNameMapChange,
   refreshNonce,
+  entraObjectId,
 }) => {
   // Parse basic params
   const pageSize = (context.parameters as unknown as Record<string, { raw?: number }>).pageSize?.raw ?? 500;
@@ -520,7 +523,7 @@ export const DetailsListHost: React.FC<DetailsListHostProps> = ({
     return canvasScreenName ?? '';
   }, [canvasScreenName, screenKind]);
   const userMappingScreenName = QC_ASSIGNMENT_SCREEN_NAME;
-  const currentUserId = React.useMemo(() => resolveAssignedByUserId(context), [context]);
+  const currentUserId = React.useMemo(() => entraObjectId ?? resolveAssignedByUserId(context), [entraObjectId, context]);
   const [salesSearchApplied, setSalesSearchApplied] = React.useState(!isSalesSearch);
   const handlePrefilterDirty = React.useCallback(() => {
     if (!isPrefilterScreen) return;
@@ -1907,7 +1910,7 @@ export const DetailsListHost: React.FC<DetailsListHostProps> = ({
         return false;
       }
       const customApiType = resolveCustomApiTypeForAssign();
-      const assignedBy = resolveAssignedByUserId(context);
+      const assignedBy = entraObjectId ?? resolveAssignedByUserId(context);
       const assignedDate = new Date().toISOString();
       const toNumericTaskId = (value: unknown): string => {
         const raw = typeof value === 'string' ? value : typeof value === 'number' || typeof value === 'boolean' ? String(value) : '';
@@ -2104,7 +2107,7 @@ export const DetailsListHost: React.FC<DetailsListHostProps> = ({
         setAssignMessage({ text: markPassedQcText.messages.noValidTaskIds, type: MessageBarType.error });
         return;
       }
-      const reviewedBy = resolveAssignedByUserId(context);
+      const reviewedBy = entraObjectId ?? resolveAssignedByUserId(context);
       const customApiType = resolveSubmitQcRemarksApiType();
       const qcParams: Record<string, string> = {
         taskId: JSON.stringify(uniqueTaskIds),
@@ -2217,7 +2220,7 @@ export const DetailsListHost: React.FC<DetailsListHostProps> = ({
     sortedRecordIds: pageIds,
     shimmer: apimLoading,
     itemsLoading: apimLoading,
-    selectionType: (isSalesSearch || isCaseworkerView) ? SelectionMode.single : SelectionMode.multiple,
+    selectionType: isCaseworkerView ? SelectionMode.single : SelectionMode.multiple,
     selection,
     onNavigate,
     onSort,

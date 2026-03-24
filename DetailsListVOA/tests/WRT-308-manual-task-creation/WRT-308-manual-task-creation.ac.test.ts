@@ -21,8 +21,9 @@ describe('WRT-308 Manual Task Creation AC', () => {
     expect(shellSource).toContain('canCreateTask={canCreateManualTask}');
     expect(indexSource).toContain('onCreateManualTask: (saleId) => this.runtime.createManualTask(saleId)');
     expect(runtimeSource).toContain("sourceType: 'M'");
-    expect(runtimeSource).toContain('createdBy: resolveCurrentUserId(this._context)');
+    expect(runtimeSource).toContain('createdBy: this.entraObjectId');
     expect(runtimeSource).toContain('assignedTo: resolveCurrentUserDisplayName(this._context)');
+    expect(runtimeSource).toContain('await this.onTaskClick(this.selectedTaskId, normalizedSaleId);');
     expect(configSource).toContain("manualTaskCreationApiName: 'voa_SvtManualTaskCreation'");
   });
 
@@ -41,5 +42,6 @@ describe('WRT-308 Manual Task Creation AC', () => {
     expect(runtimeSource).toContain("sourceType: 'M'");
     expect(actionsSource).toContain('/\\bM-\\d+\\b/i');
     expect(sectionSource).toContain("text={createTaskBusy ? 'Creating Task...' : 'Create Task'}");
+    expect(sectionSource).toContain('aria-label="Task actions"');
   });
 });

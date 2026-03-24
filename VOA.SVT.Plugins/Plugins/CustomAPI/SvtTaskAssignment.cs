@@ -62,10 +62,9 @@ namespace VOA.SVT.Plugins.CustomAPI
 
             if (string.IsNullOrWhiteSpace(assignedByUserId))
             {
-                var fallbackId = context.InitiatingUserId != Guid.Empty
-                    ? context.InitiatingUserId
-                    : context.UserId;
-                assignedByUserId = fallbackId == Guid.Empty ? string.Empty : fallbackId.ToString();
+                assignedByUserId = !string.IsNullOrWhiteSpace(userContext.EntraObjectId)
+                    ? userContext.EntraObjectId
+                    : context.InitiatingUserId.ToString();
             }
 
             if (string.IsNullOrWhiteSpace(assignedToUserId) || taskIds.Count == 0)

@@ -14,7 +14,7 @@ export const HyperlinksSection: React.FC<HyperlinksSectionProps> = ({ links, new
       <Text as="h2" id="hyperlinks-heading" variant="large" className="voa-sale-details-card__title">
         Hyperlinks
       </Text>
-      <span className="voa-sale-details-card__meta">External links open in new tab</span>
+      <span className="voa-sale-details-card__meta">External reference links</span>
     </div>
 
     <div className="voa-hyperlink-layout">

@@ -61,7 +61,9 @@ namespace VOA.SVT.Plugins.CustomAPI
 
             if (string.IsNullOrWhiteSpace(createdBy))
             {
-                createdBy = context.InitiatingUserId.ToString();
+                createdBy = !string.IsNullOrWhiteSpace(userContext.EntraObjectId)
+                    ? userContext.EntraObjectId
+                    : context.InitiatingUserId.ToString();
             }
 
             // 1) Read secrets/config from credential provider action

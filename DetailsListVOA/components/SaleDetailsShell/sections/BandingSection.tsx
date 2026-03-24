@@ -29,9 +29,10 @@ export const BandingSection: React.FC<BandingSectionProps> = ({
     </div>
 
     <div className="voa-banding-layout">
-      <div className="voa-banding-layout__column">
+      <div className="voa-banding-layout__address">
         <KvpRow
           label="Address"
+          labelTitle="Hereditament address linked to this sale"
           value={
             addressLink ? (
               <Link
@@ -48,12 +49,12 @@ export const BandingSection: React.FC<BandingSectionProps> = ({
             )
           }
         />
-        <KvpRow label="Billing Authority" value={billingAuthority} />
       </div>
-      <div className="voa-banding-layout__column">
-        <KvpRow label="Band" value={band} />
-        <KvpRow label="Banding Effective Date" value={bandingEffectiveDate} />
-        <KvpRow label="Composite" value={composite} />
+      <div className="voa-banding-layout__grid">
+        <KvpRow label="Billing Authority" value={billingAuthority} labelTitle="Local authority responsible for council tax billing" />
+        <KvpRow label="Band" value={band} labelTitle="Council tax band (A–I) based on property value" />
+        <KvpRow label="Banding Effective Date" value={bandingEffectiveDate} labelTitle="Date from which the current band applies" />
+        <KvpRow label="Composite" value={composite} labelTitle="Whether the property has a composite (mixed domestic/non-domestic) element" />
       </div>
     </div>
   </section>

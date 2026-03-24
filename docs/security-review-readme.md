@@ -14,6 +14,7 @@ It is intended to answer:
 Related architecture guide:
 - `docs/cross-repo-behavior-testing.md` (how to run behavior tests when plugin and PCF are in separate repos)
 - `docs/ci-templates/static-analysis.yml` (generic static analysis workflow template)
+- `docs/security-evidence-pack-2026-03-24.md` (release/CAB-ready evidence summary)
 
 ## Scope
 Current automated checks in scope:
@@ -144,3 +145,28 @@ Observed output at snapshot time:
   - Security rules change
   - New high-risk files are added
   - Access-control logic changes
+
+## 2026-03-24 UI Link Hardening Update
+
+Additional hardening was added for data-driven external URLs in Sale Details UI:
+
+- `DetailsListVOA/components/SaleDetailsShell/utils.ts`
+  - Added `sanitizeExternalUrl(...)` to restrict rendered links to `http/https`.
+  - Optionally supports rooted relative URLs only when explicitly allowed and resolved against a trusted base.
+
+- `DetailsListVOA/components/SaleDetailsShell/useSaleDetailsViewModel.ts`
+  - SharePoint reference image/source URLs now flow through `sanitizeExternalUrl(...)`.
+
+- `DetailsListVOA/components/SaleDetailsShell/shared/ExternalLinkCard.tsx`
+  - Added render-time URL sanitization defense-in-depth before assigning `href`.
+
+New unit test coverage:
+
+- `DetailsListVOA/tests/external-url-safety.test.ts`
+  - Verifies allowed schemes and blocked unsafe schemes (`javascript:`, `data:`, `ftp:`, protocol-relative URLs).
+
+Run command:
+
+```bash
+npx jest DetailsListVOA/tests/external-url-safety.test.ts --no-coverage
+```

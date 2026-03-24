@@ -25,12 +25,17 @@ describe('WRT-198 View and Update Sales Verification Details AC', () => {
     expect(sectionSource).toContain("{ key: 'no', text: 'No' }");
     expect(sectionSource).toContain('placeholder="Select whether the sale is useful"');
     expect(sectionSource).toContain("'Select whether the sale is useful or not'");
+    expect(sectionSource).toContain("renderRequiredLabel('Is this sale useful?', true)");
+    expect(sectionSource).toContain('Fields marked with * are required');
+    expect(sectionSource).toContain('voa-visually-hidden');
   });
 
-  test('AC3: Why not useful is shown only when useful = No and uses required validation', () => {
+  test('AC3: Why not useful remains visible and is enabled only when useful = No, with required validation', () => {
     expect(sectionSource).toContain("const isNotUseful = isSaleUsefulKey === 'no';");
-    expect(sectionSource).toContain('{isNotUseful && (');
+    expect(sectionSource).toContain('placeholder="Select why the sale is not useful"');
+    expect(sectionSource).toContain('disabled={editingDisabled || !isNotUseful}');
     expect(sectionSource).toContain("'Enter why the sale is not useful'");
+    expect(sectionSource).toContain("renderRequiredLabel('Why is the sale not useful?', isNotUseful)");
 
     const orderedReasons = [
       'Connected parties',
@@ -63,9 +68,15 @@ describe('WRT-198 View and Update Sales Verification Details AC', () => {
 
   test('AC5: Validation errors are rendered as bold red field-level messages', () => {
     expect(sectionSource).toContain('voa-sales-verification-row__error');
+    expect(sectionSource).toContain('voa-sales-verification-row__dropdown--error');
+    expect(sectionSource).toContain('voa-sales-verification-notes__field--error');
     expect(cssSource).toContain('.voa-sales-verification-row__error');
+    expect(cssSource).toContain('.voa-required-marker');
+    expect(cssSource).toContain('.voa-required-key');
+    expect(cssSource).toContain('.voa-sales-verification-row__dropdown--error .ms-Dropdown-title');
     expect(cssSource).toContain('color: #b91c1c;');
     expect(cssSource).toContain('font-weight: 700;');
+    expect(sectionSource).toContain('role="alert"');
   });
 
 });

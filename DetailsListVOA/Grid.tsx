@@ -43,6 +43,9 @@ import {
   IDatePickerStrings,
   IButtonStyles,
   TooltipHost,
+  Dialog,
+  DialogFooter,
+  DialogType,
 } from '@fluentui/react';
 import * as React from 'react';
 import { NoFields } from '../DetailsListVOA/grid/NoFields';
@@ -859,6 +862,7 @@ export const Grid = React.memo((props: GridProps) => {
   const [menuFilterText, setMenuFilterText] = React.useState('');
   const [menuFilterError, setMenuFilterError] = React.useState<string | undefined>();
   const [menuFilterSearch, setMenuFilterSearch] = React.useState('');
+  const [menuSummaryOperator, setMenuSummaryOperator] = React.useState<'contains' | 'notContains'>('contains');
   const [menuExtraOptions, setMenuExtraOptions] = React.useState<string[]>([]);
   const menuOptionsFieldRef = React.useRef<string>('');
   const liveFilterTimer = React.useRef<number | undefined>(undefined);
@@ -902,6 +906,7 @@ export const Grid = React.memo((props: GridProps) => {
   const [dismissedErrorMessage, setDismissedErrorMessage] = React.useState(false);
   const [dismissedAssignUsersInfo, setDismissedAssignUsersInfo] = React.useState(false);
   const [dismissedAssignUsersError, setDismissedAssignUsersError] = React.useState(false);
+  const [createTaskModalOpen, setCreateTaskModalOpen] = React.useState(false);
   const [searchResetNotice, setSearchResetNotice] = React.useState<string | undefined>();
   const [salesSearchTouched, setSalesSearchTouched] = React.useState<Partial<Record<SalesSearchFieldKey, boolean>>>({});
   const [salesSearchAttempted, setSalesSearchAttempted] = React.useState(false);
@@ -1127,8 +1132,10 @@ export const Grid = React.memo((props: GridProps) => {
   const isCaseworkerView = derivedScreenKind === 'caseworkerView';
   const isQcView = derivedScreenKind === 'qcView';
   const isSalesSearch = derivedScreenKind === 'salesSearch';
+  const isAllSalesTable = tableKey === 'allsales';
   const isAssignment = isManagerAssign || isQcAssign;
   const showAssign = isManagerAssign || isQcAssign;
+  const showCreateTask = isAllSalesTable || isSalesSearch;
   const showMarkPassedQc = isQcView;
   const useAssignmentLayout = isManagerAssign || isCaseworkerView || isQcAssign || isQcView;
   const commonText = SCREEN_TEXT.common;
@@ -1137,6 +1144,7 @@ export const Grid = React.memo((props: GridProps) => {
   const qcViewText = SCREEN_TEXT.qcView;
   const assignTasksText = SCREEN_TEXT.assignTasks;
   const viewSaleLoadingText = commonText.messages.loadingSaleRecord ?? assignTasksText.loadingText;
+  const createTaskActionText = 'Create Task';
 
   const assignButtonState = React.useMemo((): { disabled: boolean; tooltip?: string } => {
     if (selectedCount === 0) {
@@ -3924,6 +3932,7 @@ export const Grid = React.memo((props: GridProps) => {
       const menuFilterKey = `menuFilter-${gridCol.key ?? gridCol.fieldName ?? 'column'}`;
       const cfg = getColumnFilterConfigFor(tableKey, fieldName);
       const normalizedField = String(fieldName ?? '').toLowerCase();
+      const isSummaryFlagField = normalizedField === 'summaryflags' || normalizedField === 'summaryflag';
       menuOptionsFieldRef.current = normalizedField;
       const existing = columnFiltersState[fieldName];
       let initialValue: ColumnFilterValue = '';
@@ -3938,7 +3947,11 @@ export const Grid = React.memo((props: GridProps) => {
             initialValue = typeof existing === 'string' ? existing : '';
             break;
           case 'multiSelect':
-            initialValue = Array.isArray(existing) ? existing : [];
+            initialValue = Array.isArray(existing)
+              ? existing
+              : isSummaryFlagField && typeof existing === 'string' && existing.trim().length > 0
+                ? [existing]
+                : [];
             break;
           case 'numeric':
             initialValue = (existing as NumericFilter) ?? { mode: '>=' };
@@ -3961,8 +3974,9 @@ export const Grid = React.memo((props: GridProps) => {
       delete comboExpectedSelectionRef.current[menuFilterKey];
       setMenuFilterError(undefined);
       setMenuExtraOptions([]);
+      setMenuSummaryOperator('contains');
       setMenuState({ target, column: gridCol });
-      if (onLoadFilterOptions && (cfg?.control === 'singleSelect' || cfg?.control === 'multiSelect')) {
+      if (onLoadFilterOptions && !isSummaryFlagField && (cfg?.control === 'singleSelect' || cfg?.control === 'multiSelect')) {
         void onLoadFilterOptions(fieldName ?? '', '')
           .then((vals) => {
             if (menuOptionsFieldRef.current !== normalizedField) return;
@@ -4174,6 +4188,7 @@ export const Grid = React.memo((props: GridProps) => {
         break;
     }
     setMenuFilterSearch('');
+    setMenuSummaryOperator('contains');
     setMenuFilterError(undefined);
     setMenuExtraOptions([]);
     setMenuState(undefined);
@@ -4194,10 +4209,50 @@ export const Grid = React.memo((props: GridProps) => {
     () => (selection.getSelection() as Record<string, unknown>[]),
     [selectedCount, selection],
   );
+  const selectedCreateTaskSaleIds = React.useMemo(
+    () => Array.from(new Set(
+      (selection.getSelection() as Record<string, unknown>[])
+        .map((record) => {
+          const raw = record.saleid ?? record.saleId;
+          if (typeof raw === 'string') return raw.trim();
+          if (typeof raw === 'number' || typeof raw === 'boolean') return String(raw).trim();
+          return '';
+        })
+        .filter((saleId) => saleId !== ''),
+    )),
+    [selectedCount, selection],
+  );
+  const selectedCreateTaskRecords = React.useMemo(
+    () => (selection.getSelection() as Record<string, unknown>[]),
+    [selectedCount, selection],
+  );
   const disabledAssignUserIds = React.useMemo(
     () => new Set(resolveAssignedUserIdsToDisable(selectedAssignmentRecords, assignUsers, derivedScreenKind)),
     [assignUsers, derivedScreenKind, selectedAssignmentRecords],
   );
+  const createTaskButtonState = React.useMemo((): { disabled: boolean; tooltip?: string } => {
+    if (selectedCount === 0) {
+      return { disabled: true, tooltip: 'Select one or more sales to create tasks.' };
+    }
+    if (selectedCreateTaskSaleIds.length === 0) {
+      return { disabled: true, tooltip: 'Selected rows do not contain sale IDs.' };
+    }
+    const hasNonEmptyTaskId = selectedCreateTaskRecords.some((record) => {
+      const raw = record.taskid ?? record.taskId;
+      if (typeof raw === 'string') return raw.trim().length > 0;
+      if (typeof raw === 'number' || typeof raw === 'boolean') return String(raw).trim().length > 0;
+      return false;
+    });
+    if (hasNonEmptyTaskId) {
+      return { disabled: true, tooltip: 'Create Task is enabled only when selected Task ID is empty or null.' };
+    }
+    return { disabled: false };
+  }, [selectedCount, selectedCreateTaskRecords, selectedCreateTaskSaleIds.length]);
+  const createTaskPreviewSaleIds = React.useMemo(
+    () => selectedCreateTaskSaleIds.slice(0, 20),
+    [selectedCreateTaskSaleIds],
+  );
+  const createTaskRemainingCount = Math.max(0, selectedCreateTaskSaleIds.length - createTaskPreviewSaleIds.length);
   const assignAlreadyAssignedReason = isQcAssign
     ? 'User is already QC assigned to at least one selected task.'
     : 'User is already assigned to at least one selected task.';
@@ -4241,10 +4296,24 @@ export const Grid = React.memo((props: GridProps) => {
     setAssignSelectedUserId(undefined);
   }, [assignSelectedUserId, isAssignUserDisabled]);
 
+  React.useEffect(() => {
+    if (selectedCount > 0) return;
+    setCreateTaskModalOpen(false);
+  }, [selectedCount]);
+
   const handleAssignUserSelect = React.useCallback((userId: string) => {
     if (assignLoading || isAssignUserDisabled(userId)) return;
     setAssignSelectedUserId(userId);
   }, [assignLoading, isAssignUserDisabled]);
+
+  const openCreateTaskModal = React.useCallback(() => {
+    if (createTaskButtonState.disabled) return;
+    setCreateTaskModalOpen(true);
+  }, [createTaskButtonState.disabled]);
+
+  const closeCreateTaskModal = React.useCallback(() => {
+    setCreateTaskModalOpen(false);
+  }, []);
 
   const handleAssignClick = React.useCallback(async (user: AssignUser) => {
     if (!onAssignTasks || assignLoading || isAssignUserDisabled(user.id)) return;
@@ -4478,6 +4547,7 @@ export const Grid = React.memo((props: GridProps) => {
       ? 'Select exactly one row to view its sales record.'
       : undefined;
   const assignActionUnavailableReason = assignButtonState.tooltip;
+  const createTaskUnavailableReason = createTaskButtonState.tooltip;
   const markPassedQcUnavailableReason = markPassedQcLoading
     ? 'Mark Passed QC is currently in progress. Please wait.'
     : markPassedQcButtonState.tooltip;
@@ -4591,8 +4661,8 @@ export const Grid = React.memo((props: GridProps) => {
     && (viewportMetrics.width <= 640 || viewportMetrics.height <= 520);
   const microViewport = viewportMetrics.width > 0
     && (viewportMetrics.width <= 420 || viewportMetrics.height <= 360);
-  const showBulkSelectionControls = showSelectionControls && !compactViewport;
-  const showCompactClearSelection = showSelectionControls && compactViewport && !microViewport && selectedCount > 0;
+  const showBulkSelectionControls = showSelectionControls;
+  const showCompactClearSelection = false;
   const showClearFiltersButton = hasColumnFilters && !microViewport;
   const showViewSalesRecordButton = !microViewport
     && showResults
@@ -4600,6 +4670,8 @@ export const Grid = React.memo((props: GridProps) => {
     && (!compactViewport || (!viewSaleNavigationPending && !disableViewSalesRecordAction && selectedCount === 1));
   const showAssignButton = !microViewport && Boolean(showAssign
     && (!compactViewport || !assignButtonState.disabled));
+  const showCreateTaskButton = !microViewport && Boolean(showCreateTask
+    && (!compactViewport || !createTaskButtonState.disabled));
   const showMarkPassedQcButton = !microViewport && Boolean(showMarkPassedQc
     && (!compactViewport || (!markPassedQcButtonState.disabled && !markPassedQcLoading)));
   const compactActionMenuItems = React.useMemo<IContextualMenuItem[]>(() => {
@@ -4637,6 +4709,14 @@ export const Grid = React.memo((props: GridProps) => {
         onClick: openAssignPanel,
       });
     }
+    if (showCreateTask && !createTaskButtonState.disabled) {
+      items.push({
+        key: 'createTask',
+        text: createTaskActionText,
+        iconProps: { iconName: 'Add' },
+        onClick: openCreateTaskModal,
+      });
+    }
     if (showMarkPassedQc && !markPassedQcButtonState.disabled && !markPassedQcLoading) {
       items.push({
         key: 'markPassedQc',
@@ -4654,6 +4734,8 @@ export const Grid = React.memo((props: GridProps) => {
     clearAllColumnFilters,
     commonText.buttons.clearFilters,
     commonText.tableActions.viewSalesRecord,
+    createTaskActionText,
+    createTaskButtonState.disabled,
     disableViewSalesRecordAction,
     handleMarkPassedQcClick,
     hasColumnFilters,
@@ -4662,8 +4744,10 @@ export const Grid = React.memo((props: GridProps) => {
     markPassedQcText.buttonText,
     microViewport,
     onViewSelected,
+    openCreateTaskModal,
     openAssignPanel,
     selectedCount,
+    showCreateTask,
     showAssign,
     showMarkPassedQc,
     showResults,
@@ -4677,6 +4761,7 @@ export const Grid = React.memo((props: GridProps) => {
       showCompactClearSelection,
       showClearFiltersButton,
       showViewSalesRecordButton,
+      showCreateTaskButton,
       showAssignButton,
       showMarkPassedQcButton,
     ].some(Boolean);
@@ -5018,6 +5103,27 @@ export const Grid = React.memo((props: GridProps) => {
                 };
                 return (
                   <>
+                    {isSummaryFlagField && (
+                      <ComboBox
+                        label="Operator"
+                        options={[
+                          { key: 'contains', text: 'Contains' },
+                          { key: 'notContains', text: 'Does not contain' },
+                        ]}
+                        selectedKey={menuSummaryOperator}
+                        allowFreeform={false}
+                        autoComplete="off"
+                        onChange={(_, opt) => {
+                          const key = String(opt?.key ?? 'contains');
+                          setMenuSummaryOperator(key === 'notContains' ? 'notContains' : 'contains');
+                        }}
+                        styles={{
+                          root: { width: '100%', marginBottom: 8 },
+                          callout: { minWidth: 240 },
+                          optionsContainer: { minWidth: 200 },
+                        }}
+                      />
+                    )}
                     <ComboBox
                       label={`Filter ${menuState.column.name}`}
                       placeholder={`Select ${menuState.column.name}`}
@@ -5065,6 +5171,11 @@ export const Grid = React.memo((props: GridProps) => {
                     {menuHint && (
                       <Text id={menuHintId} variant="small" styles={{ root: { marginTop: 4 } }}>
                         {menuHint}
+                      </Text>
+                    )}
+                    {isSummaryFlagField && (
+                      <Text variant="small" styles={{ root: { marginTop: 4 } }}>
+                        Select one or more summary flags from the current page.
                       </Text>
                     )}
                   </>
@@ -5207,6 +5318,7 @@ export const Grid = React.memo((props: GridProps) => {
     menuState,
     tableKey,
     commonText,
+    menuSummaryOperator,
     menuFilterError,
     menuFilterValue,
     menuFilterText,
@@ -6189,6 +6301,19 @@ export const Grid = React.memo((props: GridProps) => {
                     />
                   </TooltipHost>
                 )}
+                {showCreateTaskButton && (
+                  <TooltipHost content={createTaskButtonState.tooltip}>
+                    <FocusableActionButton
+                      text={createTaskActionText}
+                      iconProps={{ iconName: 'Add' }}
+                      onClick={openCreateTaskModal}
+                      unavailable={createTaskButtonState.disabled}
+                      unavailableReason={createTaskUnavailableReason}
+                      unavailableReasonId="voa-create-task-unavailable"
+                      ariaLabel={createTaskActionText}
+                    />
+                  </TooltipHost>
+                )}
                 {showMarkPassedQcButton && (
                   <TooltipHost content={markPassedQcButtonState.tooltip}>
                     <FocusableActionButton
@@ -6491,6 +6616,53 @@ export const Grid = React.memo((props: GridProps) => {
             </FocusTrapZone>
           </div>
         )}
+        <Dialog
+          hidden={!createTaskModalOpen}
+          onDismiss={closeCreateTaskModal}
+          dialogContentProps={{
+            type: DialogType.normal,
+            title: createTaskActionText,
+            subText: 'Preview only. The create task API call is not wired in this build.',
+          }}
+          modalProps={{ isBlocking: false }}
+          minWidth={560}
+          maxWidth={720}
+        >
+          <Stack tokens={{ childrenGap: 12 }}>
+            <MessageBar messageBarType={MessageBarType.info} isMultiline={false}>
+              {selectedCreateTaskSaleIds.length} sale{selectedCreateTaskSaleIds.length === 1 ? '' : 's'} selected for task creation.
+            </MessageBar>
+            <Text variant="mediumPlus" styles={{ root: { fontWeight: 600 } }}>
+              Selected Sale IDs
+            </Text>
+            <ul style={{ margin: 0, paddingLeft: 20, maxHeight: 220, overflowY: 'auto' }}>
+              {createTaskPreviewSaleIds.map((saleId) => (
+                <li key={saleId}>
+                  <Text>{saleId}</Text>
+                </li>
+              ))}
+            </ul>
+            {createTaskRemainingCount > 0 && (
+              <Text variant="small">
+                And {createTaskRemainingCount} more selected sale ID{createTaskRemainingCount === 1 ? '' : 's'}.
+              </Text>
+            )}
+            <Text variant="small">
+              Submission stays disabled until the bulk task creation API is wired.
+            </Text>
+          </Stack>
+          <DialogFooter>
+            <PrimaryButton
+              text={createTaskActionText}
+              disabled
+              title="Create task API is not wired in this build."
+            />
+            <DefaultButton
+              text={commonText.buttons.close}
+              onClick={closeCreateTaskModal}
+            />
+          </DialogFooter>
+        </Dialog>
       </div>
     </ThemeProvider>
   );

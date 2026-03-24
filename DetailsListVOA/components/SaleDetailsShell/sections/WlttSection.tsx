@@ -74,7 +74,7 @@ export const WlttSection: React.FC<WlttSectionProps> = ({
   return (
     <section className="voa-sale-details-card voa-source-card" aria-labelledby="wltt-heading">
       <div className="voa-sale-details-card__header voa-source-card__header">
-        <Text as="h2" id="wltt-heading" variant="large" className="voa-sale-details-card__title">
+        <Text as="h2" id="wltt-heading" variant="large" className="voa-sale-details-card__title" title="Stamp Duty Land Tax (England) / Welsh Land Transaction Tax (Wales)">
           Stamp Duty Land Tax / Welsh Land Transaction Tax
         </Text>
         <RecordNavigator
@@ -90,25 +90,25 @@ export const WlttSection: React.FC<WlttSectionProps> = ({
 
       <div className="voa-source-card__grid">
         <div className="voa-source-card__column">
-          <KvpRow label="ID" value={currentRecord.wlttId} />
-          <KvpRow label="Transaction Price" value={currentRecord.transactionPrice} />
-          <KvpRow label="Transaction Premium" value={currentRecord.transactionPremium} />
-          <KvpRow label="Transaction Date" value={currentRecord.transactionDate} />
-          <KvpRow label="Ground Rent" value={currentRecord.groundRent} />
+          <KvpRow label="ID" value={currentRecord.wlttId} labelTitle="Unique SDLT/WLTT record identifier" />
+          <KvpRow label="Transaction Price" value={currentRecord.transactionPrice} labelTitle="Price paid in this transaction" />
+          <KvpRow label="Transaction Premium" value={currentRecord.transactionPremium} labelTitle="Additional premium paid above the transaction price" />
+          <KvpRow label="Transaction Date" value={currentRecord.transactionDate} labelTitle="Date the transaction completed" />
+          <KvpRow label="Ground Rent" value={currentRecord.groundRent} labelTitle="Annual ground rent for leasehold properties" />
         </div>
 
         <div className="voa-source-card__column">
-          <KvpRow label="Vendor(s)" value={currentRecord.vendors} />
-          <KvpRow label="Vendee(s)" value={currentRecord.vendees} />
-          <KvpRow label="Vendor Agent(s)" value={currentRecord.vendorAgents} />
-          <KvpRow label="Vendee Agent(s)" value={currentRecord.vendeeAgents} />
+          <KvpRow label="Vendor(s)" value={currentRecord.vendors} labelTitle="Seller(s) of the property" />
+          <KvpRow label="Vendee(s)" value={currentRecord.vendees} labelTitle="Buyer(s) of the property" />
+          <KvpRow label="Vendor Agent(s)" value={currentRecord.vendorAgents} labelTitle="Agent representing the seller" />
+          <KvpRow label="Vendee Agent(s)" value={currentRecord.vendeeAgents} labelTitle="Agent representing the buyer" />
         </div>
 
         <div className="voa-source-card__column voa-source-card__column--with-action">
-          <KvpRow label="Type of Property" value={currentRecord.typeOfProperty} />
-          <KvpRow label="Tenure Type" value={currentRecord.tenureType} />
-          <KvpRow label="Lease From" value={currentRecord.leaseFrom} />
-          <KvpRow label="Lease Term" value={currentRecord.leaseTerm} />
+          <KvpRow label="Type of Property" value={currentRecord.typeOfProperty} labelTitle="D = Detached, S = Semi-detached, T = Terraced, F = Flat/Maisonette" />
+          <KvpRow label="Tenure Type" value={currentRecord.tenureType} labelTitle="F = Freehold, L = Leasehold" />
+          <KvpRow label="Lease From" value={currentRecord.leaseFrom} labelTitle="Start date of the lease agreement" />
+          <KvpRow label="Lease Term" value={currentRecord.leaseTerm} labelTitle="Length of the lease in years" />
 
           <div
             className={`voa-master-status-box ${isCurrentMaster ? 'voa-master-status-box--current' : 'voa-master-status-box--promote'}`}
@@ -123,6 +123,7 @@ export const WlttSection: React.FC<WlttSectionProps> = ({
                 ariaLabel="Promote selected WLTT record to master sale"
                 className="voa-promote-btn"
                 disabled={promoteActionRule.disabled}
+                title={promoteActionRule.reason}
                 onClick={() => onPromoteRecord?.(currentRecord)}
               />
             )}

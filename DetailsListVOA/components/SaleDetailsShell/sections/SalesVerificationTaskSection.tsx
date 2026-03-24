@@ -5,6 +5,7 @@ import {
   DialogFooter,
   DialogType,
   Icon,
+  IconButton,
   MessageBar,
   MessageBarType,
   PrimaryButton,
@@ -21,6 +22,31 @@ import {
   getModifyTaskActionRule,
   hasDisplayValue,
 } from '../rules/ViewSaleActionRules';
+
+const CopyablePill: React.FC<{ value: string; label: string }> = ({ value, label }) => {
+  const [copied, setCopied] = React.useState(false);
+
+  const handleCopy = React.useCallback(() => {
+    void navigator.clipboard.writeText(value).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+      return undefined;
+    });
+  }, [value]);
+
+  return (
+    <span className="voa-readonly-pill">
+      {value}
+      <IconButton
+        iconProps={{ iconName: copied ? 'CheckMark' : 'Copy' }}
+        title={copied ? 'Copied!' : `Copy ${label}`}
+        ariaLabel={copied ? `${label} copied` : `Copy ${label}`}
+        className={`voa-copy-btn${copied ? ' voa-copy-btn__tick' : ''}`}
+        onClick={handleCopy}
+      />
+    </span>
+  );
+};
 
 interface SalesVerificationTaskSectionProps {
   saleId: string;
@@ -170,16 +196,12 @@ export const SalesVerificationTaskSection: React.FC<SalesVerificationTaskSection
       </div>
 
       <div className="voa-task-panel-grid">
-        <article className="voa-task-panel" aria-labelledby="record-identifiers-heading">
-          <h3 id="record-identifiers-heading" className="voa-task-panel__title">Record identifiers</h3>
-          <KvpRow label="Sale ID" value={<span className="voa-readonly-pill">{saleId}</span>} />
-          <KvpRow label="Task ID" value={<span className="voa-readonly-pill">{taskId}</span>} />
-        </article>
-
-        <article className="voa-task-panel" aria-labelledby="status-heading">
-          <h3 id="status-heading" className="voa-task-panel__title">Status</h3>
+        <article className="voa-task-panel" aria-labelledby="task-heading">
+          <h3 id="task-heading" className="voa-task-panel__title">Task</h3>
+          <KvpRow label="Task ID" value={<CopyablePill value={taskId} label="Task ID" />} labelTitle="Unique identifier for the verification task" />
           <KvpRow
-            label="Task Status"
+            label="Status"
+            labelTitle="Current workflow status of the verification task"
             value={
               <span className={`voa-status-badge voa-status-badge--${statusTone}`} aria-label={`Status: ${statusText}`}>
                 <Icon iconName={statusIconByTone[statusTone]} className="voa-status-badge__icon" />
@@ -192,12 +214,12 @@ export const SalesVerificationTaskSection: React.FC<SalesVerificationTaskSection
         <article className="voa-task-panel" aria-labelledby="ownership-heading">
           <h3 id="ownership-heading" className="voa-task-panel__title">Ownership</h3>
           <OwnershipRow label="Caseworker" value={assignedTo} />
-          <OwnershipRow label="QC Reviewer" value={qcAssignedTo} />
+          <OwnershipRow label="QC Reviewer" value={qcAssignedTo} title="Quality Control reviewer assigned to this task" />
         </article>
 
-        <article className="voa-task-panel voa-task-panel--actions" aria-labelledby="actions-heading">
-          <h3 id="actions-heading" className="voa-task-panel__title">Actions</h3>
-          <div className="voa-task-actions">
+        <article className="voa-task-panel voa-task-panel--actions" aria-labelledby="audit-history-heading">
+          <h3 id="audit-history-heading" className="voa-task-panel__title">Audit History</h3>
+          <div className="voa-task-actions" role="group" aria-label="Audit history actions">
             <DefaultButton
               text="Sales Audit History"
               ariaLabel={auditHistoryActionRule.disabled
@@ -216,15 +238,12 @@ export const SalesVerificationTaskSection: React.FC<SalesVerificationTaskSection
               disabled={qcAuditHistoryActionRule.disabled}
               onClick={() => { void onOpenQcLog?.(); }}
             />
-            {canShowModifyTaskButton && (
-              <DefaultButton
-                text="Modify SVT Task"
-                disabled={modifyTaskActionRule.disabled}
-                ariaLabel={modifyTaskActionRule.disabled ? modifyTaskUnavailableReason : 'Modify SVT Task'}
-                title={modifyTaskUnavailableReason}
-                onClick={handleOpenModifyTaskConfirmation}
-              />
-            )}
+          </div>
+        </article>
+
+        <article className="voa-task-panel voa-task-panel--actions" aria-labelledby="task-actions-heading">
+          <h3 id="task-actions-heading" className="voa-task-panel__title">Task Actions</h3>
+          <div className="voa-task-actions" role="group" aria-label="Task actions">
             <DefaultButton
               text={createTaskBusy ? 'Creating Task...' : 'Create Task'}
               disabled={createTaskDisabled}
@@ -234,6 +253,15 @@ export const SalesVerificationTaskSection: React.FC<SalesVerificationTaskSection
               title={createTaskUnavailableReason}
               onClick={() => { void handleCreateTask(); }}
             />
+            {canShowModifyTaskButton && (
+              <DefaultButton
+                text="Modify SVT Task"
+                disabled={modifyTaskActionRule.disabled}
+                ariaLabel={modifyTaskActionRule.disabled ? modifyTaskUnavailableReason : 'Modify SVT Task'}
+                title={modifyTaskUnavailableReason}
+                onClick={handleOpenModifyTaskConfirmation}
+              />
+            )}
           </div>
           {createTaskUnavailableReason && (hasTaskId || !canCreateTask) && (
             <Text variant="small" className="voa-task-actions__note">{createTaskUnavailableReason}</Text>
@@ -242,6 +270,7 @@ export const SalesVerificationTaskSection: React.FC<SalesVerificationTaskSection
             <MessageBar
               messageBarType={createTaskMessage.type}
               isMultiline={false}
+              dismissButtonAriaLabel="Close"
               onDismiss={() => setCreateTaskMessage(undefined)}
             >
               {createTaskMessage.text}
@@ -251,6 +280,7 @@ export const SalesVerificationTaskSection: React.FC<SalesVerificationTaskSection
             <MessageBar
               messageBarType={modifyTaskMessage.type}
               isMultiline={false}
+              dismissButtonAriaLabel="Close"
               onDismiss={() => setModifyTaskMessage(undefined)}
             >
               {modifyTaskMessage.text}
@@ -269,16 +299,19 @@ export const SalesVerificationTaskSection: React.FC<SalesVerificationTaskSection
         }}
         modalProps={{
           isBlocking: true,
+          className: 'voa-confirm-dialog',
         }}
       >
         <DialogFooter>
           <PrimaryButton
-            text="Yes"
+            text="Confirm Modify SVT Task"
+            ariaLabel="Confirm modify SVT task"
             disabled={modifyTaskBusy}
             onClick={() => { void handleConfirmModifyTask(); }}
           />
           <DefaultButton
-            text="No"
+            text="Cancel"
+            ariaLabel="Cancel modify SVT task"
             disabled={modifyTaskBusy}
             onClick={handleCancelModifyTask}
           />

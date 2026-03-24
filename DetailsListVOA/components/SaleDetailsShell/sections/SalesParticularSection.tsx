@@ -6,6 +6,7 @@ import {
   IDropdownOption,
   Text,
   TextField,
+  TooltipHost,
 } from '@fluentui/react';
 import {
   SalesParticularAttributeKey,
@@ -55,6 +56,18 @@ const REQUIRED_FIELDS: SalesParticularAttributeKey[] = [
 ];
 
 const MAX_NOTES_LENGTH = 2000;
+
+const renderRequiredLabel = (label: string, required: boolean): React.ReactNode => (
+  <>
+    {label}
+      {required && (
+        <>
+          <span className="voa-required-marker" aria-hidden="true"> *</span>
+          <span className="voa-visually-hidden"> (required)</span>
+        </>
+      )}
+  </>
+);
 
 const toOptions = (values: string[], currentValue: string): IDropdownOption[] => {
   const normalizedCurrent = currentValue.trim();
@@ -127,6 +140,23 @@ const toConditionCategory = (score: number): string => {
   return 'Average';
 };
 
+const toConditionCategoryTone = (category: string): 'above-average' | 'average' | 'below-average' | 'neutral' => {
+  const normalized = category.trim().toLowerCase();
+  if (normalized === 'above average') {
+    return 'above-average';
+  }
+
+  if (normalized === 'below average') {
+    return 'below-average';
+  }
+
+  if (normalized === 'average') {
+    return 'average';
+  }
+
+  return 'neutral';
+};
+
 export const SalesParticularSection: React.FC<SalesParticularSectionProps> = ({
   model,
   onOpenReference,
@@ -163,23 +193,20 @@ export const SalesParticularSection: React.FC<SalesParticularSectionProps> = ({
     setValidationErrors({});
   }, [model]);
 
-
-  React.useEffect(() => {
-    onDraftChange?.({
-      reviewStatusKey,
-      linkParticulars,
-      kitchenAge,
-      kitchenSpecification,
-      bathroomAge,
-      bathroomSpecification,
-      glazing,
-      heating,
-      decorativeFinishes,
-      conditionScore,
-      conditionCategory,
-      particularsNotes,
-    });
-  }, [
+  const draftPayload = React.useMemo((): SalesParticularDraftPayload => ({
+    reviewStatusKey,
+    linkParticulars,
+    kitchenAge,
+    kitchenSpecification,
+    bathroomAge,
+    bathroomSpecification,
+    glazing,
+    heating,
+    decorativeFinishes,
+    conditionScore,
+    conditionCategory,
+    particularsNotes,
+  }), [
     bathroomAge,
     bathroomSpecification,
     conditionCategory,
@@ -190,12 +217,23 @@ export const SalesParticularSection: React.FC<SalesParticularSectionProps> = ({
     kitchenAge,
     kitchenSpecification,
     linkParticulars,
-    onDraftChange,
     particularsNotes,
     reviewStatusKey,
   ]);
 
+  // Keep the parent draft in sync before the user can trigger cross-section
+  // validation from Sales Verification. This avoids one-render lag when the
+  // last particulars field is selected immediately before Complete/Submit.
+  React.useLayoutEffect(() => {
+    onDraftChange?.({
+      ...draftPayload,
+    });
+  }, [draftPayload, onDraftChange]);
+
   const notesRemaining = Math.max(0, MAX_NOTES_LENGTH - particularsNotes.length);
+  const conditionCategoryTone = toConditionCategoryTone(conditionCategory);
+  const detailsAvailable = reviewStatusKey === 'details-available';
+  const reviewStatusLabelId = 'voa-sales-particular-review-status-label';
 
   const canEditInputs = !readOnly;
   const calculateActionRule = getSalesParticularCalculateActionRule({ readOnly, reviewStatusKey });
@@ -297,40 +335,44 @@ export const SalesParticularSection: React.FC<SalesParticularSectionProps> = ({
   return (
     <section className="voa-sale-details-card voa-sales-particular-card" aria-labelledby="sales-particular-heading">
       <div className="voa-sale-details-card__header">
-        <Text as="h2" id="sales-particular-heading" variant="large" className="voa-sale-details-card__title">
+        <Text as="h2" id="sales-particular-heading" variant="large" className="voa-sale-details-card__title"
+          title="Internal and external property condition attributes used for scoring">
           Sales Particulars
         </Text>
+        <Text className="voa-required-key">Fields marked with * are required</Text>
       </div>
 
       <div className="voa-sales-particular-layout">
         <div className="voa-sales-particular-form">
-          <ChoiceGroup
-            className="voa-sales-particular-review"
-            label="Sales Particulars"
-            selectedKey={reviewStatusKey}
-            options={REVIEW_OPTIONS}
-            disabled={readOnly}
-            onChange={(_, option) => {
-              const nextStatus = option?.key as SalesParticularReviewStatus | undefined;
-              setReviewStatusKey(nextStatus);
-              clearFieldError('reviewStatus');
-              if (nextStatus !== 'details-available') {
-                setValidationErrors((previous) => {
-                  const next = { ...previous };
-                  delete next.kitchenAge;
-                  delete next.kitchenSpecification;
-                  delete next.bathroomAge;
-                  delete next.bathroomSpecification;
-                  delete next.glazing;
-                  delete next.heating;
-                  delete next.decorativeFinishes;
-                  return next;
-                });
-              }
-            }}
-          />
+          <div className={`voa-sales-particular-review${validationErrors.reviewStatus ? ' voa-sales-particular-review--error' : ''}`}>
+            <label id={reviewStatusLabelId} className="voa-sales-particular-review__label">{renderRequiredLabel('Review Status', true)}</label>
+            <ChoiceGroup
+              ariaLabelledBy={reviewStatusLabelId}
+              selectedKey={reviewStatusKey}
+              options={REVIEW_OPTIONS}
+              disabled={readOnly}
+              onChange={(_, option) => {
+                const nextStatus = option?.key as SalesParticularReviewStatus | undefined;
+                setReviewStatusKey(nextStatus);
+                clearFieldError('reviewStatus');
+                if (nextStatus !== 'details-available') {
+                  setValidationErrors((previous) => {
+                    const next = { ...previous };
+                    delete next.kitchenAge;
+                    delete next.kitchenSpecification;
+                    delete next.bathroomAge;
+                    delete next.bathroomSpecification;
+                    delete next.glazing;
+                    delete next.heating;
+                    delete next.decorativeFinishes;
+                    return next;
+                  });
+                }
+              }}
+            />
+          </div>
           {validationErrors.reviewStatus && (
-            <span className="voa-sales-particular-review__error">{validationErrors.reviewStatus}</span>
+            <span className="voa-sales-particular-review__error" role="alert">{validationErrors.reviewStatus}</span>
           )}
 
           <div className="voa-sales-particular-row voa-sales-particular-row--text">
@@ -349,6 +391,7 @@ export const SalesParticularSection: React.FC<SalesParticularSectionProps> = ({
           <SalesParticularDropdownRow
             id="voa-kitchen-age"
             label="Kitchen Age:"
+            required={detailsAvailable}
             selectedKey={kitchenAge || undefined}
             options={toOptions(optionsByAttribute.kitchenAge, kitchenAge)}
             disabled={!canEditInputs}
@@ -364,6 +407,7 @@ export const SalesParticularSection: React.FC<SalesParticularSectionProps> = ({
           <SalesParticularDropdownRow
             id="voa-kitchen-specification"
             label="Kitchen Spec:"
+            required={detailsAvailable}
             selectedKey={kitchenSpecification || undefined}
             options={toOptions(optionsByAttribute.kitchenSpecification, kitchenSpecification)}
             disabled={!canEditInputs}
@@ -379,6 +423,7 @@ export const SalesParticularSection: React.FC<SalesParticularSectionProps> = ({
           <SalesParticularDropdownRow
             id="voa-bathroom-age"
             label="Bathroom Age:"
+            required={detailsAvailable}
             selectedKey={bathroomAge || undefined}
             options={toOptions(optionsByAttribute.bathroomAge, bathroomAge)}
             disabled={!canEditInputs}
@@ -394,6 +439,7 @@ export const SalesParticularSection: React.FC<SalesParticularSectionProps> = ({
           <SalesParticularDropdownRow
             id="voa-bathroom-specification"
             label="Bathroom Spec:"
+            required={detailsAvailable}
             selectedKey={bathroomSpecification || undefined}
             options={toOptions(optionsByAttribute.bathroomSpecification, bathroomSpecification)}
             disabled={!canEditInputs}
@@ -409,6 +455,7 @@ export const SalesParticularSection: React.FC<SalesParticularSectionProps> = ({
           <SalesParticularDropdownRow
             id="voa-glazing"
             label="Glazing:"
+            required={detailsAvailable}
             selectedKey={glazing || undefined}
             options={toOptions(optionsByAttribute.glazing, glazing)}
             disabled={!canEditInputs}
@@ -424,6 +471,7 @@ export const SalesParticularSection: React.FC<SalesParticularSectionProps> = ({
           <SalesParticularDropdownRow
             id="voa-heating"
             label="Heating:"
+            required={detailsAvailable}
             selectedKey={heating || undefined}
             options={toOptions(optionsByAttribute.heating, heating)}
             disabled={!canEditInputs}
@@ -439,6 +487,7 @@ export const SalesParticularSection: React.FC<SalesParticularSectionProps> = ({
           <SalesParticularDropdownRow
             id="voa-decorative-finishes"
             label="Decorative Finishes:"
+            required={detailsAvailable}
             selectedKey={decorativeFinishes || undefined}
             options={toOptions(optionsByAttribute.decorativeFinishes, decorativeFinishes)}
             disabled={!canEditInputs}
@@ -451,18 +500,22 @@ export const SalesParticularSection: React.FC<SalesParticularSectionProps> = ({
             }}
           />
 
-          <DefaultButton
-            text="Calculate"
-            ariaLabel="Calculate condition score and category"
-            className="voa-sales-particular-calculate"
-            disabled={!canCalculate}
-            onClick={onCalculate}
-          />
+          <div className="voa-sales-particular-actions">
+            <TooltipHost content={calculateActionRule.reason}>
+              <DefaultButton
+                text="Calculate"
+                ariaLabel="Calculate condition score and category"
+                className="voa-sales-particular-calculate"
+                disabled={!canCalculate}
+                onClick={onCalculate}
+              />
+            </TooltipHost>
+          </div>
         </div>
 
         <div className="voa-sales-particular-outcomes">
           <div className="voa-sales-particular-outcomes__row">
-            <label htmlFor="voa-condition-score" className="voa-sales-particular-outcomes__label">Condition Score:</label>
+            <label htmlFor="voa-condition-score" className="voa-sales-particular-outcomes__label" title="Weighted sum of component scores (0–1)">Condition Score:</label>
             <TextField
               id="voa-condition-score"
               value={conditionScore}
@@ -474,14 +527,14 @@ export const SalesParticularSection: React.FC<SalesParticularSectionProps> = ({
           </div>
 
           <div className="voa-sales-particular-outcomes__row">
-            <label htmlFor="voa-condition-category" className="voa-sales-particular-outcomes__label">Condition Category:</label>
+            <label htmlFor="voa-condition-category" className="voa-sales-particular-outcomes__label" title="Above Average (≥0.73), Average (0.35–0.72), Below Average (≤0.34)">Condition Category:</label>
             <TextField
               id="voa-condition-category"
               value={conditionCategory}
               placeholder="Auto calculated on click of Calculate..."
               readOnly
               ariaLabel="Condition Category"
-              className="voa-sales-particular-outcomes__readonly"
+              className={`voa-sales-particular-outcomes__readonly voa-sales-particular-outcomes__readonly--${conditionCategoryTone}`}
             />
           </div>
 
@@ -492,7 +545,7 @@ export const SalesParticularSection: React.FC<SalesParticularSectionProps> = ({
               value={particularsNotes}
               placeholder="Enter particulars notes"
               multiline
-              rows={10}
+              rows={7}
               maxLength={MAX_NOTES_LENGTH}
               onChange={(_, nextValue) => setParticularsNotes((nextValue ?? '').slice(0, MAX_NOTES_LENGTH))}
               disabled={readOnly}

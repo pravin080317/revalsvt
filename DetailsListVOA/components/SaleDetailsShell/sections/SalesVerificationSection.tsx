@@ -115,6 +115,18 @@ const SALES_PARTICULAR_REQUIRED_FIELDS: { key: keyof SalesParticularDraftPayload
 
 const trimValue = (value: string | undefined): string => (value ?? '').trim();
 
+const renderRequiredLabel = (label: string, required: boolean): React.ReactNode => (
+  <>
+    {label}
+    {required && (
+      <>
+        <span className="voa-required-marker" aria-hidden="true"> *</span>
+        <span className="voa-visually-hidden"> (required)</span>
+      </>
+    )}
+  </>
+);
+
 const toUsefulKey = (raw: string): string | undefined => {
   const normalized = raw.trim().toLowerCase();
   if (!normalized) {
@@ -204,6 +216,10 @@ export const SalesVerificationSection: React.FC<SalesVerificationSectionProps> =
   const [qcOutcomeSelectionError, setQcOutcomeSelectionError] = React.useState<string | undefined>(undefined);
   const [qcOutcomeRemarksError, setQcOutcomeRemarksError] = React.useState<string | undefined>(undefined);
   const [actionError, setActionError] = React.useState<string | undefined>(undefined);
+  const [showCompleteSuccess, setShowCompleteSuccess] = React.useState(false);
+  const [showConfirmQcOutcomeDialog, setShowConfirmQcOutcomeDialog] = React.useState(false);
+  const [showQcOutcomeSuccess, setShowQcOutcomeSuccess] = React.useState(false);
+  const [showCompleteConfirmDialog, setShowCompleteConfirmDialog] = React.useState(false);
 
   React.useEffect(() => {
     setIsSaleUsefulKey(toUsefulKey(model.isSaleUseful));
@@ -220,6 +236,9 @@ export const SalesVerificationSection: React.FC<SalesVerificationSectionProps> =
     setQcOutcomeRemarksError(undefined);
     setActionError(undefined);
     setShowSubmitForQcDialog(false);
+    setShowConfirmQcOutcomeDialog(false);
+    setShowQcOutcomeSuccess(false);
+    setShowCompleteConfirmDialog(false);
   }, [model]);
 
   // Also clear mandatory errors when cross-section props change (fixes stale
@@ -340,27 +359,43 @@ export const SalesVerificationSection: React.FC<SalesVerificationSectionProps> =
     return allErrors.length === 0;
   }, [collectCrossSectionMandatoryErrors, isSaleUsefulKey, whyNotUsefulKey]);
 
-  const handleComplete = React.useCallback(async () => {
+  const handleComplete = React.useCallback(() => {
     if (!onCompleteTask || completeTaskActionRule.disabled) {
       return;
     }
     if (!validate()) {
       return;
     }
+    setShowCompleteConfirmDialog(true);
+  }, [completeTaskActionRule.disabled, onCompleteTask, validate]);
 
+  const handleConfirmComplete = React.useCallback(async () => {
+    if (!onCompleteTask || completeTaskActionRule.disabled) {
+      return;
+    }
+    setShowCompleteConfirmDialog(false);
     setActionError(undefined);
+    setShowCompleteSuccess(false);
     setBusyAction('complete');
     try {
       await Promise.resolve(onCompleteTask(payload));
       setMandatoryErrorMessages([]);
       setIsSaleUsefulError(undefined);
       setWhyNotUsefulError(undefined);
+      setShowCompleteSuccess(true);
     } catch (err) {
       setActionError(err instanceof Error ? err.message : 'Failed to complete sales verification task.');
     } finally {
       setBusyAction(undefined);
     }
-  }, [completeTaskActionRule.disabled, onCompleteTask, payload, validate]);
+  }, [completeTaskActionRule.disabled, onCompleteTask, payload]);
+
+  const handleCancelComplete = React.useCallback(() => {
+    if (busyAction === 'complete') {
+      return;
+    }
+    setShowCompleteConfirmDialog(false);
+  }, [busyAction]);
 
   const handleSubmitForQc = React.useCallback(() => {
     if (!onSubmitForQc || submitForQcActionRule.disabled) {
@@ -414,7 +449,7 @@ export const SalesVerificationSection: React.FC<SalesVerificationSectionProps> =
   }, [onSubmitForQc, payload, qcRemarks, submitForQcActionRule.disabled]);
 
 
-  const handleSubmitQcOutcome = React.useCallback(async () => {
+  const handleSubmitQcOutcome = React.useCallback(() => {
     if (!onSubmitQcOutcome || submitQcOutcomeActionRule.disabled) {
       return;
     }
@@ -432,13 +467,40 @@ export const SalesVerificationSection: React.FC<SalesVerificationSectionProps> =
       return;
     }
 
+    setQcOutcomeSelectionError(undefined);
+    setQcOutcomeRemarksError(undefined);
+    setShowConfirmQcOutcomeDialog(true);
+  }, [
+    onSubmitQcOutcome,
+    qcOutcomeKey,
+    qcOutcomeRemarks,
+    qcRemarksRequiredMessage,
+    submitQcOutcomeActionRule.disabled,
+  ]);
+
+  const handleCancelQcOutcomeDialog = React.useCallback(() => {
+    if (busyAction === 'qcsubmit') {
+      return;
+    }
+    setShowConfirmQcOutcomeDialog(false);
+  }, [busyAction]);
+
+  const handleConfirmQcOutcome = React.useCallback(async () => {
+    if (!onSubmitQcOutcome || submitQcOutcomeActionRule.disabled) {
+      return;
+    }
+
+    const normalizedOutcome = toQcOutcomeValue(qcOutcomeKey);
+    if (!normalizedOutcome) {
+      setShowConfirmQcOutcomeDialog(false);
+      return;
+    }
+    const normalizedRemarks = qcOutcomeRemarks.trim();
     const reviewedBy = trimValue(qcAssignedTo)
       || trimValue(currentUserDisplayName)
       || trimValue(model.qcReviewedBy)
       || 'QC User';
 
-    setQcOutcomeSelectionError(undefined);
-    setQcOutcomeRemarksError(undefined);
     setActionError(undefined);
     setBusyAction('qcsubmit');
     try {
@@ -447,6 +509,8 @@ export const SalesVerificationSection: React.FC<SalesVerificationSectionProps> =
         qcRemark: normalizedRemarks,
         qcReviewedBy: reviewedBy,
       }));
+      setShowConfirmQcOutcomeDialog(false);
+      setShowQcOutcomeSuccess(true);
     } catch (err) {
       setActionError(err instanceof Error ? err.message : 'Failed to submit QC outcome.');
     } finally {
@@ -459,7 +523,6 @@ export const SalesVerificationSection: React.FC<SalesVerificationSectionProps> =
     qcAssignedTo,
     qcOutcomeKey,
     qcOutcomeRemarks,
-    qcRemarksRequiredMessage,
     submitQcOutcomeActionRule.disabled,
   ]);
 
@@ -477,12 +540,13 @@ export const SalesVerificationSection: React.FC<SalesVerificationSectionProps> =
         <Text as="h2" id="sales-verification-heading" variant="large" className="voa-sale-details-card__title">
           Sales Verification
         </Text>
+        <Text className="voa-required-key">Fields marked with * are required</Text>
       </div>
 
       <div className="voa-sales-verification-layout">
         <div className="voa-sales-verification-fields">
           <div className="voa-sales-verification-row">
-            <label htmlFor="voa-sale-useful" className="voa-sales-verification-row__label">Is this sale useful?</label>
+            <label htmlFor="voa-sale-useful" className="voa-sales-verification-row__label">{renderRequiredLabel('Is this sale useful?', true)}</label>
             <div className="voa-sales-verification-row__control">
               <Dropdown
                 id="voa-sale-useful"
@@ -501,34 +565,32 @@ export const SalesVerificationSection: React.FC<SalesVerificationSectionProps> =
                   }
                 }}
                 ariaLabel="Is this sale useful"
-                className="voa-sales-verification-row__dropdown"
+                className={`voa-sales-verification-row__dropdown${isSaleUsefulError ? ' voa-sales-verification-row__dropdown--error' : ''}`}
               />
-              {isSaleUsefulError && <span className="voa-sales-verification-row__error">{isSaleUsefulError}</span>}
+              {isSaleUsefulError && <span className="voa-sales-verification-row__error" role="alert">{isSaleUsefulError}</span>}
             </div>
           </div>
 
-          {isNotUseful && (
-            <div className="voa-sales-verification-row">
-              <label htmlFor="voa-why-not-useful" className="voa-sales-verification-row__label">Why is the sale not useful?</label>
-              <div className="voa-sales-verification-row__control">
-                <Dropdown
-                  id="voa-why-not-useful"
-                  placeholder="Select why the sale is not useful"
-                  selectedKey={whyNotUsefulKey}
-                  options={whyNotOptions}
-                  disabled={editingDisabled}
-                  onChange={(_, option) => {
-                    setWhyNotUsefulKey(option?.key as string | undefined);
-                    setWhyNotUsefulError(undefined);
-                    setMandatoryErrorMessages([]);
-                  }}
-                  ariaLabel="Why is the sale not useful"
-                  className="voa-sales-verification-row__dropdown"
-                />
-                {whyNotUsefulError && <span className="voa-sales-verification-row__error">{whyNotUsefulError}</span>}
-              </div>
+          <div className="voa-sales-verification-row">
+            <label htmlFor="voa-why-not-useful" className="voa-sales-verification-row__label">{renderRequiredLabel('Why is the sale not useful?', isNotUseful)}</label>
+            <div className="voa-sales-verification-row__control">
+              <Dropdown
+                id="voa-why-not-useful"
+                placeholder="Select why the sale is not useful"
+                selectedKey={whyNotUsefulKey}
+                options={whyNotOptions}
+                disabled={editingDisabled || !isNotUseful}
+                onChange={(_, option) => {
+                  setWhyNotUsefulKey(option?.key as string | undefined);
+                  setWhyNotUsefulError(undefined);
+                  setMandatoryErrorMessages([]);
+                }}
+                ariaLabel="Why is the sale not useful"
+                className={`voa-sales-verification-row__dropdown${whyNotUsefulError ? ' voa-sales-verification-row__dropdown--error' : ''}`}
+              />
+              {whyNotUsefulError && <span className="voa-sales-verification-row__error" role="alert">{whyNotUsefulError}</span>}
             </div>
-          )}
+          </div>
         </div>
 
         <div className="voa-sales-verification-notes">
@@ -550,6 +612,30 @@ export const SalesVerificationSection: React.FC<SalesVerificationSectionProps> =
           </div>
         </div>
       </div>
+
+      {showCompleteSuccess && (
+        <MessageBar
+          messageBarType={MessageBarType.success}
+          className="voa-sales-verification-mandatory"
+          role="status"
+          onDismiss={() => setShowCompleteSuccess(false)}
+          dismissButtonAriaLabel="Close"
+        >
+          Sales verification task completed successfully. Returning to task list...
+        </MessageBar>
+      )}
+
+      {showQcOutcomeSuccess && (
+        <MessageBar
+          messageBarType={MessageBarType.success}
+          className="voa-sales-verification-mandatory"
+          role="status"
+          onDismiss={() => setShowQcOutcomeSuccess(false)}
+          dismissButtonAriaLabel="Close"
+        >
+          QC outcome submitted successfully. Returning to task list...
+        </MessageBar>
+      )}
 
       {actionError && (
         <MessageBar
@@ -591,13 +677,15 @@ export const SalesVerificationSection: React.FC<SalesVerificationSectionProps> =
             ariaLabel="Complete Sales Verification Task"
             className="voa-sales-verification-action-btn"
             disabled={completeTaskActionRule.disabled}
-            onClick={() => { void handleComplete(); }}
+            title={completeTaskActionRule.reason}
+            onClick={handleComplete}
           />
           <DefaultButton
             text="Submit Sales Verification Task for QC"
             ariaLabel="Submit Sales Verification Task for QC"
             className="voa-sales-verification-action-btn"
             disabled={submitForQcActionRule.disabled}
+            title={submitForQcActionRule.reason}
             onClick={() => { void handleSubmitForQc(); }}
           />
         </div>
@@ -605,7 +693,8 @@ export const SalesVerificationSection: React.FC<SalesVerificationSectionProps> =
 
       {showQcSection && (
         <section className="voa-sales-verification-qc-section" aria-label="Quality Control">
-          <Text as="h3" variant="mediumPlus" className="voa-sales-verification-qc-section__title">
+          <Text as="h3" variant="mediumPlus" className="voa-sales-verification-qc-section__title"
+            title="QC review of the caseworker's sales verification decision">
             Quality Control
           </Text>
 
@@ -623,7 +712,7 @@ export const SalesVerificationSection: React.FC<SalesVerificationSectionProps> =
           </div>
 
           <div className="voa-sales-verification-row">
-            <label htmlFor="voa-qc-outcome" className="voa-sales-verification-row__label">QC outcome</label>
+            <label htmlFor="voa-qc-outcome" className="voa-sales-verification-row__label">{renderRequiredLabel('QC outcome', true)}</label>
             <div className="voa-sales-verification-row__control">
               <Dropdown
                 id="voa-qc-outcome"
@@ -637,16 +726,16 @@ export const SalesVerificationSection: React.FC<SalesVerificationSectionProps> =
                   setQcOutcomeRemarksError(undefined);
                 }}
                 ariaLabel="QC outcome"
-                className="voa-sales-verification-row__dropdown"
+                className={`voa-sales-verification-row__dropdown${qcOutcomeSelectionError ? ' voa-sales-verification-row__dropdown--error' : ''}`}
               />
               {qcOutcomeSelectionError && (
-                <span className="voa-sales-verification-row__error">{qcOutcomeSelectionError}</span>
+                <span className="voa-sales-verification-row__error" role="alert">{qcOutcomeSelectionError}</span>
               )}
             </div>
           </div>
 
           <div className="voa-sales-verification-row voa-sales-verification-row--top">
-            <label htmlFor="voa-qc-remarks" className="voa-sales-verification-row__label">QC remarks</label>
+            <label htmlFor="voa-qc-remarks" className="voa-sales-verification-row__label">{renderRequiredLabel('QC remarks', qcOutcomeIsFail)}</label>
             <div className="voa-sales-verification-row__control">
               <TextField
                 id="voa-qc-remarks"
@@ -663,7 +752,7 @@ export const SalesVerificationSection: React.FC<SalesVerificationSectionProps> =
                   setQcOutcomeRemarksError(undefined);
                 }}
                 ariaLabel="QC remarks"
-                className="voa-sales-verification-notes__field"
+                className={`voa-sales-verification-notes__field${effectiveQcOutcomeRemarksError ? ' voa-sales-verification-notes__field--error' : ''}`}
               />
               <div className="voa-sales-verification-notes__count" aria-live="polite">
                 Character(s) remaining: {qcRemarksRemaining.toLocaleString('en-GB')}
@@ -671,21 +760,77 @@ export const SalesVerificationSection: React.FC<SalesVerificationSectionProps> =
             </div>
           </div>
 
-          <div className="voa-sales-verification-qc-section__actions">
+          <div className="voa-sales-verification-qc-section__actions" role="group" aria-label="Quality control actions">
             <DefaultButton
               text={qcSubmitButtonText}
               ariaLabel={qcSubmitButtonText}
               className="voa-sales-verification-action-btn"
               disabled={submitQcOutcomeActionRule.disabled}
               title={submitQcOutcomeActionRule.reason}
-              onClick={() => { void handleSubmitQcOutcome(); }}
+              onClick={handleSubmitQcOutcome}
             />
             {shouldShowQcRemarksRequiredMessage && (
-              <span className="voa-sales-verification-row__error">{qcRemarksRequiredMessage}</span>
+              <span className="voa-sales-verification-row__error" role="alert">{qcRemarksRequiredMessage}</span>
             )}
           </div>
         </section>
       )}
+
+      <Dialog
+        hidden={!showCompleteConfirmDialog}
+        onDismiss={handleCancelComplete}
+        dialogContentProps={{
+          type: DialogType.normal,
+          title: 'Complete Sales Verification Task',
+          subText: 'Are you sure you want to complete this task? This action cannot be undone.',
+        }}
+        modalProps={{ isBlocking: true, className: 'voa-confirm-dialog' }}
+        minWidth={480}
+        maxWidth={560}
+      >
+        <DialogFooter>
+          <PrimaryButton
+            text="Complete"
+            ariaLabel="Confirm complete sales verification task"
+            disabled={busyAction === 'complete'}
+            onClick={() => { void handleConfirmComplete(); }}
+          />
+          <DefaultButton
+            text="Cancel"
+            ariaLabel="Cancel complete sales verification task"
+            disabled={busyAction === 'complete'}
+            onClick={handleCancelComplete}
+          />
+        </DialogFooter>
+      </Dialog>
+
+      <Dialog
+        hidden={!showConfirmQcOutcomeDialog}
+        onDismiss={handleCancelQcOutcomeDialog}
+        dialogContentProps={{
+          type: DialogType.normal,
+          title: 'Submit QC Outcome',
+          subText: 'Are you sure you want to submit this QC outcome? This action cannot be undone.',
+        }}
+        modalProps={{ isBlocking: true, className: 'voa-confirm-dialog' }}
+        minWidth={480}
+        maxWidth={560}
+      >
+        <DialogFooter>
+          <PrimaryButton
+            text="Confirm"
+            ariaLabel="Confirm QC outcome submission"
+            disabled={busyAction === 'qcsubmit'}
+            onClick={() => { void handleConfirmQcOutcome(); }}
+          />
+          <DefaultButton
+            text="Cancel"
+            ariaLabel="Cancel QC outcome submission"
+            disabled={busyAction === 'qcsubmit'}
+            onClick={handleCancelQcOutcomeDialog}
+          />
+        </DialogFooter>
+      </Dialog>
 
       <Dialog
         hidden={!showSubmitForQcDialog}
@@ -695,7 +840,7 @@ export const SalesVerificationSection: React.FC<SalesVerificationSectionProps> =
           title: 'Submit Sales Verification Task for QC',
           subText: 'Remarks are mandatory before submitting this task for Quality Control.',
         }}
-        modalProps={{ isBlocking: true }}
+        modalProps={{ isBlocking: true, className: 'voa-confirm-dialog' }}
         minWidth={560}
         maxWidth={640}
       >
@@ -714,12 +859,14 @@ export const SalesVerificationSection: React.FC<SalesVerificationSectionProps> =
         />
         <DialogFooter>
           <PrimaryButton
-            text="Submit"
+            text="Submit for QC"
+            ariaLabel="Submit sales verification task for quality control"
             disabled={busyAction === 'submit'}
             onClick={() => { void handleConfirmSubmitForQc(); }}
           />
           <DefaultButton
             text="Cancel"
+            ariaLabel="Cancel submit for quality control"
             disabled={busyAction === 'submit'}
             onClick={handleCancelSubmitForQc}
           />

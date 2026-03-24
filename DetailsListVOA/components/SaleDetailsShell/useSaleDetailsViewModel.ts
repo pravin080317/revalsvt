@@ -26,6 +26,7 @@ import {
   getValue,
   getValueFromPath,
   isHttpUrl,
+  sanitizeExternalUrl,
   isTrueLike,
   mapPadConfirmationToKey,
   parseCsvCodes,
@@ -740,20 +741,10 @@ const buildSalesParticularOptions = (
 };
 
 const normalizeRelativeSharePointUrl = (url: string, siteUrl: string): string => {
-  const trimmed = url.trim();
-  if (!trimmed) {
-    return '';
-  }
-
-  if (isHttpUrl(trimmed)) {
-    return trimmed;
-  }
-
-  if (trimmed.startsWith('/') && siteUrl) {
-    return `${siteUrl.replace(/\/$/, '')}${trimmed}`;
-  }
-
-  return trimmed;
+  return sanitizeExternalUrl(url, {
+    allowRelative: true,
+    relativeBaseUrl: siteUrl,
+  });
 };
 const UK_AUDIT_DATE_TIME_PATTERN = /^(\d{1,2})\/(\d{1,2})\/(\d{4})(?:[ T](\d{1,2}):(\d{2})(?::(\d{2}))?)?$/;
 

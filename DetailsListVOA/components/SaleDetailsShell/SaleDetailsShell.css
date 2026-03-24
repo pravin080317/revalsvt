@@ -16,9 +16,10 @@
   width: 100%;
   height: 100%;
   box-sizing: border-box;
-  padding: 10px 12px 14px;
+  padding: 0 12px 14px;
   background: var(--voa-page-bg);
-  overflow: auto;
+  user-select: text;
+  -webkit-user-select: text;
 }
 
 .voa-sale-details-shell__content {
@@ -27,13 +28,18 @@
   margin: 0 auto;
 }
 
-/* ── Header (compact single row) ── */
+/* ── Header (compact single row, sticky) ── */
 .voa-sale-details-shell__header {
   display: grid;
   grid-template-columns: auto 1fr auto;
   align-items: center;
   gap: 10px;
-  margin-bottom: 8px;
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  background: var(--voa-page-bg);
+  padding: 10px 0 8px;
+  margin-bottom: 0;
 }
 
 .voa-sale-details-shell__header-btn {
@@ -125,8 +131,8 @@
   background: var(--voa-card-bg);
   border: 1px solid var(--voa-card-border);
   border-radius: 8px;
-  padding: 10px;
-  box-shadow: 0 1px 2px rgba(18, 29, 45, 0.05);
+  padding: 14px 14px 12px;
+  box-shadow: 0 1px 3px rgba(18, 29, 45, 0.06);
 }
 
 .voa-sale-details-card__header {
@@ -134,7 +140,9 @@
   align-items: center;
   justify-content: space-between;
   gap: 8px;
-  margin-bottom: 6px;
+  margin-bottom: 10px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid #e8ecf1;
 }
 
 .voa-sale-details-card__header--links {
@@ -149,6 +157,10 @@
   line-height: 1.2;
 }
 
+.voa-sale-details-card__title[title] {
+  cursor: help;
+}
+
 .voa-sale-details-card__meta {
   color: #5929a4;
   font-size: 13px;
@@ -157,22 +169,26 @@
 
 .voa-task-panel-grid {
   display: grid;
-  grid-template-columns: 1fr 1fr 1.2fr 1fr;
-  gap: 10px;
+  grid-template-columns: 1fr 1.2fr 1fr 1fr;
+  gap: 14px;
 }
 
 .voa-task-panel {
   border: 1px solid #d9e2eb;
-  border-radius: 8px;
+  border-radius: 10px;
   background: #f8fafc;
-  padding: 8px;
+  padding: 14px 16px;
 }
 
 .voa-task-panel__title {
-  margin: 0 0 6px;
+  margin: 0 0 10px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid #e4e9f0;
   color: #26303d;
-  font-size: 15px;
+  font-size: 14px;
   font-weight: 700;
+  text-align: center;
+  letter-spacing: 0.02em;
 }
 
 .voa-kvp-row {
@@ -183,33 +199,76 @@
   margin-bottom: 6px;
 }
 
+.voa-task-panel .voa-kvp-row {
+  margin-bottom: 10px;
+}
+
+.voa-task-panel .voa-kvp-row:last-child {
+  margin-bottom: 0;
+}
+
 .voa-kvp-row:last-child {
   margin-bottom: 0;
 }
 
 .voa-kvp-row__label {
   color: #4a5568;
-  font-size: 13px;
+  font-size: 12.5px;
   font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.03em;
+  text-transform: capitalize;
+  letter-spacing: 0.01em;
+  cursor: default;
+}
+
+.voa-kvp-row__label[title] {
+  cursor: help;
 }
 
 .voa-kvp-row__value {
   color: #1a202c;
   font-size: 15px;
-  font-weight: 500;
+  font-weight: 600;
 }
 
 .voa-readonly-pill {
   display: inline-flex;
   align-items: center;
+  gap: 6px;
   border: 1px solid #c6cfdd;
   border-radius: 8px;
   background: #edf2f8;
-  padding: 4px 10px;
+  padding: 5px 12px;
+  font-size: 14px;
   font-weight: 700;
   color: #1f2937;
+}
+
+.voa-copy-btn {
+  background: none;
+  border: none;
+  padding: 2px;
+  margin: 0;
+  cursor: pointer;
+  color: #5b6575;
+  font-size: 13px;
+  line-height: 1;
+  border-radius: 4px;
+  display: inline-flex;
+  align-items: center;
+  transition: color 0.15s ease;
+}
+
+.voa-copy-btn:hover {
+  color: #005ea5;
+}
+
+.voa-copy-btn:focus-visible {
+  outline: 2px solid var(--voa-focus, #005ea5);
+  outline-offset: 1px;
+}
+
+.voa-copy-btn .voa-copy-btn__tick {
+  color: #2e7d32;
 }
 
 .voa-status-badge {
@@ -218,7 +277,8 @@
   gap: 6px;
   border-radius: 999px;
   border: 1px solid transparent;
-  padding: 4px 12px;
+  padding: 5px 14px;
+  font-size: 13px;
   font-weight: 700;
 }
 
@@ -255,7 +315,7 @@
   grid-template-columns: minmax(88px, auto) 30px 1fr;
   align-items: center;
   gap: 8px;
-  margin-bottom: 8px;
+  margin-bottom: 10px;
 }
 
 .voa-ownership-row:last-child {
@@ -263,9 +323,15 @@
 }
 
 .voa-ownership-row__label {
-  color: #2d3748;
-  font-size: 15px;
-  font-weight: 700;
+  color: #4a5568;
+  font-size: 12.5px;
+  font-weight: 600;
+  text-transform: capitalize;
+  letter-spacing: 0.01em;
+}
+
+.voa-ownership-row__label[title] {
+  cursor: help;
 }
 
 .voa-avatar {
@@ -282,8 +348,9 @@
 }
 
 .voa-ownership-row__name {
-  color: var(--voa-body);
-  font-size: 15px;
+  color: #1a202c;
+  font-size: 14px;
+  font-weight: 600;
 }
 
 .voa-task-panel--actions .voa-task-actions {
@@ -293,8 +360,9 @@
 
 .voa-task-actions .ms-Button {
   width: 100%;
-  min-height: 38px;
+  min-height: 36px;
   border-radius: 8px;
+  font-size: 13px;
   font-weight: 600;
 }
 
@@ -311,9 +379,10 @@
 }
 
 .voa-task-actions__note {
-  margin-top: 8px;
-  color: #5b6575;
-  font-size: 13px;
+  margin-top: 6px;
+  color: #7b8798;
+  font-size: 11.5px;
+  font-style: italic;
 }
 
 .voa-task-panel--actions .ms-MessageBar {
@@ -400,28 +469,30 @@
 }
 
 .voa-banding-card {
-  padding: 10px 12px;
+  padding: 14px 14px 12px;
 }
 
 .voa-banding-layout {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 10px 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
 }
 
-.voa-banding-layout__column {
-  display: grid;
-  gap: 8px;
-}
-
-.voa-banding-layout .voa-kvp-row {
-  grid-template-columns: minmax(180px, 220px) minmax(0, 1fr);
+.voa-banding-layout__address .voa-kvp-row {
+  grid-template-columns: minmax(140px, 180px) minmax(0, 1fr);
+  max-width: 680px;
   margin-bottom: 0;
 }
 
-.voa-banding-layout .voa-kvp-row__label,
-.voa-banding-layout .voa-kvp-row__value {
-  font-size: 15px;
+.voa-banding-layout__grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px 32px;
+}
+
+.voa-banding-layout__grid .voa-kvp-row {
+  grid-template-columns: minmax(160px, 200px) minmax(0, 1fr);
+  margin-bottom: 0;
 }
 
 .voa-banding-layout a {
@@ -493,20 +564,28 @@
   padding-right: 10px;
 }
 
-.voa-pad-action-btn--green {
+.voa-pad-action-btn--green:not(.is-disabled) {
   background: #0d8a23;
   border-color: #0d8a23;
   color: #ffffff;
 }
 
-.voa-pad-action-btn--blue {
+.voa-pad-action-btn--blue:not(.is-disabled) {
   background: #2578c8;
   border-color: #2578c8;
   color: #ffffff;
 }
 
-.voa-pad-action-btn:hover {
+.voa-pad-action-btn:not(.is-disabled):hover {
   opacity: 0.95;
+}
+
+.voa-pad-action-btn.is-disabled,
+.voa-pad-action-btn:disabled {
+  background: #f3f2f1;
+  border-color: #c8c6c4;
+  color: #a19f9d;
+  cursor: not-allowed;
 }
 
 .voa-pad-table-wrap {
@@ -601,6 +680,14 @@
   border-radius: 999px;
 }
 
+
+.voa-pad-attribute-divider {
+  flex: 0 0 auto;
+  width: 1px;
+  height: 22px;
+  background: #c2c9d4;
+  margin: 0 4px;
+}
 
 .voa-pad-attribute-chip {
   flex: 0 0 auto;
@@ -721,12 +808,13 @@
 
 @media (max-width: 960px) {
   .voa-sale-details-shell {
-    padding: 8px;
+    padding: 0 8px 8px;
   }
 
   .voa-sale-details-shell__header {
     grid-template-columns: minmax(0, 1fr);
     gap: 8px;
+    padding: 8px 0;
   }
 
   .voa-sale-details-shell__header-btn,
@@ -739,8 +827,11 @@
   }
 
   .voa-task-panel-grid,
-  .voa-hyperlink-layout,
-  .voa-banding-layout {
+  .voa-hyperlink-layout {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .voa-banding-layout__grid {
     grid-template-columns: minmax(0, 1fr);
   }
 
@@ -757,31 +848,32 @@
 
 
 .voa-master-sale-card {
-  padding: 10px 12px 12px;
+  padding: 16px 16px 14px;
 }
 
 .voa-master-sale-card .voa-sale-details-card__title,
 .voa-source-card .voa-sale-details-card__title {
-  font-size: 17px;
+  font-size: 18px;
 }
 
 .voa-master-sale-grid {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 10px 16px;
+  gap: 12px 18px;
 }
 
 .voa-master-sale-grid__column {
   display: grid;
-  gap: 10px;
+  gap: 12px;
   align-content: start;
+  padding: 4px 6px;
 }
 
 .voa-master-sale-grid .voa-kvp-row,
 .voa-master-sale-repeat__grid .voa-kvp-row,
 .voa-source-card__column .voa-kvp-row {
-  grid-template-columns: minmax(130px, 170px) minmax(0, 1fr);
-  gap: 6px;
+  grid-template-columns: minmax(138px, 176px) minmax(0, 1fr);
+  gap: 8px;
   align-items: baseline;
   margin-bottom: 0;
 }
@@ -792,13 +884,7 @@
 .voa-master-sale-repeat__grid .voa-kvp-row__value,
 .voa-source-card__column .voa-kvp-row__label,
 .voa-source-card__column .voa-kvp-row__value {
-  font-size: 14px;
-  line-height: 1.35;
-}
-
-.voa-master-sale-grid .voa-kvp-row__value,
-.voa-master-sale-repeat__grid .voa-kvp-row__value,
-.voa-source-card__column .voa-kvp-row__value {
+  line-height: 1.4;
   color: #1f2937;
   overflow-wrap: anywhere;
 }
@@ -827,32 +913,35 @@
 }
 
 .voa-master-sale-repeat {
-  margin-top: 8px;
-  padding-top: 8px;
+  margin-top: 14px;
+  padding: 14px 16px 12px;
   border-top: 1px solid #d9e0ea;
+  border-radius: 10px;
+  background: linear-gradient(180deg, #fbfcfe 0%, #f7f9fc 100%);
 }
 
 .voa-master-sale-repeat__title {
-  margin: 0 0 6px;
+  margin: 0 0 10px;
   color: #1f2e41;
-  font-size: 16px;
+  font-size: 17px;
   font-weight: 700;
   line-height: 1.2;
+  text-align: center;
 }
 
 .voa-master-sale-repeat__grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 8px 16px;
+  gap: 10px 24px;
 }
 
 .voa-source-card {
-  padding: 10px 12px 12px;
+  padding: 16px 16px 14px;
 }
 
 .voa-source-card__header {
   align-items: center;
-  margin-bottom: 8px;
+  margin-bottom: 12px;
 }
 
 .voa-record-nav {
@@ -905,13 +994,14 @@
 .voa-source-card__grid {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 10px 16px;
+  gap: 12px 18px;
 }
 
 .voa-source-card__column {
   display: grid;
-  gap: 10px;
+  gap: 12px;
   align-content: start;
+  padding: 4px 6px;
 }
 
 .voa-source-card__column--with-action {
@@ -919,52 +1009,100 @@
 }
 
 .voa-master-status-box {
-  align-self: end;
+  align-self: stretch;
+  width: 100%;
+  box-sizing: border-box;
   border-radius: 8px;
-  padding: 6px 8px;
-  margin-top: 4px;
-  min-height: 36px;
+  padding: 0;
+  margin-top: 8px;
+  min-height: auto;
   display: flex;
   align-items: center;
   justify-content: center;
 }
 
 .voa-master-status-box--promote {
-  background: #e8f5df;
-  border: 1px solid #79a85a;
+  background: transparent;
+  border: none;
 }
 
 .voa-master-status-box--current {
-  background: #e7f0ff;
-  border: 1px solid #4b78c2;
+  justify-content: flex-start;
+  padding: 10px 14px;
+  background: linear-gradient(180deg, #f4f8ff 0%, #e8f0ff 100%);
+  border: 1px solid #9fbbe6;
+  border-left: 4px solid #1d70b8;
 }
 
 .voa-master-status-box__text {
-  color: #18407a;
-  font-size: 13px;
+  color: #123b75;
+  font-size: 13.5px;
   font-weight: 700;
+  line-height: 1.3;
 }
 
 .voa-promote-btn {
-  min-width: 180px;
-  min-height: 34px;
-  border-radius: 8px;
-  border: 1px solid #3f7e00;
-  background: #3f7e00;
+  width: 100%;
+  min-height: 38px;
+  border-radius: 6px;
+  border: 1px solid #00703c;
+  background: #00703c;
   color: #ffffff;
   font-weight: 700;
   font-size: 13px;
+  box-shadow: none;
+  background-image: none;
 }
 
-.voa-promote-btn:hover {
-  background: #336900;
-  border-color: #336900;
+.voa-promote-btn,
+.voa-promote-btn:hover,
+.voa-promote-btn:active,
+.voa-promote-btn:focus,
+.voa-promote-btn:focus-visible {
+  box-shadow: none;
+}
+
+.voa-promote-btn .ms-Button-label {
+  font-weight: 700;
+}
+
+.voa-promote-btn .ms-Button-flexContainer,
+.voa-promote-btn .ms-Button-textContainer {
+  background: transparent;
+}
+
+.voa-promote-btn::after {
+  display: none;
+}
+
+.voa-promote-btn:not(.is-disabled) {
+  background: linear-gradient(180deg, #008547 0%, #00703c 100%);
+  border-color: #00703c;
+  color: #ffffff;
+  box-shadow: 0 1px 0 rgba(11, 12, 12, 0.18), inset 0 1px 0 rgba(255, 255, 255, 0.14);
+}
+
+.voa-promote-btn:not(.is-disabled):hover {
+  background: linear-gradient(180deg, #007d43 0%, #005a30 100%);
+  border-color: #005a30;
+  color: #ffffff;
+}
+
+.voa-promote-btn:not(.is-disabled):focus-visible {
+  outline: 3px solid #ffdd00;
+  outline-offset: 2px;
+}
+
+.voa-promote-btn:not(.is-disabled):active {
+  background: #005a30;
+  border-color: #004f2a;
+  color: #ffffff;
 }
 
 .voa-promote-btn.is-disabled {
-  background: #edf1e9;
-  border-color: #d0d9c7;
-  color: #85947d;
+  background: linear-gradient(180deg, #f7f8f8 0%, #f1f3f4 100%);
+  border-color: #b1b4b6;
+  color: #6b747b;
 }
 
 @media (max-width: 1450px) {
@@ -1018,17 +1156,18 @@
 }
 
 .voa-sales-particular-card {
-  padding: 10px 12px 12px;
+  padding: 12px 14px 14px;
 }
 
 .voa-sales-particular-card .voa-sale-details-card__title {
-  font-size: 17px;
+  font-size: 18px;
 }
 
 .voa-sales-particular-layout {
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
   gap: 10px;
+  align-items: start;
 }
 
 .voa-sales-particular-form,
@@ -1036,18 +1175,38 @@
   border: 1px solid #d9e0ea;
   border-radius: 8px;
   background: #ffffff;
-  padding: 10px;
+  padding: 12px;
 }
 
 .voa-sales-particular-review {
   margin-bottom: 10px;
 }
 
+.voa-sales-particular-review--error {
+  border: 1px solid #d14343;
+  border-radius: 10px;
+  padding: 10px 12px;
+  background: #fff8f8;
+  box-shadow: 0 0 0 2px rgba(209, 67, 67, 0.08);
+}
+
 .voa-sales-particular-review .ms-Label {
   margin-bottom: 8px;
-  font-size: 14px;
+  font-size: 13px;
   font-weight: 600;
-  color: #475569;
+  color: #4a5568;
+  letter-spacing: 0.01em;
+  text-transform: capitalize;
+}
+
+.voa-sales-particular-review__label {
+  display: block;
+  margin-bottom: 8px;
+  font-size: 13px;
+  font-weight: 600;
+  color: #4a5568;
+  letter-spacing: 0.01em;
+  text-transform: capitalize;
 }
 
 .voa-sales-particular-review .ms-ChoiceFieldGroup-flexContainer {
@@ -1106,6 +1265,13 @@
   border-radius: 8px;
 }
 
+.voa-sales-particular-row__dropdown--error .ms-Dropdown-title,
+.voa-sales-particular-row__textfield--error .ms-TextField-fieldGroup {
+  border-color: #d14343;
+  box-shadow: 0 0 0 2px rgba(209, 67, 67, 0.12);
+  background: #fff8f8;
+}
+
 .voa-sales-particular-row__dropdown .ms-Dropdown-title {
   display: flex;
   align-items: center;
@@ -1134,7 +1300,7 @@
 }
 
 .voa-sales-particular-calculate {
-  margin-top: 8px;
+  margin-top: 0;
   min-width: 170px;
   min-height: 42px;
   border-radius: 10px;
@@ -1150,16 +1316,22 @@
   color: #ffffff;
 }
 
+.voa-sales-particular-actions {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 12px;
+}
+
 .voa-sales-particular-outcomes {
   display: grid;
-  gap: 10px;
+  gap: 8px;
   align-content: start;
 }
 
 .voa-sales-particular-outcomes__row {
   display: grid;
   grid-template-columns: minmax(170px, 220px) minmax(0, 1fr);
-  gap: 10px;
+  gap: 8px;
   align-items: center;
 }
 
@@ -1174,19 +1346,55 @@
   line-height: 1.35;
 }
 
+.voa-sales-particular-outcomes__label[title] {
+  cursor: help;
+  border-bottom: 1px dotted #b0b8c4;
+  width: fit-content;
+}
+
 .voa-sales-particular-outcomes__readonly .ms-TextField-fieldGroup {
-  min-height: 38px;
+  min-height: 36px;
   border-radius: 8px;
   background: #f3f4f6;
 }
 
+.voa-sales-particular-outcomes__readonly--above-average .ms-TextField-fieldGroup {
+  background: linear-gradient(180deg, #effaf3 0%, #e4f5ea 100%);
+  border-color: #7bc08f;
+}
+
+.voa-sales-particular-outcomes__readonly--above-average input {
+  color: #12653a;
+  font-weight: 700;
+}
+
+.voa-sales-particular-outcomes__readonly--average .ms-TextField-fieldGroup {
+  background: linear-gradient(180deg, #fff9e8 0%, #fff1c7 100%);
+  border-color: #e0c36d;
+}
+
+.voa-sales-particular-outcomes__readonly--average input {
+  color: #805b00;
+  font-weight: 700;
+}
+
+.voa-sales-particular-outcomes__readonly--below-average .ms-TextField-fieldGroup {
+  background: linear-gradient(180deg, #fff1f0 0%, #ffe2df 100%);
+  border-color: #dc8d84;
+}
+
+.voa-sales-particular-outcomes__readonly--below-average input {
+  color: #a1261a;
+  font-weight: 700;
+}
+
 .voa-sales-particular-outcomes__notes .ms-TextField-fieldGroup {
   border-radius: 8px;
-  min-height: 200px;
+  min-height: 156px;
 }
 
 .voa-sales-particular-outcomes__notes textarea {
-  min-height: 190px;
+  min-height: 146px;
   resize: vertical;
 }
 
@@ -1194,7 +1402,7 @@
   grid-column: 2;
   color: #6b7280;
   font-size: 14px;
-  margin-top: -2px;
+  margin-top: 0;
 }
 
 @media (max-width: 1280px) {
@@ -1215,6 +1423,10 @@
 
   .voa-sales-particular-outcomes__count {
     grid-column: 1;
+  }
+
+  .voa-sales-particular-actions {
+    justify-content: stretch;
   }
 
   .voa-sales-particular-calculate {
@@ -1384,17 +1596,18 @@
 }
 
 .voa-sales-verification-card {
-  padding: 10px 12px 12px;
+  padding: 12px 14px 14px;
 }
 
 .voa-sales-verification-card .voa-sale-details-card__title {
-  font-size: 17px;
+  font-size: 18px;
 }
 
 .voa-sales-verification-layout {
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
   gap: 10px;
+  align-items: start;
 }
 
 .voa-sales-verification-fields,
@@ -1402,32 +1615,64 @@
   border: 1px solid #d9e0ea;
   border-radius: 8px;
   background: #ffffff;
-  padding: 10px;
+  padding: 12px;
 }
 
 .voa-sales-verification-fields {
   display: grid;
-  gap: 12px;
+  gap: 10px;
   align-content: start;
 }
 
 .voa-sales-verification-row {
   display: grid;
   grid-template-columns: minmax(190px, 260px) minmax(0, 1fr);
-  gap: 10px;
+  gap: 8px;
   align-items: center;
 }
 
 .voa-sales-verification-row__label {
   color: #1f2937;
-  font-size: 16px;
+  font-size: 15px;
   font-weight: 600;
   line-height: 1.35;
 }
 
+.voa-required-marker {
+  color: #b91c1c;
+  font-weight: 700;
+}
+
+.voa-required-key {
+  display: block;
+  margin-top: 4px;
+  color: #5b6575;
+  font-size: 13px;
+  font-weight: 500;
+}
+
 .voa-sales-verification-row__dropdown .ms-Dropdown-title {
-  min-height: 38px;
+  min-height: 36px;
   border-radius: 8px;
+}
+
+.voa-sales-verification-row__dropdown--error .ms-Dropdown-title,
+.voa-sales-verification-notes__field--error .ms-TextField-fieldGroup {
+  border-color: #d14343;
+  box-shadow: 0 0 0 2px rgba(209, 67, 67, 0.12);
+  background: #fff8f8;
+}
+
+.voa-sales-verification-row__dropdown.is-disabled .ms-Dropdown-title {
+  background: #f8fafc;
+  border-color: #d9e0ea;
+  color: #5b6472;
+}
+
+.voa-sales-verification-row__dropdown.is-disabled .ms-Dropdown-caretDown,
+.voa-sales-verification-row__dropdown.is-disabled .ms-Dropdown-placeholder {
+  color: #7b8794;
+  opacity: 1;
 }
 
 .voa-sales-verification-row__control {
@@ -1475,23 +1720,24 @@
 }
 .voa-sales-verification-notes {
   display: grid;
-  gap: 8px;
+  gap: 6px;
   align-content: start;
 }
 
 .voa-sales-verification-notes__label {
   color: #1f2937;
-  font-size: 16px;
+  font-size: 15px;
   font-weight: 600;
+  text-align: center;
 }
 
 .voa-sales-verification-notes__field .ms-TextField-fieldGroup {
   border-radius: 8px;
-  min-height: 140px;
+  min-height: 126px;
 }
 
 .voa-sales-verification-notes__field textarea {
-  min-height: 130px;
+  min-height: 116px;
   resize: vertical;
 }
 
@@ -1511,16 +1757,16 @@
 }
 
 .voa-sales-verification-actions {
-  margin-top: 10px;
+  margin-top: 12px;
   display: flex;
   gap: 12px;
-  justify-content: center;
+  justify-content: flex-end;
   flex-wrap: wrap;
 }
 
 .voa-sales-verification-action-btn {
-  min-width: 280px;
-  min-height: 40px;
+  min-width: 320px;
+  min-height: 42px;
   border-radius: 8px;
   border: 1px solid #007f3f;
   background: #007f3f;
@@ -1544,6 +1790,10 @@
 @media (max-width: 1280px) {
   .voa-sales-verification-layout {
     grid-template-columns: minmax(0, 1fr);
+  }
+
+  .voa-sales-verification-actions {
+    justify-content: stretch;
   }
 
   .voa-sales-verification-action-btn {
@@ -1828,8 +2078,8 @@
 .voa-scroll-to-top {
   position: sticky;
   bottom: 12px;
-  float: right;
-  margin-top: -40px;
+  align-self: flex-end;
+  margin: 12px 12px 0 auto;
   width: 36px;
   height: 36px;
   border-radius: 50%;
@@ -1901,9 +2151,78 @@
   outline-offset: 1px;
 }
 
+/* ================================================
+   Elegant confirmation dialogs
+   ================================================ */
 
+/* Dialog card: rounded, layered shadow, navy top accent */
+.voa-confirm-dialog .ms-Dialog-main {
+  border-radius: 12px;
+  box-shadow:
+    0 2px 6px rgba(0, 0, 0, 0.07),
+    0 8px 24px rgba(0, 0, 0, 0.13),
+    0 20px 48px rgba(0, 0, 0, 0.10);
+  overflow: hidden;
+  border-top: 5px solid #1d2430;
+}
 
+/* Title */
+.voa-confirm-dialog .ms-Dialog-title {
+  font-size: 20px;
+  font-weight: 700;
+  color: #1d2430;
+  padding: 24px 48px 16px 28px;
+  line-height: 1.3;
+}
 
+/* Subtitle / subText */
+.voa-confirm-dialog .ms-Dialog-subText {
+  font-size: 14px;
+  color: #5b6575;
+  line-height: 1.6;
+  padding: 0 28px;
+  margin: 0 0 8px;
+}
+
+/* Inner content area */
+.voa-confirm-dialog .ms-Dialog-inner {
+  padding: 4px 28px 28px;
+}
+
+/* Footer button row gap */
+.voa-confirm-dialog .ms-DialogFooter-actionsRight {
+  gap: 10px;
+}
+
+/* Primary (confirm) button */
+.voa-confirm-dialog .ms-DialogFooter .ms-Button--primary {
+  background-color: #1d2430;
+  border-color: #1d2430;
+  border-radius: 6px;
+  font-weight: 600;
+  min-width: 120px;
+  height: 38px;
+}
+
+.voa-confirm-dialog .ms-DialogFooter .ms-Button--primary:hover {
+  background-color: #2b3545;
+  border-color: #2b3545;
+}
+
+/* Default (cancel) button */
+.voa-confirm-dialog .ms-DialogFooter .ms-Button--default {
+  border-radius: 6px;
+  border-color: #d8dee6;
+  color: #2b3545;
+  font-weight: 600;
+  min-width: 100px;
+  height: 38px;
+}
+
+.voa-confirm-dialog .ms-DialogFooter .ms-Button--default:hover {
+  background-color: #f4f6f8;
+  border-color: #b0bcc8;
+}
 
 
 

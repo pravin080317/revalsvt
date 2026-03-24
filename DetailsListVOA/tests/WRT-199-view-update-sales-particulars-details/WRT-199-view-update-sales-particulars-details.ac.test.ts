@@ -24,13 +24,18 @@ describe('WRT-199 View and Update Sales Particulars AC', () => {
   });
 
   test('AC2: review status is mandatory and shows exact validation message', () => {
-    expect(sectionSource).toContain("label=\"Sales Particulars\"");
+    expect(sectionSource).toContain("renderRequiredLabel('Review Status', true)");
+    expect(sectionSource).toContain("const reviewStatusLabelId = 'voa-sales-particular-review-status-label';");
+    expect(sectionSource).toContain('ariaLabelledBy={reviewStatusLabelId}');
     expect(sectionSource).toContain("{ key: 'details-available', text: 'Details available' }");
     expect(sectionSource).toContain("{ key: 'details-not-available', text: 'Details not available' }");
     expect(sectionSource).toContain("{ key: 'not-reviewed', text: 'Not reviewed' }");
     expect(sectionSource).toContain("nextErrors.reviewStatus = 'Enter the sales particulars';");
     expect(sectionSource).toContain('voa-sales-particular-review__error');
     expect(cssSource).toContain('.voa-sales-particular-review__error');
+    expect(sectionSource).toContain('voa-sales-particular-review--error');
+    expect(cssSource).toContain('.voa-sales-particular-review--error');
+    expect(sectionSource).toContain('Fields marked with * are required');
   });
 
   test('AC3: calculate is disabled for Details not available and Not reviewed', () => {
@@ -59,8 +64,13 @@ describe('WRT-199 View and Update Sales Particulars AC', () => {
     expect(sectionSource).toContain("heating: 'Select the heating'");
     expect(sectionSource).toContain("decorativeFinishes: 'Select the decorative finishes'");
     expect(rowSource).toContain('errorMessage?: string;');
+    expect(rowSource).toContain('required?: boolean;');
     expect(rowSource).toContain('voa-sales-particular-row__error');
+    expect(rowSource).toContain('voa-sales-particular-row__dropdown--error');
+    expect(rowSource).toContain('voa-visually-hidden');
+    expect(sectionSource).toContain('required={detailsAvailable}');
     expect(cssSource).toContain('.voa-sales-particular-row__error');
+    expect(cssSource).toContain('.voa-sales-particular-row__dropdown--error .ms-Dropdown-title');
     expect(cssSource).toContain('color: #b91c1c;');
     expect(cssSource).toContain('font-weight: 700;');
   });
@@ -78,6 +88,12 @@ describe('WRT-199 View and Update Sales Particulars AC', () => {
     expect(sectionSource).toContain('if (score <= 0.34) {');
     expect(sectionSource).toContain("return 'Below Average';");
     expect(sectionSource).toContain("return 'Average';");
+  });
+
+  test('AC7: scroll-to-top button is shown only after the details shell is scrolled', () => {
+    expect(shellSource).toContain('const [showScrollToTop, setShowScrollToTop] = React.useState(false);');
+    expect(shellSource).toContain('setShowScrollToTop(shell.scrollTop > 240);');
+    expect(shellSource).toContain('{showScrollToTop && (');
   });
 });
 

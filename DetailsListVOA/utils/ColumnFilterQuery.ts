@@ -20,6 +20,7 @@ const COLUMN_FILTER_FIELD_MAP: Record<string, string> = {
   reviewflags: 'reviewFlag',
   outlierratio: 'outlierRatio',
   overallflag: 'overallFlag',
+  summaryflag: 'summaryFlags',
   summaryflags: 'summaryFlags',
   taskstatus: 'taskStatus',
   assignedto: 'assignedTo',

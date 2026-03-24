@@ -64,10 +64,9 @@ namespace VOA.SVT.Plugins.CustomAPI
 
             if (string.IsNullOrWhiteSpace(qcReviewedBy))
             {
-                var fallbackId = context.InitiatingUserId != Guid.Empty
-                    ? context.InitiatingUserId
-                    : context.UserId;
-                qcReviewedBy = fallbackId == Guid.Empty ? string.Empty : fallbackId.ToString();
+                qcReviewedBy = !string.IsNullOrWhiteSpace(userContext.EntraObjectId)
+                    ? userContext.EntraObjectId
+                    : context.InitiatingUserId.ToString();
             }
 
             // 1) Read secrets/config from credential provider action

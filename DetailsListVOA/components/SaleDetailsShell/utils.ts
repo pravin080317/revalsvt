@@ -109,6 +109,43 @@ export const formatValue = (value: string): string => (value && value.trim().len
 
 export const isHttpUrl = (value: string): boolean => /^https?:\/\//i.test(value);
 
+interface ExternalUrlSanitizeOptions {
+  allowRelative?: boolean;
+  relativeBaseUrl?: string;
+}
+
+const URL_SCHEME_PATTERN = /^[a-z][a-z0-9+.-]*:/i;
+
+export const sanitizeExternalUrl = (
+  value: string,
+  options?: ExternalUrlSanitizeOptions,
+): string => {
+  const trimmed = value.trim();
+  if (!trimmed) {
+    return '';
+  }
+
+  if (isHttpUrl(trimmed)) {
+    return trimmed;
+  }
+
+  if (trimmed.startsWith('//')) {
+    return '';
+  }
+
+  const allowRelative = options?.allowRelative === true;
+  if (allowRelative && trimmed.startsWith('/')) {
+    const baseUrl = (options?.relativeBaseUrl ?? '').trim().replace(/\/$/, '');
+    return baseUrl ? `${baseUrl}${trimmed}` : '';
+  }
+
+  if (URL_SCHEME_PATTERN.test(trimmed)) {
+    return '';
+  }
+
+  return '';
+};
+
 export const toUkDate = (value: string): string => {
   if (!value) return '';
   const parsed = new Date(value);

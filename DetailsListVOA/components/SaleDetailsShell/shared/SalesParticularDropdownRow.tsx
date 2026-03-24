@@ -8,6 +8,7 @@ interface SalesParticularDropdownRowProps {
   placeholder?: string;
   options: IDropdownOption[];
   disabled?: boolean;
+  required?: boolean;
   infoTooltip?: string;
   onInfoClick?: () => void;
   errorMessage?: string;
@@ -21,13 +22,22 @@ export const SalesParticularDropdownRow: React.FC<SalesParticularDropdownRowProp
   placeholder = 'Select item',
   options,
   disabled,
+  required = false,
   infoTooltip,
   onInfoClick,
   errorMessage,
   onChange,
 }) => (
   <div className="voa-sales-particular-row">
-    <label htmlFor={id} className="voa-sales-particular-row__label">{label}</label>
+    <label htmlFor={id} className="voa-sales-particular-row__label">
+      {label}
+      {required && (
+        <>
+          <span className="voa-required-marker" aria-hidden="true"> *</span>
+          <span className="voa-visually-hidden"> (required)</span>
+        </>
+      )}
+    </label>
     <div className="voa-sales-particular-row__control">
       <div className="voa-sales-particular-row__control-wrap">
         <Dropdown
@@ -38,7 +48,7 @@ export const SalesParticularDropdownRow: React.FC<SalesParticularDropdownRowProp
           disabled={disabled}
           onChange={(_, option) => onChange((option?.key as string) ?? '')}
           ariaLabel={label}
-          className="voa-sales-particular-row__dropdown"
+          className={`voa-sales-particular-row__dropdown${errorMessage ? ' voa-sales-particular-row__dropdown--error' : ''}`}
         />
         {infoTooltip && (
           <IconButton
@@ -50,7 +60,7 @@ export const SalesParticularDropdownRow: React.FC<SalesParticularDropdownRowProp
           />
         )}
       </div>
-      {errorMessage && <span className="voa-sales-particular-row__error">{errorMessage}</span>}
+      {errorMessage && <span className="voa-sales-particular-row__error" role="alert">{errorMessage}</span>}
     </div>
   </div>
 );

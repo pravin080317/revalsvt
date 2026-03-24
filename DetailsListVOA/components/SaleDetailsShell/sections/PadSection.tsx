@@ -1,5 +1,5 @@
 import * as React from 'react';
-import { DefaultButton, Dropdown, Icon, Text } from '@fluentui/react';
+import { DefaultButton, Dropdown, Icon, Text, TooltipHost } from '@fluentui/react';
 import { PAD_CONFIRMATION_OPTIONS } from '../constants';
 import { AttributeChip } from '../types';
 import { toReadableLabel } from '../utils';
@@ -39,8 +39,8 @@ export const PadSection: React.FC<PadSectionProps> = ({
   dataEnhancementUrl = '',
   canCreateDataEnhancement = false,
 }) => {
-  const attributeChips = React.useMemo(
-    () => attributeGroups.reduce<AttributeChip[]>((all, group) => all.concat(group), []),
+  const nonEmptyGroups = React.useMemo(
+    () => attributeGroups.filter((group) => group.length > 0),
     [attributeGroups],
   );
 
@@ -48,7 +48,7 @@ export const PadSection: React.FC<PadSectionProps> = ({
     <section className="voa-sale-details-card voa-pad-card" aria-labelledby="pad-heading">
       <div className="voa-sale-details-card__header voa-pad-card__header">
         <div className="voa-pad-heading-wrap">
-          <Text as="h2" id="pad-heading" variant="large" className="voa-sale-details-card__title">
+          <Text as="h2" id="pad-heading" variant="large" className="voa-sale-details-card__title" title="Property Attribute Details — attributes from the hereditament record">
             Property Attribute Details
           </Text>
           <div className="voa-pad-top-tags">
@@ -64,20 +64,24 @@ export const PadSection: React.FC<PadSectionProps> = ({
           </div>
         </div>
         <div className="voa-pad-actions">
-          <DefaultButton
-            text="Create Data Enhancement Job"
-            ariaLabel="Create Data Enhancement Job"
-            className="voa-pad-action-btn voa-pad-action-btn--green"
-            disabled={!canCreateDataEnhancement || !dataEnhancementUrl}
-            onClick={() => { if (dataEnhancementUrl) { window.open(dataEnhancementUrl, '_blank', 'noopener,noreferrer'); } }}
-          />
-          <DefaultButton
-            text="View Hereditament"
-            ariaLabel="View Hereditament"
-            className="voa-pad-action-btn voa-pad-action-btn--blue"
-            disabled={!hereditamentUrl}
-            onClick={() => { if (hereditamentUrl) { window.open(hereditamentUrl, '_blank', 'noopener,noreferrer'); } }}
-          />
+          <TooltipHost content={!canCreateDataEnhancement ? 'Create Data Enhancement Job is not available for this task status or role.' : !dataEnhancementUrl ? 'Data enhancement URL is not configured for this record.' : undefined}>
+            <DefaultButton
+              text="Create Data Enhancement Job"
+              ariaLabel="Create Data Enhancement Job"
+              className="voa-pad-action-btn voa-pad-action-btn--green"
+              disabled={!canCreateDataEnhancement || !dataEnhancementUrl}
+              onClick={() => { if (dataEnhancementUrl) { window.open(dataEnhancementUrl, '_blank', 'noopener,noreferrer'); } }}
+            />
+          </TooltipHost>
+          <TooltipHost content={!hereditamentUrl ? 'Hereditament URL is not available for this record.' : undefined}>
+            <DefaultButton
+              text="View Hereditament"
+              ariaLabel="View Hereditament"
+              className="voa-pad-action-btn voa-pad-action-btn--blue"
+              disabled={!hereditamentUrl}
+              onClick={() => { if (hereditamentUrl) { window.open(hereditamentUrl, '_blank', 'noopener,noreferrer'); } }}
+            />
+          </TooltipHost>
         </div>
       </div>
 
@@ -90,8 +94,8 @@ export const PadSection: React.FC<PadSectionProps> = ({
               <th scope="col">Effective To</th>
               <th scope="col">Status</th>
               <th scope="col">Attributes</th>
-              <th scope="col">Value Significant Codes</th>
-              <th scope="col">Source Codes</th>
+              <th scope="col" title="Value Significant Codes — codes indicating factors that significantly affect value">Value Significant Codes</th>
+              <th scope="col" title="Source of the property attribute data">Source Codes</th>
               <th scope="col">Plot Size</th>
             </tr>
           </thead>
@@ -110,17 +114,22 @@ export const PadSection: React.FC<PadSectionProps> = ({
               </td>
               <td>
                 <div className="voa-pad-attribute-line" role="list" aria-label="Property attributes">
-                  {attributeChips.map((chip, index) => (
-                    <span
-                      key={`${chip.key}-${index}`}
-                      className={`voa-pad-attribute-chip voa-pad-attribute-chip--${chip.tone}`}
-                      title={chip.tooltip}
-                      style={chip.color ? { backgroundColor: chip.color } : undefined}
-                      aria-label={chip.tooltip ?? `${toReadableLabel(chip.key)}: ${chip.value}`}
-                      role="listitem"
-                    >
-                      {chip.value}
-                    </span>
+                  {nonEmptyGroups.map((group, groupIdx) => (
+                    <React.Fragment key={groupIdx}>
+                      {groupIdx > 0 && <span className="voa-pad-attribute-divider" aria-hidden="true" />}
+                      {group.map((chip, chipIdx) => (
+                        <span
+                          key={`${chip.key}-${chipIdx}`}
+                          className={`voa-pad-attribute-chip voa-pad-attribute-chip--${chip.tone}`}
+                          title={chip.tooltip}
+                          style={chip.color ? { backgroundColor: chip.color } : undefined}
+                          aria-label={chip.tooltip ?? `${toReadableLabel(chip.key)}: ${chip.value}`}
+                          role="listitem"
+                        >
+                          {chip.value}
+                        </span>
+                      ))}
+                    </React.Fragment>
                   ))}
                 </div>
               </td>

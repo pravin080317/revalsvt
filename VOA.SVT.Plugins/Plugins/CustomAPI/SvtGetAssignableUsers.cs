@@ -108,7 +108,7 @@ namespace VOA.SVT.Plugins.CustomAPI
 
             var qe = new QueryExpression("systemuser")
             {
-                ColumnSet = new ColumnSet("systemuserid", "firstname", "lastname", "internalemailaddress", "domainname"),
+                ColumnSet = new ColumnSet("systemuserid", "firstname", "lastname", "internalemailaddress", "domainname", "azureactivedirectoryobjectid"),
                 NoLock = true
             };
             qe.Criteria.AddCondition("isdisabled", ConditionOperator.Equal, false);
@@ -147,7 +147,7 @@ namespace VOA.SVT.Plugins.CustomAPI
 
             var qe = new QueryExpression("systemuser")
             {
-                ColumnSet = new ColumnSet("systemuserid", "firstname", "lastname", "internalemailaddress", "domainname"),
+                ColumnSet = new ColumnSet("systemuserid", "firstname", "lastname", "internalemailaddress", "domainname", "azureactivedirectoryobjectid"),
                 NoLock = true
             };
             qe.Criteria.AddCondition("isdisabled", ConditionOperator.Equal, false);
@@ -284,6 +284,9 @@ namespace VOA.SVT.Plugins.CustomAPI
                 return;
             }
 
+            var entraOid = entity.GetAttributeValue<Guid>("azureactivedirectoryobjectid");
+            var entraOidStr = entraOid != Guid.Empty ? entraOid.ToString() : id.ToString();
+
             if (!users.TryGetValue(id, out var record))
             {
                 var normalizedTeam = string.IsNullOrWhiteSpace(teamName) ? string.Empty : teamName.Trim();
@@ -296,7 +299,7 @@ namespace VOA.SVT.Plugins.CustomAPI
 
                 record = new AssignableUserRecord
                 {
-                    Id = id.ToString(),
+                    Id = entraOidStr,
                     FirstName = entity.GetAttributeValue<string>("firstname") ?? string.Empty,
                     LastName = entity.GetAttributeValue<string>("lastname") ?? string.Empty,
                     Email = email ?? string.Empty,
@@ -379,7 +382,7 @@ namespace VOA.SVT.Plugins.CustomAPI
 
         private sealed class AssignableUserRecord
         {
-            public string Id { get; set; }
+            public string Id { get; set; }  // Entra Object ID (azureactivedirectoryobjectid)
             public string FirstName { get; set; }
             public string LastName { get; set; }
             public string Email { get; set; }

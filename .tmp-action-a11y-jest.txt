@@ -1,0 +1,8 @@
+PASS DetailsListVOA/tests/WRT-308-manual-task-creation/WRT-308-manual-task-creation.ac.test.ts
+PASS DetailsListVOA/tests/WRT-400-modify-svt-task/WRT-400-modify-svt-task.ac.test.ts
+PASS DetailsListVOA/tests/WRT-205-sales-verification-complete-submit/WRT-205-sales-verification-complete-submit.ac.test.ts
+
+Test Suites: 3 passed, 3 total
+Tests:       22 passed, 22 total
+Snapshots:   0 total
+Time:        0.902 s, estimated 1 s

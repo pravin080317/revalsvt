@@ -21,10 +21,11 @@ describe('WRT-197 View Hereditament and Banding Details AC', () => {
     expect(shellSource).toContain('bandingEffectiveDate={model.bandingEffectiveDate}');
   });
 
-  test('AC2: section title and read-only field labels are present in two-column layout', () => {
+  test('AC2: section title and read-only field labels are present in structured layout', () => {
     expect(bandingSectionSource).toContain('Hereditament and Banding Details');
     expect(bandingSectionSource).toContain('<div className="voa-banding-layout">');
-    expect(bandingSectionSource).toContain('<div className="voa-banding-layout__column">');
+    expect(bandingSectionSource).toContain('<div className="voa-banding-layout__address">');
+    expect(bandingSectionSource).toContain('<div className="voa-banding-layout__grid">');
     expect(bandingSectionSource).toContain('label="Address"');
     expect(bandingSectionSource).toContain('label="Billing Authority"');
     expect(bandingSectionSource).toContain('label="Band"');

@@ -338,11 +338,15 @@ export const getSalesParticularCalculateActionRule = ({
   reviewStatusKey,
 }: SalesParticularCalculateRuleInput): ViewSaleActionRule => {
   if (readOnly) {
-    return { disabled: true };
+    return { disabled: true, reason: 'This section is read-only.' };
   }
 
-  if (reviewStatusKey === 'details-not-available' || reviewStatusKey === 'not-reviewed') {
-    return { disabled: true };
+  if (reviewStatusKey === 'details-not-available') {
+    return { disabled: true, reason: 'Calculation is not available when particulars details are not available.' };
+  }
+
+  if (reviewStatusKey === 'not-reviewed') {
+    return { disabled: true, reason: 'Sales particulars must be reviewed before calculating.' };
   }
 
   return { disabled: false };

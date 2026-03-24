@@ -47,6 +47,7 @@ interface ManagerJourneyShellProps {
   initialListYear?: string;
   onContextChange?: (args: { country: string; listYear: string }) => void;
   refreshNonce?: number;
+  entraObjectId?: string;
 }
 
 
@@ -166,6 +167,7 @@ export const ManagerJourneyShell: React.FC<ManagerJourneyShellProps> = ({
   initialListYear,
   onContextChange,
   refreshNonce,
+  entraObjectId,
 }) => {
   const initialCountryValue = React.useMemo(() => normalizeText(initialCountry), [initialCountry]);
   const initialListYearValue = React.useMemo(() => normalizeText(initialListYear), [initialListYear]);
@@ -476,6 +478,7 @@ export const ManagerJourneyShell: React.FC<ManagerJourneyShellProps> = ({
                   contextSubtitle={`${country} · ${listYear}`}
                   onEditContext={changeContext}
                   refreshNonce={refreshNonce}
+                  entraObjectId={entraObjectId}
                 />
               </div>
             </section>

@@ -83,6 +83,7 @@ export class DetailsListRuntimeController {
   private hasResolvedCaseworkerAccess = false;
   private caseworkerAccessRequest?: Promise<boolean>;
   private submitSuccessNotification?: string;
+  private _entraObjectId?: string;
 
   public init(context: ComponentFramework.Context<IInputs>, notifyOutputChanged: () => void): void {
     this._context = context;
@@ -134,6 +135,7 @@ export class DetailsListRuntimeController {
 
   public clearSubmitSuccessMessage(): void {
     this.submitSuccessNotification = undefined;
+    this._notifyOutputChanged?.();
   }
 
   public get canCreateManualTask(): boolean {
@@ -157,11 +159,22 @@ export class DetailsListRuntimeController {
   }
 
   public get activeWorkspaceName(): string {
-    return this.selectedScreenKind ?? '';
+    switch (this.selectedScreenKind) {
+      case 'managerAssign': return 'Manager Assignment';
+      case 'qcAssign': return 'QC Assignment';
+      case 'caseworkerView': return 'Caseworker View';
+      case 'qcView': return 'QC View';
+      case 'salesSearch': return 'Sales Search';
+      default: return this.selectedScreenKind ?? '';
+    }
   }
 
   public get currentUserDisplayName(): string {
     return resolveCurrentUserDisplayName(this._context);
+  }
+
+  public get entraObjectId(): string {
+    return this._entraObjectId ?? resolveCurrentUserId(this._context);
   }
 
   public syncPcfViewSalesEnabled(enabled: boolean): void {
@@ -189,6 +202,14 @@ export class DetailsListRuntimeController {
     return resolveSharePointCatalogChunks(this._context);
   }
   public getFxEnvironmentUrl(): string {
+    // Prefer host context (Model-Driven App) over input property (Canvas App).
+    const page = (this._context as unknown as { page?: { getClientUrl?: () => string } }).page;
+    if (typeof page?.getClientUrl === 'function') {
+      try {
+        const hostUrl = page.getClientUrl();
+        if (hostUrl) { return hostUrl; }
+      } catch { /* fall through to input property */ }
+    }
     const contextParams = this._context.parameters as unknown as Record<string, { raw?: string }>;
     return normalizeTextValue(contextParams.fxEnvironmentUrl?.raw);
   }
@@ -301,7 +322,7 @@ export class DetailsListRuntimeController {
       {
         saleId: normalizedSaleId,
         sourceType: 'M',
-        createdBy: resolveCurrentUserId(this._context),
+        createdBy: this.entraObjectId,
       },
       {
         operationType: resolveConfiguredApiType(
@@ -364,13 +385,15 @@ export class DetailsListRuntimeController {
       throw new Error('Task ID is invalid for modify SVT task.');
     }
 
-    const requestedBy = resolveCurrentUserId(this._context);
+    // SP expects title-case: 'Complete' or 'Complete Passed QC'
+    const taskStatusForApi = taskStatus.replace(/\b\w/g, (c) => c.toUpperCase());
+    const requestedBy = this.entraObjectId;
     const response = await executeUnboundCustomApi<unknown>(
       this._context,
       apiName,
       {
         source: 'VSRT',
-        taskStatus: 'Assigned',
+        taskStatus: taskStatusForApi,
         taskList: JSON.stringify([normalizedTaskId]),
         requestedBy,
       },
@@ -396,6 +419,10 @@ export class DetailsListRuntimeController {
       assignedDateIso,
     });
 
+    const normalizedSaleId = resolveCurrentSaleIdFromDetails(this._saleDetails, this.selectedSaleId);
+    if (normalizedSaleId) {
+      this.selectedSaleId = normalizedSaleId;
+    }
     this.selectedTaskId = normalizeTextValue(existingTaskId) || this.selectedTaskId;
     const access = this.resolveSaleDetailsAccess(this._saleDetails);
     this.saleDetailsReadOnly = access.readOnly;
@@ -404,6 +431,10 @@ export class DetailsListRuntimeController {
     this.saleDetailsCanSubmitQcOutcome = qcAccess.canSubmit;
     this.saleDetailsShowQcSection = qcAccess.showSection;
     this._notifyOutputChanged();
+
+    if (normalizedSaleId) {
+      await this.onTaskClick(this.selectedTaskId, normalizedSaleId);
+    }
   }
 
   public async handleSalesVerificationTaskAction(
@@ -431,7 +462,7 @@ export class DetailsListRuntimeController {
     }
 
     const nextSaleDetails = mergeSalesVerificationDetails(this._saleDetails, payload, type);
-    const payloadJson = this.buildSalesVerificationSubmitPayload(nextSaleDetails, resolveCurrentUserId(this._context));
+    const payloadJson = this.buildSalesVerificationSubmitPayload(nextSaleDetails, this.entraObjectId);
     const saleSubmitRemarks = normalizeTextValue(payload.remarks);
 
     const response = await executeUnboundCustomApi<unknown>(
@@ -508,7 +539,7 @@ export class DetailsListRuntimeController {
       taskId: JSON.stringify([normalizedTaskId]),
       qcOutcome: payload.qcOutcome,
       qcRemark: normalizeTextValue(payload.qcRemark),
-      qcReviewedBy: resolveCurrentUserId(this._context),
+      qcReviewedBy: this.entraObjectId,
     };
     if (ENABLE_COUNTRY_LIST_YEAR_API_PARAMS) {
       if (country) qcParams.country = country;
@@ -816,10 +847,19 @@ export class DetailsListRuntimeController {
     this.hasManagerAccess = this.hasManagerEvidence(payload);
     this.hasQaAccess = this.hasQaEvidence(payload);
     const hasCaseworker = this.hasCaseworkerEvidence(payload);
+
+    // Extract Entra Object ID from user context response
+    const root = this.toUserContextRecord(payload);
+    const entraOid = typeof root.entraObjectId === 'string' ? root.entraObjectId : '';
+    if (entraOid) {
+      this._entraObjectId = entraOid;
+    }
+
     svtDebug.log('Runtime', 'resolveCaseworkerAccess result', {
       hasCaseworker,
       hasManager: this.hasManagerAccess,
       hasQa: this.hasQaAccess,
+      entraObjectId: this._entraObjectId,
       userId: resolveCurrentUserId(this._context),
       displayName: resolveCurrentUserDisplayName(this._context),
     });
@@ -1074,6 +1114,7 @@ export class DetailsListRuntimeController {
   private resolveCurrentUserTokens(): string[] {
     const tokens = new Set<string>();
     this.addIdentityToken(tokens, resolveCurrentUserId(this._context));
+    this.addIdentityToken(tokens, this._entraObjectId);
     this.addIdentityToken(tokens, resolveCurrentUserDisplayName(this._context));
 
     const contextSettings = this._context.userSettings as { userName?: string; userDisplayName?: string } | undefined;

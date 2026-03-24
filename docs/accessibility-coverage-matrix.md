@@ -5,6 +5,7 @@ This matrix maps the current SVT List repo against the Canvas accessibility chec
 Scope note:
 - This assesses only what is implemented or documented in this repo.
 - Canvas-host configuration outside this repo is marked as partial or unverified.
+- Abbreviation guidance and checklist status: `docs/glossary/abbreviations-accessibility.md` and `docs/glossary/abbreviations-checklist-status.md`.
 
 ## Overall Assessment
 

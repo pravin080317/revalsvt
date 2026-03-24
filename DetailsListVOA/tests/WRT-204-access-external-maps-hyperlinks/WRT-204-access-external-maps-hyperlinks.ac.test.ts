@@ -29,6 +29,7 @@ describe('WRT-204 Accessing External Maps and Hyperlinks AC', () => {
     expect(viewModelSource).toContain("title: 'Rightmove'");
     expect(viewModelSource).toContain("title: 'EPC'");
     expect(hyperlinkSectionSource).toContain('Hyperlinks');
+    expect(hyperlinkSectionSource).toContain('External reference links');
   });
 
   test('AC2: VMS hyperlink uses configurable base URL, coordinates, and zoom level 13', () => {
@@ -60,6 +61,8 @@ describe('WRT-204 Accessing External Maps and Hyperlinks AC', () => {
 
     expect(linkCardSource).toContain('target="_blank"');
     expect(linkCardSource).toContain('rel="noreferrer"');
+    expect(linkCardSource).toContain('aria-label={openLabel}');
+    expect(linkCardSource).toContain('title={openLabel}');
   });
 
   test('AC4: missing link data renders disabled state with insufficient-data tooltip/message', () => {

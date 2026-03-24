@@ -21,6 +21,8 @@ describe('WRT-205 Sales Verification Complete/Submit AC', () => {
     expect(sectionSource).toContain('text="Complete Sales Verification Task"');
     expect(sectionSource).toContain('text="Submit Sales Verification Task for QC"');
     expect(sectionSource).toContain('aria-label="Sales verification actions"');
+    expect(sectionSource).toContain('title={completeTaskActionRule.reason}');
+    expect(sectionSource).toContain('title={submitForQcActionRule.reason}');
   });
 
   test('AC2: complete action uses submit API path and sets complete status merge rule', () => {
@@ -56,10 +58,17 @@ describe('WRT-205 Sales Verification Complete/Submit AC', () => {
     expect(sectionSource).toContain('showSubmitForQcDialog');
     expect(sectionSource).toContain("title: 'Submit Sales Verification Task for QC'");
     expect(sectionSource).toContain("'Remarks are mandatory before submitting this task for Quality Control.'");
+    expect(sectionSource).toContain('text="Submit for QC"');
+    expect(sectionSource).toContain('ariaLabel="Submit sales verification task for quality control"');
+    expect(sectionSource).toContain('ariaLabel="Cancel submit for quality control"');
     expect(sectionSource).toContain("setSubmitForQcRemarksError('Enter remarks before submitting for QC');");
     expect(sectionSource).toContain('remarks: normalizedRemarks,');
     expect(saleDetailsSource).toContain("if (actionType === 'submitSalesVerificationTaskForQc') {");
     expect(saleDetailsSource).toContain(": 'QC Requested';");
+  });
+
+  test('AC4b: QC action cluster is grouped and labelled for assistive technology', () => {
+    expect(sectionSource).toContain('aria-label="Quality control actions"');
   });
 
   test('AC7: complete action is disabled when status is Assigned QC Failed', () => {

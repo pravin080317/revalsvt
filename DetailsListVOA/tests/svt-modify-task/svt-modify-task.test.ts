@@ -835,7 +835,7 @@ describe('Real payload: Complete scenario (A-1000542)', () => {
     // PCF always sends 'Assigned' (reopening a completed task)
     const pcfTaskStatus = 'Assigned';
     expect(pcfTaskStatus).not.toBe(REAL_REQUEST.taskStatus);
-    // The plugin accepts any taskStatus string — there's no validation on value
+    // The plugin accepts any taskStatus string; no value-level validation is applied.
   });
 
   test('requestedBy is a valid GUID format', () => {

@@ -10,7 +10,7 @@
  * ──────────────────────────────────────────────────────────────────
  *  PCF (DetailsListRuntimeController)
  *    → modifySvtTask()
- *    → Builds payload: { source: 'VSRT', taskStatus: 'Assigned',
+ *    → Builds payload: { source: 'VSRT', taskStatus: '<current status>',
  *        taskList: JSON.stringify([normalizedTaskId]), requestedBy }
  *    → executeUnboundCustomApi("voa_SvtModifyTask", payload)
  *
@@ -47,8 +47,9 @@ export interface SvtModifyTaskRequest {
   source: string;
 
   /**
-   * Target task status.
-   * PCF always sends `'Assigned'` (reopening a completed task).
+   * Current task status — PCF resolves this from the loaded sale-details JSON
+   * and sends it as-is (e.g. `'complete'`, `'complete passed qc'`).
+   * The API/DB uses this value to validate the transition and assign the task.
    * Required by the plugin.
    */
   taskStatus: string;

@@ -48,6 +48,7 @@ const salesLookupFields = new Set<string>([
   'dwellingtype',
   'assignedto',
   'qcassignedto',
+  'summaryflag',
   'summaryflags',
 ]);
 
@@ -86,8 +87,20 @@ const SALES_COLUMN_FILTERS: Record<string, ColumnFilterConfig> = {
       'Remove',
     ],
   },
-  summaryflag: { control: 'textContains', minLength: 2 },
-  summaryflags: { control: 'textContains', minLength: 2 },
+  summaryflag: {
+    control: 'multiSelect',
+    optionFields: ['summaryflags', 'summaryflag'],
+    selectAllValues: ['ALL'],
+    multiLimit: 3,
+    minLength: 1,
+  },
+  summaryflags: {
+    control: 'multiSelect',
+    optionFields: ['summaryflags', 'summaryflag'],
+    selectAllValues: ['ALL'],
+    multiLimit: 3,
+    minLength: 1,
+  },
   taskstatus: { control: 'multiSelect', optionFields: ['taskstatus', 'status', 'statuscode'], selectAllValues: ['ALL'], minLength: 1 },
   assignedto: { control: 'singleSelect', optionFields: ['assignedto'], minLength: 1 },
   assigneddate: { control: 'dateRange', minLength: 1 },
