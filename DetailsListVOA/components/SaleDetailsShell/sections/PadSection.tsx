@@ -16,6 +16,7 @@ interface PadSectionProps {
   sourceCodes: string[];
   padConfirmationKey?: string;
   onPadConfirmationChange: (nextKey?: string) => void;
+  padConfirmationError?: string;
   readOnly?: boolean;
   hereditamentUrl?: string;
   dataEnhancementUrl?: string;
@@ -34,6 +35,7 @@ export const PadSection: React.FC<PadSectionProps> = ({
   sourceCodes,
   padConfirmationKey,
   onPadConfirmationChange,
+  padConfirmationError,
   readOnly = false,
   hereditamentUrl = '',
   dataEnhancementUrl = '',
@@ -159,16 +161,21 @@ export const PadSection: React.FC<PadSectionProps> = ({
 
       <div className="voa-pad-confirmation">
         <label htmlFor="voa-pad-confirmation" className="voa-pad-confirmation__label">PAD Confirmation</label>
-        <Dropdown
-          id="voa-pad-confirmation"
-          placeholder="Select an option"
-          options={PAD_CONFIRMATION_OPTIONS}
-          selectedKey={padConfirmationKey}
-          onChange={(_, option) => onPadConfirmationChange(option?.key as string | undefined)}
-          disabled={readOnly}
-          ariaLabel="PAD Confirmation"
-          className="voa-pad-confirmation__dropdown"
-        />
+        <div className="voa-pad-confirmation__control">
+          <Dropdown
+            id="voa-pad-confirmation"
+            placeholder="Select an option"
+            options={PAD_CONFIRMATION_OPTIONS}
+            selectedKey={padConfirmationKey}
+            onChange={(_, option) => onPadConfirmationChange(option?.key as string | undefined)}
+            disabled={readOnly}
+            ariaLabel="PAD Confirmation"
+            className={`voa-pad-confirmation__dropdown${padConfirmationError ? ' voa-pad-confirmation__dropdown--error' : ''}`}
+          />
+          {padConfirmationError && (
+            <span className="voa-pad-confirmation__error" role="alert">{padConfirmationError}</span>
+          )}
+        </div>
       </div>
     </section>
   );

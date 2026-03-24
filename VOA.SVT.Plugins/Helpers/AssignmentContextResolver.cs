@@ -61,9 +61,12 @@ namespace VOA.SVT.Plugins.Helpers
             switch (context)
             {
                 case AssignmentContext.Manager:
-                    return new[] { UserContextConfig.TeamNameSvtUser };
+                    return UserContextConfig.TeamNamesSvtUser;
                 case AssignmentContext.Qa:
-                    return new[] { UserContextConfig.TeamNameSvtQa, UserContextConfig.TeamNameSvtUser };
+                    return UserContextConfig.TeamNamesSvtQa
+                        .Concat(UserContextConfig.TeamNamesSvtUser)
+                        .Distinct(StringComparer.OrdinalIgnoreCase)
+                        .ToArray();
                 default:
                     return Array.Empty<string>();
             }

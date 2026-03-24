@@ -17,7 +17,9 @@ describe('WRT-199 View and Update Sales Particulars AC', () => {
 
   test('AC1: Sales Particulars section is visible under HM Land Registry Price Paid Data and before Sales Verification', () => {
     expect(shellSource).toContain('<LrppdSection');
-    expect(shellSource).toContain('<SalesParticularSection model={model.salesParticular} onOpenReference={openReferenceModal} readOnly={readOnly || sectionsDisabled} onDraftChange={setSalesParticularDraft} />');
+    expect(shellSource).toContain('<SalesParticularSection model={model.salesParticular}');
+    expect(shellSource).toContain('externalFieldErrors={salesParticularFieldErrors}');
+    expect(shellSource).toContain('externalReviewStatusError={salesParticularReviewStatusError}');
     expect(shellSource).toContain('<SalesVerificationSection');
     expect(shellSource.indexOf('<LrppdSection')).toBeLessThan(shellSource.indexOf('<SalesParticularSection'));
     expect(shellSource.indexOf('<SalesParticularSection')).toBeLessThan(shellSource.indexOf('<SalesVerificationSection'));
@@ -41,7 +43,8 @@ describe('WRT-199 View and Update Sales Particulars AC', () => {
   test('AC3: calculate is disabled for Details not available and Not reviewed', () => {
     expect(sectionSource).toContain('getSalesParticularCalculateActionRule({ readOnly, reviewStatusKey })');
     expect(sectionSource).toContain('const canCalculate = !calculateActionRule.disabled;');
-    expect(rulesSource).toContain("reviewStatusKey === 'details-not-available' || reviewStatusKey === 'not-reviewed'");
+    expect(rulesSource).toContain("if (reviewStatusKey === 'details-not-available') {");
+    expect(rulesSource).toContain("if (reviewStatusKey === 'not-reviewed') {");
   });
 
   test('AC4: dropdown values and scoring are sourced from Dataverse scoring rows, not hardcoded UI constants', () => {
@@ -64,11 +67,14 @@ describe('WRT-199 View and Update Sales Particulars AC', () => {
     expect(sectionSource).toContain("heating: 'Select the heating'");
     expect(sectionSource).toContain("decorativeFinishes: 'Select the decorative finishes'");
     expect(rowSource).toContain('errorMessage?: string;');
+    expect(rowSource).toContain('infoDisabled?: boolean;');
     expect(rowSource).toContain('required?: boolean;');
+    expect(rowSource).toContain('disabled={infoDisabled || !onInfoClick}');
     expect(rowSource).toContain('voa-sales-particular-row__error');
     expect(rowSource).toContain('voa-sales-particular-row__dropdown--error');
     expect(rowSource).toContain('voa-visually-hidden');
     expect(sectionSource).toContain('required={detailsAvailable}');
+    expect(sectionSource).toContain('infoDisabled={!canEditInputs}');
     expect(cssSource).toContain('.voa-sales-particular-row__error');
     expect(cssSource).toContain('.voa-sales-particular-row__dropdown--error .ms-Dropdown-title');
     expect(cssSource).toContain('color: #b91c1c;');

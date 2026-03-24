@@ -64,7 +64,9 @@ describe('WRT-366 View Sales Record through Quality Control Assignment AC', () =
     expect(shellSource).toContain('<MasterSaleSection');
     expect(shellSource).toContain('<WlttSection');
     expect(shellSource).toContain('<LrppdSection');
-    expect(shellSource).toContain('<SalesParticularSection model={model.salesParticular} onOpenReference={openReferenceModal} readOnly={readOnly || sectionsDisabled} onDraftChange={setSalesParticularDraft} />');
+    expect(shellSource).toContain('<SalesParticularSection model={model.salesParticular}');
+    expect(shellSource).toContain('externalFieldErrors={salesParticularFieldErrors}');
+    expect(shellSource).toContain('externalReviewStatusError={salesParticularReviewStatusError}');
     expect(shellSource).toContain('<SalesVerificationSection');
     expect(padSectionSource).toContain('text="Create Data Enhancement Job"');
     expect(padSectionSource).toContain('ariaLabel="Create Data Enhancement Job"');

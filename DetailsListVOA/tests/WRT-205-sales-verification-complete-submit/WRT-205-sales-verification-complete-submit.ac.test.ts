@@ -12,6 +12,7 @@ describe('WRT-205 Sales Verification Complete/Submit AC', () => {
   const sectionSource = readRepoFile('DetailsListVOA/components/SaleDetailsShell/sections/SalesVerificationSection.tsx');
   const taskSectionSource = readRepoFile('DetailsListVOA/components/SaleDetailsShell/sections/SalesVerificationTaskSection.tsx');
   const rulesSource = readRepoFile('DetailsListVOA/components/SaleDetailsShell/rules/ViewSaleActionRules.ts');
+  const cssSource = readRepoFile('DetailsListVOA/components/SaleDetailsShell/SaleDetailsShell.css');
   const runtimeSource = readRepoFile('DetailsListVOA/services/DetailsListRuntimeController.ts');
   const saleDetailsSource = readRepoFile('DetailsListVOA/services/runtime/sale-details.ts');
   const viewModelSource = readRepoFile('DetailsListVOA/components/SaleDetailsShell/useSaleDetailsViewModel.ts');
@@ -37,11 +38,15 @@ describe('WRT-205 Sales Verification Complete/Submit AC', () => {
 
   test('AC3: mandatory validation prompt and required field checks are enforced before complete/submit', () => {
     expect(sectionSource).toContain('Please complete the following mandatory fields');
-    expect(sectionSource).toContain("'Select whether the sale is useful or not'");
-    expect(sectionSource).toContain("'Enter why the sale is not useful'");
-    expect(sectionSource).toContain('const SALES_PARTICULAR_REQUIRED_FIELDS');
-    expect(sectionSource).toContain("'Sales Particulars: Enter the sales particulars'");
-    expect(sectionSource).toContain("'Property Attribute Details: Select PAD confirmation'");
+    expect(rulesSource).toContain("saleUseful: 'Select whether the sale is useful or not'");
+    expect(rulesSource).toContain("whyNotUseful: 'Enter why the sale is not useful'");
+    expect(rulesSource).toContain('SALES_PARTICULAR_EDITABLE_MANDATORY_FIELD_RULES');
+    expect(rulesSource).toContain("salesParticularReviewStatus: 'Enter the sales particulars'");
+    expect(rulesSource).toContain("padConfirmation: 'Select PAD confirmation'");
+    expect(sectionSource).toContain('getSalesVerificationMandatoryValidation({');
+    expect(shellSource).toContain('onCrossSectionValidationChange={handleCrossSectionValidationChange}');
+    expect(sectionSource).toContain('const SECTION_ERROR_HIGHLIGHT_CLASS = \'voa-section-error-highlight\';');
+    expect(cssSource).toContain('.voa-section-error-highlight > .voa-sale-details-card');
   });
 
 
@@ -63,6 +68,7 @@ describe('WRT-205 Sales Verification Complete/Submit AC', () => {
     expect(sectionSource).toContain('ariaLabel="Cancel submit for quality control"');
     expect(sectionSource).toContain("setSubmitForQcRemarksError('Enter remarks before submitting for QC');");
     expect(sectionSource).toContain('remarks: normalizedRemarks,');
+    expect(sectionSource).toContain('if (!validate()) {');
     expect(saleDetailsSource).toContain("if (actionType === 'submitSalesVerificationTaskForQc') {");
     expect(saleDetailsSource).toContain(": 'QC Requested';");
   });

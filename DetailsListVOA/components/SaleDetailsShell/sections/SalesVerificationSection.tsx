@@ -20,8 +20,10 @@ import {
   SalesVerificationViewModel,
 } from '../types';
 import {
+  getSalesVerificationMandatoryValidation,
   getCompleteSalesVerificationTaskActionRule,
   getSalesVerificationEditRule,
+  SALES_PARTICULAR_EDITABLE_MANDATORY_FIELD_RULES,
   getSubmitForQcActionRule,
   getSubmitQcOutcomeActionRule,
 } from '../rules/ViewSaleActionRules';
@@ -42,6 +44,11 @@ interface SalesVerificationSectionProps {
   isQcView?: boolean;
   qcAssignedTo?: string;
   currentUserDisplayName?: string;
+  onCrossSectionValidationChange?: (errors: {
+    salesParticularReviewStatusError?: string;
+    salesParticularFieldErrors: Partial<Record<keyof SalesParticularDraftPayload, string>>;
+    padConfirmationError?: string;
+  }) => void;
 }
 
 const USEFUL_OPTIONS: IDropdownOption[] = [
@@ -102,16 +109,10 @@ const resolveQcSubmitButtonText = (outcomeKey?: string): string => {
   return 'Submit QC outcome';
 };
 
-const SALES_PARTICULAR_REQUIRED_FIELDS: { key: keyof SalesParticularDraftPayload; message: string }[] = [
-  { key: 'kitchenAge', message: 'Select the kitchen age' },
-  { key: 'kitchenSpecification', message: 'Select the kitchen spec' },
-  { key: 'bathroomAge', message: 'Select the bathroom age' },
-  { key: 'bathroomSpecification', message: 'Select the bathroom spec' },
-  { key: 'glazing', message: 'Select the glazing' },
-  { key: 'heating', message: 'Select the heating' },
-  { key: 'decorativeFinishes', message: 'Select the decorative finishes' },
-  { key: 'conditionScore', message: 'Calculate the condition score' },
-];
+const SECTION_ERROR_HIGHLIGHT_CLASS = 'voa-section-error-highlight';
+const SECTION_PARTICULARS_ID = 'section-particulars';
+const SECTION_PAD_ID = 'section-pad';
+const SECTION_VERIFICATION_ID = 'section-verification';
 
 const trimValue = (value: string | undefined): string => (value ?? '').trim();
 
@@ -200,6 +201,7 @@ export const SalesVerificationSection: React.FC<SalesVerificationSectionProps> =
   isQcView = false,
   qcAssignedTo = '',
   currentUserDisplayName = '',
+  onCrossSectionValidationChange,
 }) => {
   const [isSaleUsefulKey, setIsSaleUsefulKey] = React.useState<string | undefined>(toUsefulKey(model.isSaleUseful));
   const [whyNotUsefulKey, setWhyNotUsefulKey] = React.useState<string | undefined>(toWhyKey(model.whyNotUseful) ?? (model.whyNotUseful || undefined));
@@ -221,6 +223,14 @@ export const SalesVerificationSection: React.FC<SalesVerificationSectionProps> =
   const [showQcOutcomeSuccess, setShowQcOutcomeSuccess] = React.useState(false);
   const [showCompleteConfirmDialog, setShowCompleteConfirmDialog] = React.useState(false);
 
+  const clearCrossSectionFieldErrors = React.useCallback(() => {
+    onCrossSectionValidationChange?.({
+      salesParticularReviewStatusError: undefined,
+      salesParticularFieldErrors: {},
+      padConfirmationError: undefined,
+    });
+  }, [onCrossSectionValidationChange]);
+
   React.useEffect(() => {
     setIsSaleUsefulKey(toUsefulKey(model.isSaleUseful));
     setWhyNotUsefulKey(toWhyKey(model.whyNotUseful) ?? (model.whyNotUseful || undefined));
@@ -239,13 +249,15 @@ export const SalesVerificationSection: React.FC<SalesVerificationSectionProps> =
     setShowConfirmQcOutcomeDialog(false);
     setShowQcOutcomeSuccess(false);
     setShowCompleteConfirmDialog(false);
-  }, [model]);
+    clearCrossSectionFieldErrors();
+  }, [clearCrossSectionFieldErrors, model]);
 
   // Also clear mandatory errors when cross-section props change (fixes stale
   // "select the value" errors after Submit for QC → OK → refresh → resubmit).
   React.useEffect(() => {
     setMandatoryErrorMessages([]);
-  }, [salesParticularModel, padConfirmationKey]);
+    clearCrossSectionFieldErrors();
+  }, [clearCrossSectionFieldErrors, salesParticularModel, padConfirmationKey]);
 
   const isNotUseful = isSaleUsefulKey === 'no';
   const maxNotesLength = 2000;
@@ -315,49 +327,40 @@ export const SalesVerificationSection: React.FC<SalesVerificationSectionProps> =
   );
   const editingDisabled = salesVerificationEditRule.disabled;
 
-  const collectCrossSectionMandatoryErrors = React.useCallback((): string[] => {
-    const nextErrors: string[] = [];
-
-    if (!salesParticularModel.reviewStatusKey) {
-      nextErrors.push('Sales Particulars: Enter the sales particulars');
-    }
-
-    if (salesParticularModel.reviewStatusKey === 'details-available') {
-      SALES_PARTICULAR_REQUIRED_FIELDS.forEach(({ key, message }) => {
-        if (!trimValue(salesParticularModel[key])) {
-          nextErrors.push(`Sales Particulars: ${message}`);
-        }
-      });
-    }
-
-    if (isSaleUsefulKey === 'yes' && !trimValue(padConfirmationKey)) {
-      nextErrors.push('Property Attribute Details: Select PAD confirmation');
-    }
-
-    return nextErrors;
-  }, [isSaleUsefulKey, padConfirmationKey, salesParticularModel]);
-
   const validate = React.useCallback((): boolean => {
-    const nextSaleUsefulError = !isSaleUsefulKey
-      ? 'Select whether the sale is useful or not'
-      : undefined;
-    const nextWhyNotUsefulError = isSaleUsefulKey === 'no' && !whyNotUsefulKey
-      ? 'Enter why the sale is not useful'
-      : undefined;
+    const validation = getSalesVerificationMandatoryValidation({
+      isSaleUsefulKey,
+      whyNotUsefulKey,
+      padConfirmationKey,
+      salesParticularModel,
+    });
 
-    const crossSectionErrors = collectCrossSectionMandatoryErrors();
-    const allErrors = [
-      nextSaleUsefulError,
-      nextWhyNotUsefulError,
-      ...crossSectionErrors,
-    ].filter((value): value is string => Boolean(value));
+    setIsSaleUsefulError(validation.saleUsefulError);
+    setWhyNotUsefulError(validation.whyNotUsefulError);
+    setMandatoryErrorMessages(validation.mandatoryMessages);
 
-    setIsSaleUsefulError(nextSaleUsefulError);
-    setWhyNotUsefulError(nextWhyNotUsefulError);
-    setMandatoryErrorMessages(allErrors);
+    const crossSectionFieldErrors: Partial<Record<keyof SalesParticularDraftPayload, string>> = {};
+    SALES_PARTICULAR_EDITABLE_MANDATORY_FIELD_RULES.forEach(({ key }) => {
+      const error = validation.salesParticularFieldErrors[key];
+      if (error) {
+        crossSectionFieldErrors[key] = error;
+      }
+    });
 
-    return allErrors.length === 0;
-  }, [collectCrossSectionMandatoryErrors, isSaleUsefulKey, whyNotUsefulKey]);
+    onCrossSectionValidationChange?.({
+      salesParticularReviewStatusError: validation.salesParticularReviewStatusError,
+      salesParticularFieldErrors: crossSectionFieldErrors,
+      padConfirmationError: validation.padConfirmationError,
+    });
+
+    return validation.mandatoryMessages.length === 0;
+  }, [
+    isSaleUsefulKey,
+    whyNotUsefulKey,
+    onCrossSectionValidationChange,
+    padConfirmationKey,
+    salesParticularModel,
+  ]);
 
   const handleComplete = React.useCallback(() => {
     if (!onCompleteTask || completeTaskActionRule.disabled) {
@@ -373,6 +376,12 @@ export const SalesVerificationSection: React.FC<SalesVerificationSectionProps> =
     if (!onCompleteTask || completeTaskActionRule.disabled) {
       return;
     }
+
+    if (!validate()) {
+      setShowCompleteConfirmDialog(false);
+      return;
+    }
+
     setShowCompleteConfirmDialog(false);
     setActionError(undefined);
     setShowCompleteSuccess(false);
@@ -382,13 +391,14 @@ export const SalesVerificationSection: React.FC<SalesVerificationSectionProps> =
       setMandatoryErrorMessages([]);
       setIsSaleUsefulError(undefined);
       setWhyNotUsefulError(undefined);
+      clearCrossSectionFieldErrors();
       setShowCompleteSuccess(true);
     } catch (err) {
       setActionError(err instanceof Error ? err.message : 'Failed to complete sales verification task.');
     } finally {
       setBusyAction(undefined);
     }
-  }, [completeTaskActionRule.disabled, onCompleteTask, payload]);
+  }, [clearCrossSectionFieldErrors, completeTaskActionRule.disabled, onCompleteTask, payload, validate]);
 
   const handleCancelComplete = React.useCallback(() => {
     if (busyAction === 'complete') {
@@ -423,6 +433,11 @@ export const SalesVerificationSection: React.FC<SalesVerificationSectionProps> =
       return;
     }
 
+    if (!validate()) {
+      setShowSubmitForQcDialog(false);
+      return;
+    }
+
     const normalizedRemarks = qcRemarks.trim();
     if (!normalizedRemarks) {
       setSubmitForQcRemarksError('Enter remarks before submitting for QC');
@@ -441,12 +456,50 @@ export const SalesVerificationSection: React.FC<SalesVerificationSectionProps> =
       setMandatoryErrorMessages([]);
       setIsSaleUsefulError(undefined);
       setWhyNotUsefulError(undefined);
+      clearCrossSectionFieldErrors();
     } catch (err) {
       setActionError(err instanceof Error ? err.message : 'Failed to submit sales verification task for QC.');
     } finally {
       setBusyAction(undefined);
     }
-  }, [onSubmitForQc, payload, qcRemarks, submitForQcActionRule.disabled]);
+  }, [clearCrossSectionFieldErrors, onSubmitForQc, payload, qcRemarks, submitForQcActionRule.disabled, validate]);
+
+  React.useEffect(() => {
+    const highlightedSections = new Set<string>();
+
+    if (mandatoryErrorMessages.some((error) => error.startsWith('Sales Particulars:'))) {
+      highlightedSections.add(SECTION_PARTICULARS_ID);
+    }
+
+    if (mandatoryErrorMessages.some((error) => error.startsWith('Property Attribute Details:'))) {
+      highlightedSections.add(SECTION_PAD_ID);
+    }
+
+    if (isSaleUsefulError || whyNotUsefulError) {
+      highlightedSections.add(SECTION_VERIFICATION_ID);
+    }
+
+    const sectionIds = [SECTION_PARTICULARS_ID, SECTION_PAD_ID, SECTION_VERIFICATION_ID];
+    sectionIds.forEach((sectionId) => {
+      const section = document.getElementById(sectionId);
+      if (!section) {
+        return;
+      }
+
+      if (highlightedSections.has(sectionId)) {
+        section.classList.add(SECTION_ERROR_HIGHLIGHT_CLASS);
+      } else {
+        section.classList.remove(SECTION_ERROR_HIGHLIGHT_CLASS);
+      }
+    });
+
+    return () => {
+      sectionIds.forEach((sectionId) => {
+        const section = document.getElementById(sectionId);
+        section?.classList.remove(SECTION_ERROR_HIGHLIGHT_CLASS);
+      });
+    };
+  }, [isSaleUsefulError, mandatoryErrorMessages, whyNotUsefulError]);
 
 
   const handleSubmitQcOutcome = React.useCallback(() => {
@@ -559,6 +612,7 @@ export const SalesVerificationSection: React.FC<SalesVerificationSectionProps> =
                   setIsSaleUsefulKey(nextKey);
                   setIsSaleUsefulError(undefined);
                   setMandatoryErrorMessages([]);
+                  clearCrossSectionFieldErrors();
                   if (nextKey !== 'no') {
                     setWhyNotUsefulKey(undefined);
                     setWhyNotUsefulError(undefined);
@@ -584,6 +638,7 @@ export const SalesVerificationSection: React.FC<SalesVerificationSectionProps> =
                   setWhyNotUsefulKey(option?.key as string | undefined);
                   setWhyNotUsefulError(undefined);
                   setMandatoryErrorMessages([]);
+                  clearCrossSectionFieldErrors();
                 }}
                 ariaLabel="Why is the sale not useful"
                 className={`voa-sales-verification-row__dropdown${whyNotUsefulError ? ' voa-sales-verification-row__dropdown--error' : ''}`}

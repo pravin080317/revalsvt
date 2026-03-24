@@ -10,11 +10,14 @@ function readRepoFile(relativePath: string): string {
 describe('WRT-198 View and Update Sales Verification Details AC', () => {
   const shellSource = readRepoFile('DetailsListVOA/components/SaleDetailsShell/SaleDetailsShell.tsx');
   const sectionSource = readRepoFile('DetailsListVOA/components/SaleDetailsShell/sections/SalesVerificationSection.tsx');
+  const rulesSource = readRepoFile('DetailsListVOA/components/SaleDetailsShell/rules/ViewSaleActionRules.ts');
   const cssSource = readRepoFile('DetailsListVOA/components/SaleDetailsShell/SaleDetailsShell.css');
   const runtimeSource = readRepoFile('DetailsListVOA/services/DetailsListRuntimeController.ts');
 
   test('AC1: Sales Verification section is present and ordered after Sales Particulars', () => {
-    expect(shellSource).toContain('<SalesParticularSection model={model.salesParticular} onOpenReference={openReferenceModal} readOnly={readOnly || sectionsDisabled} onDraftChange={setSalesParticularDraft} />');
+    expect(shellSource).toContain('<SalesParticularSection model={model.salesParticular}');
+    expect(shellSource).toContain('externalFieldErrors={salesParticularFieldErrors}');
+    expect(shellSource).toContain('externalReviewStatusError={salesParticularReviewStatusError}');
     expect(shellSource).toContain('<SalesVerificationSection');
     expect(shellSource.indexOf('<SalesParticularSection')).toBeLessThan(shellSource.indexOf('<SalesVerificationSection'));
     expect(sectionSource).toContain('Sales Verification');
@@ -24,7 +27,7 @@ describe('WRT-198 View and Update Sales Verification Details AC', () => {
     expect(sectionSource).toContain("{ key: 'yes', text: 'Yes' }");
     expect(sectionSource).toContain("{ key: 'no', text: 'No' }");
     expect(sectionSource).toContain('placeholder="Select whether the sale is useful"');
-    expect(sectionSource).toContain("'Select whether the sale is useful or not'");
+    expect(rulesSource).toContain("saleUseful: 'Select whether the sale is useful or not'");
     expect(sectionSource).toContain("renderRequiredLabel('Is this sale useful?', true)");
     expect(sectionSource).toContain('Fields marked with * are required');
     expect(sectionSource).toContain('voa-visually-hidden');
@@ -34,7 +37,7 @@ describe('WRT-198 View and Update Sales Verification Details AC', () => {
     expect(sectionSource).toContain("const isNotUseful = isSaleUsefulKey === 'no';");
     expect(sectionSource).toContain('placeholder="Select why the sale is not useful"');
     expect(sectionSource).toContain('disabled={editingDisabled || !isNotUseful}');
-    expect(sectionSource).toContain("'Enter why the sale is not useful'");
+    expect(rulesSource).toContain("whyNotUseful: 'Enter why the sale is not useful'");
     expect(sectionSource).toContain("renderRequiredLabel('Why is the sale not useful?', isNotUseful)");
 
     const orderedReasons = [

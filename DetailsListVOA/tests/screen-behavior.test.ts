@@ -17,7 +17,9 @@ const makeFilters = (overrides: Partial<GridFilterState>): GridFilterState => ({
 describe('screen behavior', () => {
   test('resolveAssignmentScreenName returns canonical names', () => {
     expect(resolveAssignmentScreenName('Any', 'managerAssign')).toBe('manager assignment');
+    expect(resolveAssignmentScreenName('Any', 'caseworkerView')).toBe('manager assignment');
     expect(resolveAssignmentScreenName('Any', 'qcAssign')).toBe('quality control assignment');
+    expect(resolveAssignmentScreenName('Any', 'qcView')).toBe('quality control assignment');
   });
 
   test('resolveAssignmentScreenName trims for non-assignment screens', () => {

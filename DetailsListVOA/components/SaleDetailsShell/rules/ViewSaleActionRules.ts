@@ -1,4 +1,8 @@
-import { SalesParticularReviewStatus } from '../types';
+import {
+  SalesParticularAttributeKey,
+  SalesParticularDraftPayload,
+  SalesParticularReviewStatus,
+} from '../types';
 
 export interface ViewSaleActionRule {
   disabled: boolean;
@@ -66,6 +70,99 @@ export interface SalesParticularCalculateRuleInput {
   readOnly: boolean;
   reviewStatusKey?: SalesParticularReviewStatus;
 }
+
+export interface SalesVerificationMandatoryValidationInput {
+  isSaleUsefulKey?: string;
+  whyNotUsefulKey?: string;
+  padConfirmationKey?: string;
+  salesParticularModel: SalesParticularDraftPayload;
+}
+
+export interface SalesVerificationMandatoryValidationResult {
+  saleUsefulError?: string;
+  whyNotUsefulError?: string;
+  salesParticularReviewStatusError?: string;
+  salesParticularFieldErrors: Partial<Record<SalesParticularAttributeKey, string>>;
+  padConfirmationError?: string;
+  mandatoryMessages: string[];
+}
+
+export const SALES_VERIFICATION_MANDATORY_MESSAGES = {
+  saleUseful: 'Select whether the sale is useful or not',
+  whyNotUseful: 'Enter why the sale is not useful',
+  salesParticularReviewStatus: 'Enter the sales particulars',
+  padConfirmation: 'Select PAD confirmation',
+  conditionScore: 'Calculate the condition score',
+} as const;
+
+export const SALES_PARTICULAR_EDITABLE_MANDATORY_FIELD_RULES: readonly {
+  key: SalesParticularAttributeKey;
+  message: string;
+}[] = [
+  { key: 'kitchenAge', message: 'Select the kitchen age' },
+  { key: 'kitchenSpecification', message: 'Select the kitchen spec' },
+  { key: 'bathroomAge', message: 'Select the bathroom age' },
+  { key: 'bathroomSpecification', message: 'Select the bathroom spec' },
+  { key: 'glazing', message: 'Select the glazing' },
+  { key: 'heating', message: 'Select the heating' },
+  { key: 'decorativeFinishes', message: 'Select the decorative finishes' },
+];
+
+const toTrimmed = (value: string | undefined): string => (value ?? '').trim();
+
+export const getSalesVerificationMandatoryValidation = ({
+  isSaleUsefulKey,
+  whyNotUsefulKey,
+  padConfirmationKey,
+  salesParticularModel,
+}: SalesVerificationMandatoryValidationInput): SalesVerificationMandatoryValidationResult => {
+  const saleUsefulError = !isSaleUsefulKey
+    ? SALES_VERIFICATION_MANDATORY_MESSAGES.saleUseful
+    : undefined;
+
+  const whyNotUsefulError = isSaleUsefulKey === 'no' && !whyNotUsefulKey
+    ? SALES_VERIFICATION_MANDATORY_MESSAGES.whyNotUseful
+    : undefined;
+
+  const salesParticularFieldErrors: Partial<Record<SalesParticularAttributeKey, string>> = {};
+  let salesParticularReviewStatusError: string | undefined;
+  let padConfirmationError: string | undefined;
+  const mandatoryMessages: string[] = [];
+
+  if (!salesParticularModel.reviewStatusKey) {
+    salesParticularReviewStatusError = SALES_VERIFICATION_MANDATORY_MESSAGES.salesParticularReviewStatus;
+    mandatoryMessages.push(`Sales Particulars: ${salesParticularReviewStatusError}`);
+  }
+
+  if (salesParticularModel.reviewStatusKey === 'details-available') {
+    SALES_PARTICULAR_EDITABLE_MANDATORY_FIELD_RULES.forEach(({ key, message }) => {
+      if (!toTrimmed(salesParticularModel[key])) {
+        salesParticularFieldErrors[key] = message;
+        mandatoryMessages.push(`Sales Particulars: ${message}`);
+      }
+    });
+
+    if (!toTrimmed(salesParticularModel.conditionScore)) {
+      mandatoryMessages.push(`Sales Particulars: ${SALES_VERIFICATION_MANDATORY_MESSAGES.conditionScore}`);
+    }
+  }
+
+  if (isSaleUsefulKey === 'yes' && !toTrimmed(padConfirmationKey)) {
+    padConfirmationError = SALES_VERIFICATION_MANDATORY_MESSAGES.padConfirmation;
+    mandatoryMessages.push(`Property Attribute Details: ${padConfirmationError}`);
+  }
+
+  const topLevelMessages = [saleUsefulError, whyNotUsefulError].filter(Boolean) as string[];
+
+  return {
+    saleUsefulError,
+    whyNotUsefulError,
+    salesParticularReviewStatusError,
+    salesParticularFieldErrors,
+    padConfirmationError,
+    mandatoryMessages: [...topLevelMessages, ...mandatoryMessages],
+  };
+};
 
 export const hasDisplayValue = (value: string): boolean => {
   const trimmed = value.trim();
@@ -259,7 +356,7 @@ export const getSubmitQcOutcomeActionRule = ({
   if (!canSubmitQcOutcome) {
     return {
       disabled: true,
-      reason: 'QC outcome actions are available only to QC role/team.',
+      reason: 'QC outcome actions are available only to QA or manager role/team.',
     };
   }
 

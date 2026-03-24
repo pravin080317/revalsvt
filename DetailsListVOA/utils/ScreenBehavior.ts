@@ -34,7 +34,11 @@ export const resolveAssignmentScreenName = (raw: string, kind: ScreenKind): stri
   switch (kind) {
     case 'managerAssign':
       return 'manager assignment';
+    case 'caseworkerView':
+      return 'manager assignment';
     case 'qcAssign':
+      return 'quality control assignment';
+    case 'qcView':
       return 'quality control assignment';
     default: {
       const trimmed = raw.trim();

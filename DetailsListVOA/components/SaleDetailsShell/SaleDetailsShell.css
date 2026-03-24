@@ -744,8 +744,15 @@
 .voa-pad-confirmation {
   margin-top: 10px;
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   gap: 8px;
+}
+
+.voa-pad-confirmation__control {
+  display: flex;
+  flex-direction: column;
+  min-width: 260px;
+  gap: 4px;
 }
 
 .voa-pad-confirmation__label {
@@ -762,6 +769,19 @@
 .voa-pad-confirmation__dropdown .ms-Dropdown-title {
   min-height: 40px;
   border-radius: 8px;
+}
+
+.voa-pad-confirmation__dropdown--error .ms-Dropdown-title {
+  border-color: #d14343;
+  box-shadow: 0 0 0 2px rgba(209, 67, 67, 0.12);
+  background: #fff8f8;
+}
+
+.voa-pad-confirmation__error {
+  color: #b91c1c;
+  font-size: 14px;
+  font-weight: 700;
+  line-height: 1.35;
 }
 
 .voa-visually-hidden {
@@ -1754,6 +1774,11 @@
 .voa-sales-verification-mandatory__list {
   margin: 8px 0 0;
   padding-left: 18px;
+}
+
+.voa-section-error-highlight > .voa-sale-details-card {
+  border-color: #d14343;
+  box-shadow: 0 0 0 2px rgba(209, 67, 67, 0.14);
 }
 
 .voa-sales-verification-actions {

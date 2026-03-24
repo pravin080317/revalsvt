@@ -2,7 +2,12 @@ import * as React from 'react';
 import { DefaultButton, IconButton, MessageBar, MessageBarType, Spinner, SpinnerSize, Stack, Text } from '@fluentui/react';
 import { NEW_TAB_HINT_ID } from './constants';
 import { useSaleDetailsViewModel } from './useSaleDetailsViewModel';
-import { PromotedMasterRecordViewModel, SaleDetailsShellProps, SalesParticularDraftPayload } from './types';
+import {
+  PromotedMasterRecordViewModel,
+  SaleDetailsShellProps,
+  SalesParticularAttributeKey,
+  SalesParticularDraftPayload,
+} from './types';
 import { SalesVerificationTaskSection } from './sections/SalesVerificationTaskSection';
 import { HyperlinksSection } from './sections/HyperlinksSection';
 import { BandingSection } from './sections/BandingSection';
@@ -66,6 +71,9 @@ export const SaleDetailsShell: React.FC<SaleDetailsShellProps> = ({
   });
 
   const [padConfirmationKey, setPadConfirmationKey] = React.useState<string | undefined>(undefined);
+  const [padConfirmationError, setPadConfirmationError] = React.useState<string | undefined>(undefined);
+  const [salesParticularFieldErrors, setSalesParticularFieldErrors] = React.useState<Partial<Record<SalesParticularAttributeKey, string>>>({});
+  const [salesParticularReviewStatusError, setSalesParticularReviewStatusError] = React.useState<string | undefined>(undefined);
   const [activeReferenceAttribute, setActiveReferenceAttribute] = React.useState<string | undefined>(undefined);
   const [activeAuditView, setActiveAuditView] = React.useState<'main' | 'qc' | undefined>(undefined);
   const [auditHistoryLoading, setAuditHistoryLoading] = React.useState(false);
@@ -82,6 +90,9 @@ export const SaleDetailsShell: React.FC<SaleDetailsShellProps> = ({
 
   React.useEffect(() => {
     setPadConfirmationKey(model.initialPadConfirmationKey);
+    setPadConfirmationError(undefined);
+    setSalesParticularFieldErrors({});
+    setSalesParticularReviewStatusError(undefined);
   }, [model.initialPadConfirmationKey]);
 
   React.useEffect(() => {
@@ -111,7 +122,37 @@ export const SaleDetailsShell: React.FC<SaleDetailsShellProps> = ({
       conditionCategory: model.salesParticular.conditionCategory,
       particularsNotes: model.salesParticular.particularsNotes,
     });
+    setPadConfirmationError(undefined);
+    setSalesParticularFieldErrors({});
+    setSalesParticularReviewStatusError(undefined);
   }, [model.saleId, model.taskId, model.salesParticular]);
+
+  const handleCrossSectionValidationChange = React.useCallback((errors: {
+    salesParticularReviewStatusError?: string;
+    salesParticularFieldErrors: Partial<Record<keyof SalesParticularDraftPayload, string>>;
+    padConfirmationError?: string;
+  }) => {
+    setSalesParticularReviewStatusError(errors.salesParticularReviewStatusError);
+    setPadConfirmationError(errors.padConfirmationError);
+
+    const nextFieldErrors: Partial<Record<SalesParticularAttributeKey, string>> = {};
+    const editableKeys: SalesParticularAttributeKey[] = [
+      'kitchenAge',
+      'kitchenSpecification',
+      'bathroomAge',
+      'bathroomSpecification',
+      'glazing',
+      'heating',
+      'decorativeFinishes',
+    ];
+    editableKeys.forEach((key) => {
+      const value = errors.salesParticularFieldErrors[key];
+      if (value) {
+        nextFieldErrors[key] = value;
+      }
+    });
+    setSalesParticularFieldErrors(nextFieldErrors);
+  }, []);
 
 
   const clearPromotionMessageTimer = React.useCallback(() => {
@@ -348,6 +389,7 @@ export const SaleDetailsShell: React.FC<SaleDetailsShellProps> = ({
             sourceCodes={model.sourceCodes}
             padConfirmationKey={padConfirmationKey}
             onPadConfirmationChange={setPadConfirmationKey}
+            padConfirmationError={padConfirmationError}
             readOnly={readOnly || sectionsDisabled}
             hereditamentUrl={model.addressLink}
             dataEnhancementUrl={model.dataEnhancementUrl}
@@ -367,7 +409,7 @@ export const SaleDetailsShell: React.FC<SaleDetailsShellProps> = ({
             onPromoteRecord={handleLrppdPromote}
             readOnly={readOnly || sectionsDisabled}
           /></div>
-          <div id="section-particulars"><SalesParticularSection model={model.salesParticular} onOpenReference={openReferenceModal} readOnly={readOnly || sectionsDisabled} onDraftChange={setSalesParticularDraft} /></div>
+          <div id="section-particulars"><SalesParticularSection model={model.salesParticular} onOpenReference={openReferenceModal} readOnly={readOnly || sectionsDisabled} onDraftChange={setSalesParticularDraft} externalFieldErrors={salesParticularFieldErrors} externalReviewStatusError={salesParticularReviewStatusError} /></div>
           <div id="section-verification"><SalesVerificationSection
             model={model.salesVerification}
             taskStatus={model.statusText}
@@ -384,6 +426,7 @@ export const SaleDetailsShell: React.FC<SaleDetailsShellProps> = ({
             isQcView={isQcWorkspace}
             qcAssignedTo={model.qcAssignedTo}
             currentUserDisplayName={currentUserDisplayName}
+            onCrossSectionValidationChange={handleCrossSectionValidationChange}
           /></div>
         </Stack>
 

@@ -18,6 +18,7 @@ function readRepoFile(relativePath: string): string {
 const shellSource = readRepoFile('DetailsListVOA/components/SaleDetailsShell/SaleDetailsShell.tsx');
 const salesParticularSource = readRepoFile('DetailsListVOA/components/SaleDetailsShell/sections/SalesParticularSection.tsx');
 const salesVerificationSource = readRepoFile('DetailsListVOA/components/SaleDetailsShell/sections/SalesVerificationSection.tsx');
+const rulesSource = readRepoFile('DetailsListVOA/components/SaleDetailsShell/rules/ViewSaleActionRules.ts');
 const runtimeSource = readRepoFile('DetailsListVOA/services/DetailsListRuntimeController.ts');
 
 /* ================================================================== */
@@ -219,9 +220,9 @@ describe('QC section state is reset by key-based remount', () => {
 /* ================================================================== */
 
 describe('condition score mandatory validation', () => {
-  test('conditionScore is in the SALES_PARTICULAR_REQUIRED_FIELDS array', () => {
-    expect(salesVerificationSource).toContain("key: 'conditionScore'");
-    expect(salesVerificationSource).toContain("message: 'Calculate the condition score'");
+  test('conditionScore is in centralized mandatory validation rules', () => {
+    expect(rulesSource).toContain("conditionScore: 'Calculate the condition score'");
+    expect(rulesSource).toContain('SALES_PARTICULAR_EDITABLE_MANDATORY_FIELD_RULES');
   });
 
   test('condition score validation only triggers for details-available', () => {

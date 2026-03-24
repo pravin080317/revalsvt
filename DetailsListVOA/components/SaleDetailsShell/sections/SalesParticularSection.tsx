@@ -23,6 +23,8 @@ interface SalesParticularSectionProps {
   onOpenReference?: (attributeKey: string) => void;
   onDraftChange?: (draft: SalesParticularDraftPayload) => void;
   readOnly?: boolean;
+  externalFieldErrors?: Partial<Record<SalesParticularAttributeKey, string>>;
+  externalReviewStatusError?: string;
 }
 
 interface SalesParticularValidationErrors extends Partial<Record<SalesParticularAttributeKey, string>> {
@@ -162,6 +164,8 @@ export const SalesParticularSection: React.FC<SalesParticularSectionProps> = ({
   onOpenReference,
   onDraftChange,
   readOnly = false,
+  externalFieldErrors,
+  externalReviewStatusError,
 }) => {
   const [reviewStatusKey, setReviewStatusKey] = React.useState<SalesParticularReviewStatus | undefined>(model.reviewStatusKey);
   const [linkParticulars, setLinkParticulars] = React.useState(model.linkParticulars);
@@ -241,6 +245,16 @@ export const SalesParticularSection: React.FC<SalesParticularSectionProps> = ({
 
   const optionsByAttribute = model.optionsByAttribute;
   const scoringLookup = React.useMemo(() => buildScoringLookup(model.scoringRows), [model.scoringRows]);
+  const effectiveValidationErrors = React.useMemo<SalesParticularValidationErrors>(() => ({
+    reviewStatus: validationErrors.reviewStatus ?? externalReviewStatusError,
+    kitchenAge: validationErrors.kitchenAge ?? externalFieldErrors?.kitchenAge,
+    kitchenSpecification: validationErrors.kitchenSpecification ?? externalFieldErrors?.kitchenSpecification,
+    bathroomAge: validationErrors.bathroomAge ?? externalFieldErrors?.bathroomAge,
+    bathroomSpecification: validationErrors.bathroomSpecification ?? externalFieldErrors?.bathroomSpecification,
+    glazing: validationErrors.glazing ?? externalFieldErrors?.glazing,
+    heating: validationErrors.heating ?? externalFieldErrors?.heating,
+    decorativeFinishes: validationErrors.decorativeFinishes ?? externalFieldErrors?.decorativeFinishes,
+  }), [externalFieldErrors, externalReviewStatusError, validationErrors]);
 
   const clearFieldError = React.useCallback((fieldKey: keyof SalesParticularValidationErrors): void => {
     setValidationErrors((previous) => {
@@ -344,7 +358,7 @@ export const SalesParticularSection: React.FC<SalesParticularSectionProps> = ({
 
       <div className="voa-sales-particular-layout">
         <div className="voa-sales-particular-form">
-          <div className={`voa-sales-particular-review${validationErrors.reviewStatus ? ' voa-sales-particular-review--error' : ''}`}>
+          <div className={`voa-sales-particular-review${effectiveValidationErrors.reviewStatus ? ' voa-sales-particular-review--error' : ''}`}>
             <label id={reviewStatusLabelId} className="voa-sales-particular-review__label">{renderRequiredLabel('Review Status', true)}</label>
             <ChoiceGroup
               ariaLabelledBy={reviewStatusLabelId}
@@ -371,8 +385,8 @@ export const SalesParticularSection: React.FC<SalesParticularSectionProps> = ({
               }}
             />
           </div>
-          {validationErrors.reviewStatus && (
-            <span className="voa-sales-particular-review__error" role="alert">{validationErrors.reviewStatus}</span>
+          {effectiveValidationErrors.reviewStatus && (
+            <span className="voa-sales-particular-review__error" role="alert">{effectiveValidationErrors.reviewStatus}</span>
           )}
 
           <div className="voa-sales-particular-row voa-sales-particular-row--text">
@@ -395,9 +409,10 @@ export const SalesParticularSection: React.FC<SalesParticularSectionProps> = ({
             selectedKey={kitchenAge || undefined}
             options={toOptions(optionsByAttribute.kitchenAge, kitchenAge)}
             disabled={!canEditInputs}
+            infoDisabled={!canEditInputs}
             infoTooltip={model.attributeTooltips.kitchenAge}
             onInfoClick={onOpenReference ? () => onOpenReference('kitchenAge') : undefined}
-            errorMessage={validationErrors.kitchenAge}
+            errorMessage={effectiveValidationErrors.kitchenAge}
             onChange={(nextValue) => {
               setKitchenAge(nextValue);
               clearFieldError('kitchenAge');
@@ -411,9 +426,10 @@ export const SalesParticularSection: React.FC<SalesParticularSectionProps> = ({
             selectedKey={kitchenSpecification || undefined}
             options={toOptions(optionsByAttribute.kitchenSpecification, kitchenSpecification)}
             disabled={!canEditInputs}
+            infoDisabled={!canEditInputs}
             infoTooltip={model.attributeTooltips.kitchenSpecification}
             onInfoClick={onOpenReference ? () => onOpenReference('kitchenSpecification') : undefined}
-            errorMessage={validationErrors.kitchenSpecification}
+            errorMessage={effectiveValidationErrors.kitchenSpecification}
             onChange={(nextValue) => {
               setKitchenSpecification(nextValue);
               clearFieldError('kitchenSpecification');
@@ -427,9 +443,10 @@ export const SalesParticularSection: React.FC<SalesParticularSectionProps> = ({
             selectedKey={bathroomAge || undefined}
             options={toOptions(optionsByAttribute.bathroomAge, bathroomAge)}
             disabled={!canEditInputs}
+            infoDisabled={!canEditInputs}
             infoTooltip={model.attributeTooltips.bathroomAge}
             onInfoClick={onOpenReference ? () => onOpenReference('bathroomAge') : undefined}
-            errorMessage={validationErrors.bathroomAge}
+            errorMessage={effectiveValidationErrors.bathroomAge}
             onChange={(nextValue) => {
               setBathroomAge(nextValue);
               clearFieldError('bathroomAge');
@@ -443,9 +460,10 @@ export const SalesParticularSection: React.FC<SalesParticularSectionProps> = ({
             selectedKey={bathroomSpecification || undefined}
             options={toOptions(optionsByAttribute.bathroomSpecification, bathroomSpecification)}
             disabled={!canEditInputs}
+            infoDisabled={!canEditInputs}
             infoTooltip={model.attributeTooltips.bathroomSpecification}
             onInfoClick={onOpenReference ? () => onOpenReference('bathroomSpecification') : undefined}
-            errorMessage={validationErrors.bathroomSpecification}
+            errorMessage={effectiveValidationErrors.bathroomSpecification}
             onChange={(nextValue) => {
               setBathroomSpecification(nextValue);
               clearFieldError('bathroomSpecification');
@@ -459,9 +477,10 @@ export const SalesParticularSection: React.FC<SalesParticularSectionProps> = ({
             selectedKey={glazing || undefined}
             options={toOptions(optionsByAttribute.glazing, glazing)}
             disabled={!canEditInputs}
+            infoDisabled={!canEditInputs}
             infoTooltip={model.attributeTooltips.glazing}
             onInfoClick={onOpenReference ? () => onOpenReference('glazing') : undefined}
-            errorMessage={validationErrors.glazing}
+            errorMessage={effectiveValidationErrors.glazing}
             onChange={(nextValue) => {
               setGlazing(nextValue);
               clearFieldError('glazing');
@@ -475,9 +494,10 @@ export const SalesParticularSection: React.FC<SalesParticularSectionProps> = ({
             selectedKey={heating || undefined}
             options={toOptions(optionsByAttribute.heating, heating)}
             disabled={!canEditInputs}
+            infoDisabled={!canEditInputs}
             infoTooltip={model.attributeTooltips.heating}
             onInfoClick={onOpenReference ? () => onOpenReference('heating') : undefined}
-            errorMessage={validationErrors.heating}
+            errorMessage={effectiveValidationErrors.heating}
             onChange={(nextValue) => {
               setHeating(nextValue);
               clearFieldError('heating');
@@ -491,9 +511,10 @@ export const SalesParticularSection: React.FC<SalesParticularSectionProps> = ({
             selectedKey={decorativeFinishes || undefined}
             options={toOptions(optionsByAttribute.decorativeFinishes, decorativeFinishes)}
             disabled={!canEditInputs}
+            infoDisabled={!canEditInputs}
             infoTooltip={model.attributeTooltips.decorativeFinishes}
             onInfoClick={onOpenReference ? () => onOpenReference('decorativeFinishes') : undefined}
-            errorMessage={validationErrors.decorativeFinishes}
+            errorMessage={effectiveValidationErrors.decorativeFinishes}
             onChange={(nextValue) => {
               setDecorativeFinishes(nextValue);
               clearFieldError('decorativeFinishes');

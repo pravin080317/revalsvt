@@ -8,6 +8,7 @@ import { getProfileConfigs } from '../../config/ColumnProfiles';
 import { CONTROL_CONFIG } from '../../config/ControlConfig';
 import { getColumnFilterConfigFor, type TableKey } from '../../config/TableConfigs';
 import { COLUMN_FILTER_VALUE_SEPARATOR, type ManagerPrefilterState } from '../../config/PrefilterConfigs';
+import { CASEWORKER_ROLE_NAMES, CASEWORKER_TEAM_NAMES, QA_ROLE_NAMES, QA_TEAM_NAMES } from '../../constants/AccessControl';
 import { SCREEN_TEXT, MANAGER_BILLING_AUTHORITY_OPTIONS, MANAGER_CASEWORKER_OPTIONS } from '../../constants/ScreenText';
 import { buildColumns } from '../../utils/ColumnsBuilder';
 import { ensureSampleColumns, buildSampleEntityRecords } from '../../utils/SampleHelpers';
@@ -62,10 +63,6 @@ export interface DetailsListHostProps {
 type ColumnFilterValue = string | string[] | NumericFilter | DateRangeFilter;
 type FilterOptionsMap = Record<string, string[]>;
 
-const QC_TEAM_NAMES = new Set(['svt qa team']);
-const QC_ROLE_NAMES = new Set(['voa - svt qa']);
-const CASEWORKER_TEAM_NAMES = new Set(['svt user team']);
-const CASEWORKER_ROLE_NAMES = new Set(['voa - svt user']);
 const MANAGER_ASSIGNMENT_SCREEN_NAME = 'manager assignment';
 const QC_ASSIGNMENT_SCREEN_NAME = 'quality control assignment';
 
@@ -518,9 +515,7 @@ export const DetailsListHost: React.FC<DetailsListHostProps> = ({
   const isPrefilterScreen = isManagerAssign || isCaseworkerView || isQcAssign || isQcView;
   const assignmentContextKey = isManagerAssign ? 'manager' : isQcAssign ? 'qa' : '';
   const assignmentContextScreenName = React.useMemo(() => {
-    if (screenKind === 'managerAssign') return MANAGER_ASSIGNMENT_SCREEN_NAME;
-    if (screenKind === 'qcAssign') return QC_ASSIGNMENT_SCREEN_NAME;
-    return canvasScreenName ?? '';
+    return resolveAssignmentScreenName(canvasScreenName ?? '', screenKind);
   }, [canvasScreenName, screenKind]);
   const userMappingScreenName = QC_ASSIGNMENT_SCREEN_NAME;
   const currentUserId = React.useMemo(() => entraObjectId ?? resolveAssignedByUserId(context), [entraObjectId, context]);
@@ -582,7 +577,7 @@ export const DetailsListHost: React.FC<DetailsListHostProps> = ({
   }, []);
 
   const isQcAssignableUser = React.useCallback(
-    (user: AssignUser) => isAssignableUserInGroup(user, QC_TEAM_NAMES, QC_ROLE_NAMES),
+    (user: AssignUser) => isAssignableUserInGroup(user, QA_TEAM_NAMES, QA_ROLE_NAMES),
     [],
   );
   const isCaseworkerAssignableUser = React.useCallback(

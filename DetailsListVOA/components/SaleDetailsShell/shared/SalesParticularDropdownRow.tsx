@@ -8,6 +8,7 @@ interface SalesParticularDropdownRowProps {
   placeholder?: string;
   options: IDropdownOption[];
   disabled?: boolean;
+  infoDisabled?: boolean;
   required?: boolean;
   infoTooltip?: string;
   onInfoClick?: () => void;
@@ -22,6 +23,7 @@ export const SalesParticularDropdownRow: React.FC<SalesParticularDropdownRowProp
   placeholder = 'Select item',
   options,
   disabled,
+  infoDisabled = false,
   required = false,
   infoTooltip,
   onInfoClick,
@@ -57,6 +59,7 @@ export const SalesParticularDropdownRow: React.FC<SalesParticularDropdownRowProp
             title={infoTooltip}
             className="voa-sales-particular-row__info"
             onClick={onInfoClick}
+            disabled={infoDisabled || !onInfoClick}
           />
         )}
       </div>

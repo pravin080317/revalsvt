@@ -1,6 +1,14 @@
 import { IInputs, IOutputs } from '../generated/ManifestTypes';
 import { QcOutcomeActionPayload, SalesVerificationActionPayload } from '../components/SaleDetailsShell/types';
 import { CONTROL_CONFIG } from '../config/ControlConfig';
+import {
+  CASEWORKER_ROLE_NAMES,
+  CASEWORKER_TEAM_NAMES,
+  MANAGER_ROLE_NAMES,
+  MANAGER_TEAM_NAMES,
+  QA_ROLE_NAMES,
+  QA_TEAM_NAMES,
+} from '../constants/AccessControl';
 import { executeUnboundCustomApi } from './CustomApi';
 import { svtDebug } from '../utils/debug';
 import {
@@ -40,12 +48,6 @@ import {
 } from './runtime/context-routing';
 import { hasDisplayText, normalizeTextValue } from './runtime/text';
 
-const CASEWORKER_TEAM_NAME = 'svt user team';
-const CASEWORKER_ROLE_NAME = 'voa - svt user';
-const MANAGER_TEAM_NAME = 'svt manager team';
-const MANAGER_ROLE_NAME = 'voa - svt manager';
-const QA_TEAM_NAME = 'svt qa team';
-const QA_ROLE_NAME = 'voa - svt qa';
 const EDITABLE_CASEWORKER_STATUSES = new Set(['assigned', 'assigned qc failed']);
 const EDITABLE_QC_STATUSES = new Set(['assigned to qc', 'reassigned to qc']);
 const MODIFY_TASK_ALLOWED_STATUSES = new Set(['complete', 'complete passed qc']);
@@ -874,22 +876,22 @@ export class DetailsListRuntimeController {
     }
 
     const matchedTeamName = normalizeTextValue(root.matchedTeamName).toLowerCase();
-    if (matchedTeamName === CASEWORKER_TEAM_NAME) {
+    if (CASEWORKER_TEAM_NAMES.has(matchedTeamName)) {
       return true;
     }
 
     const matchedRoleName = normalizeTextValue(root.matchedRoleName).toLowerCase();
-    if (matchedRoleName === CASEWORKER_ROLE_NAME) {
+    if (CASEWORKER_ROLE_NAMES.has(matchedRoleName)) {
       return true;
     }
 
     const matchedTeams = this.normalizeUserContextValues(root.matchedTeamNames);
-    if (matchedTeams.includes(CASEWORKER_TEAM_NAME)) {
+    if (matchedTeams.some((team) => CASEWORKER_TEAM_NAMES.has(team))) {
       return true;
     }
 
     const matchedRoles = this.normalizeUserContextValues(root.matchedRoleNames);
-    if (matchedRoles.includes(CASEWORKER_ROLE_NAME)) {
+    if (matchedRoles.some((role) => CASEWORKER_ROLE_NAMES.has(role))) {
       return true;
     }
 
@@ -905,22 +907,22 @@ export class DetailsListRuntimeController {
     }
 
     const matchedTeamName = normalizeTextValue(root.matchedTeamName).toLowerCase();
-    if (matchedTeamName === MANAGER_TEAM_NAME) {
+    if (MANAGER_TEAM_NAMES.has(matchedTeamName)) {
       return true;
     }
 
     const matchedRoleName = normalizeTextValue(root.matchedRoleName).toLowerCase();
-    if (matchedRoleName === MANAGER_ROLE_NAME) {
+    if (MANAGER_ROLE_NAMES.has(matchedRoleName)) {
       return true;
     }
 
     const matchedTeams = this.normalizeUserContextValues(root.matchedTeamNames);
-    if (matchedTeams.includes(MANAGER_TEAM_NAME)) {
+    if (matchedTeams.some((team) => MANAGER_TEAM_NAMES.has(team))) {
       return true;
     }
 
     const matchedRoles = this.normalizeUserContextValues(root.matchedRoleNames);
-    if (matchedRoles.includes(MANAGER_ROLE_NAME)) {
+    if (matchedRoles.some((role) => MANAGER_ROLE_NAMES.has(role))) {
       return true;
     }
 
@@ -937,22 +939,22 @@ export class DetailsListRuntimeController {
     }
 
     const matchedTeamName = normalizeTextValue(root.matchedTeamName).toLowerCase();
-    if (matchedTeamName === QA_TEAM_NAME) {
+    if (QA_TEAM_NAMES.has(matchedTeamName)) {
       return true;
     }
 
     const matchedRoleName = normalizeTextValue(root.matchedRoleName).toLowerCase();
-    if (matchedRoleName === QA_ROLE_NAME) {
+    if (QA_ROLE_NAMES.has(matchedRoleName)) {
       return true;
     }
 
     const matchedTeams = this.normalizeUserContextValues(root.matchedTeamNames);
-    if (matchedTeams.includes(QA_TEAM_NAME)) {
+    if (matchedTeams.some((team) => QA_TEAM_NAMES.has(team))) {
       return true;
     }
 
     const matchedRoles = this.normalizeUserContextValues(root.matchedRoleNames);
-    if (matchedRoles.includes(QA_ROLE_NAME)) {
+    if (matchedRoles.some((role) => QA_ROLE_NAMES.has(role))) {
       return true;
     }
 
@@ -1198,7 +1200,7 @@ export class DetailsListRuntimeController {
 
 
   private resolveQcSectionAccess(detailsPayload: string): { canSubmit: boolean; showSection: boolean } {
-    if (!this.hasQaAccess) {
+    if (!this.hasQaAccess && !this.hasManagerAccess) {
       return { canSubmit: false, showSection: false };
     }
 

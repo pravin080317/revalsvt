@@ -149,7 +149,7 @@ describe('view sale action rules', () => {
       selectedOutcome: 'Pass',
     })).toEqual({
       disabled: true,
-      reason: 'QC outcome actions are available only to QC role/team.',
+      reason: 'QC outcome actions are available only to QA or manager role/team.',
     });
 
     expect(getSubmitQcOutcomeActionRule({
@@ -240,9 +240,18 @@ describe('view sale action rules', () => {
   });
 
   test('sales particular calculate action is disabled for read-only and non-updatable review states', () => {
-    expect(getSalesParticularCalculateActionRule({ readOnly: true, reviewStatusKey: 'details-available' })).toEqual({ disabled: true });
-    expect(getSalesParticularCalculateActionRule({ readOnly: false, reviewStatusKey: 'details-not-available' })).toEqual({ disabled: true });
-    expect(getSalesParticularCalculateActionRule({ readOnly: false, reviewStatusKey: 'not-reviewed' })).toEqual({ disabled: true });
+    expect(getSalesParticularCalculateActionRule({ readOnly: true, reviewStatusKey: 'details-available' })).toEqual({
+      disabled: true,
+      reason: 'This section is read-only.',
+    });
+    expect(getSalesParticularCalculateActionRule({ readOnly: false, reviewStatusKey: 'details-not-available' })).toEqual({
+      disabled: true,
+      reason: 'Calculation is not available when particulars details are not available.',
+    });
+    expect(getSalesParticularCalculateActionRule({ readOnly: false, reviewStatusKey: 'not-reviewed' })).toEqual({
+      disabled: true,
+      reason: 'Sales particulars must be reviewed before calculating.',
+    });
     expect(getSalesParticularCalculateActionRule({ readOnly: false, reviewStatusKey: 'details-available' })).toEqual({ disabled: false });
   });
 });

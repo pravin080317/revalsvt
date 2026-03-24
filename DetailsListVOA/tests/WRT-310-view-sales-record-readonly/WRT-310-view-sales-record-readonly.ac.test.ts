@@ -51,7 +51,9 @@ describe('WRT-310 View Sales Record via Manager Assignment AC', () => {
     expect(shellSource).toContain('canCreateTask={canCreateManualTask}');
     expect(shellSource).toContain('canModifyTask={canModifyTask}');
     expect(shellSource).toContain('canProgressTask={canProgressTask && !sectionsDisabled}');
-    expect(shellSource).toContain('<SalesParticularSection model={model.salesParticular} onOpenReference={openReferenceModal} readOnly={readOnly || sectionsDisabled} onDraftChange={setSalesParticularDraft} />');
+    expect(shellSource).toContain('<SalesParticularSection model={model.salesParticular}');
+    expect(shellSource).toContain('externalFieldErrors={salesParticularFieldErrors}');
+    expect(shellSource).toContain('externalReviewStatusError={salesParticularReviewStatusError}');
     expect(shellSource).toContain('onOpenQcLog={openQcAuditHistory}');
   });
 

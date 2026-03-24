@@ -30,6 +30,9 @@ namespace VOA.SVT.Plugins.Helpers
         public const string TeamNameSvtManager = "SVT Manager Team";
         public const string TeamNameSvtQa = "SVT QA Team";
         public const string TeamNameSvtUser = "SVT User Team";
+        public const string TeamNameVoaSvtManager = "VOA SVT Manager";
+        public const string TeamNameVoaSvtQa = "VOA SVT QA";
+        public const string TeamNameVoaSvtUser = "VOA SVT User";
 
         public const string RoleNameSvtManager = "VOA - SVT Manager";
         public const string RoleNameSvtQa = "VOA - SVT QA";
@@ -40,6 +43,10 @@ namespace VOA.SVT.Plugins.Helpers
         public const string SourceTeam = "Team";
         public const string SourceRole = "Role";
         public const string SourceNone = "None";
+
+        public static readonly string[] TeamNamesSvtManager = { TeamNameSvtManager, TeamNameVoaSvtManager };
+        public static readonly string[] TeamNamesSvtQa = { TeamNameSvtQa, TeamNameVoaSvtQa };
+        public static readonly string[] TeamNamesSvtUser = { TeamNameSvtUser, TeamNameVoaSvtUser };
     }
 
     public static class UserContextResolver
@@ -87,6 +94,9 @@ namespace VOA.SVT.Plugins.Helpers
             nameFilter.AddCondition("name", ConditionOperator.Equal, UserContextConfig.TeamNameSvtManager);
             nameFilter.AddCondition("name", ConditionOperator.Equal, UserContextConfig.TeamNameSvtQa);
             nameFilter.AddCondition("name", ConditionOperator.Equal, UserContextConfig.TeamNameSvtUser);
+            nameFilter.AddCondition("name", ConditionOperator.Equal, UserContextConfig.TeamNameVoaSvtManager);
+            nameFilter.AddCondition("name", ConditionOperator.Equal, UserContextConfig.TeamNameVoaSvtQa);
+            nameFilter.AddCondition("name", ConditionOperator.Equal, UserContextConfig.TeamNameVoaSvtUser);
             qe.Criteria.AddFilter(nameFilter);
 
             var link = qe.AddLink("teammembership", "teamid", "teamid", JoinOperator.Inner);
@@ -131,6 +141,19 @@ namespace VOA.SVT.Plugins.Helpers
                 };
             }
 
+            if (teamNames.Contains(UserContextConfig.TeamNameVoaSvtManager))
+            {
+                return new UserContextResult
+                {
+                    Persona = UserPersona.Manager,
+                    ResolutionSource = UserContextConfig.SourceTeam,
+                    MatchedTeamName = UserContextConfig.TeamNameVoaSvtManager,
+                    MatchedTeamNames = matchedTeams,
+                    MatchedRoleName = string.Empty,
+                    MatchedRoleNames = Array.Empty<string>()
+                };
+            }
+
             if (teamNames.Contains(UserContextConfig.TeamNameSvtQa))
             {
                 return new UserContextResult
@@ -144,6 +167,19 @@ namespace VOA.SVT.Plugins.Helpers
                 };
             }
 
+            if (teamNames.Contains(UserContextConfig.TeamNameVoaSvtQa))
+            {
+                return new UserContextResult
+                {
+                    Persona = UserPersona.QA,
+                    ResolutionSource = UserContextConfig.SourceTeam,
+                    MatchedTeamName = UserContextConfig.TeamNameVoaSvtQa,
+                    MatchedTeamNames = matchedTeams,
+                    MatchedRoleName = string.Empty,
+                    MatchedRoleNames = Array.Empty<string>()
+                };
+            }
+
             if (teamNames.Contains(UserContextConfig.TeamNameSvtUser))
             {
                 return new UserContextResult
@@ -151,6 +187,19 @@ namespace VOA.SVT.Plugins.Helpers
                     Persona = UserPersona.User,
                     ResolutionSource = UserContextConfig.SourceTeam,
                     MatchedTeamName = UserContextConfig.TeamNameSvtUser,
+                    MatchedTeamNames = matchedTeams,
+                    MatchedRoleName = string.Empty,
+                    MatchedRoleNames = Array.Empty<string>()
+                };
+            }
+
+            if (teamNames.Contains(UserContextConfig.TeamNameVoaSvtUser))
+            {
+                return new UserContextResult
+                {
+                    Persona = UserPersona.User,
+                    ResolutionSource = UserContextConfig.SourceTeam,
+                    MatchedTeamName = UserContextConfig.TeamNameVoaSvtUser,
                     MatchedTeamNames = matchedTeams,
                     MatchedRoleName = string.Empty,
                     MatchedRoleNames = Array.Empty<string>()
@@ -307,8 +356,20 @@ namespace VOA.SVT.Plugins.Helpers
                 return true;
             }
 
+            if (!string.IsNullOrWhiteSpace(result.MatchedTeamName)
+                && string.Equals(result.MatchedTeamName, UserContextConfig.TeamNameVoaSvtUser, StringComparison.OrdinalIgnoreCase))
+            {
+                return true;
+            }
+
             if (result.MatchedTeamNames != null
                 && result.MatchedTeamNames.Any(name => string.Equals(name, UserContextConfig.TeamNameSvtUser, StringComparison.OrdinalIgnoreCase)))
+            {
+                return true;
+            }
+
+            if (result.MatchedTeamNames != null
+                && result.MatchedTeamNames.Any(name => string.Equals(name, UserContextConfig.TeamNameVoaSvtUser, StringComparison.OrdinalIgnoreCase)))
             {
                 return true;
             }
