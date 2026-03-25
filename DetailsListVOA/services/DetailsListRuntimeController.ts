@@ -145,7 +145,7 @@ export class DetailsListRuntimeController {
   }
 
   public get canCreateManualTask(): boolean {
-    return this.hasManagerAccess;
+    return this.hasManagerAccess && this.hasCaseworkerAccess;
   }
 
   public get canModifySvtTask(): boolean {
@@ -180,7 +180,7 @@ export class DetailsListRuntimeController {
   }
 
   public get entraObjectId(): string {
-    return this._entraObjectId ?? resolveCurrentUserId(this._context);
+    return this._entraObjectId ?? '';
   }
 
   public syncPcfViewSalesEnabled(enabled: boolean): void {
@@ -309,8 +309,8 @@ export class DetailsListRuntimeController {
     }
 
     await this.ensureCaseworkerAccess();
-    if (!this.hasManagerAccess) {
-      throw new Error('Manual task creation is restricted to manager role/team.');
+    if (!this.hasManagerAccess || !this.hasCaseworkerAccess) {
+      throw new Error('Manual task creation is restricted to users with both manager and caseworker role/team access.');
     }
 
     const apiName = resolveConfiguredApiName(

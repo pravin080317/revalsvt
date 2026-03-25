@@ -175,6 +175,7 @@ export interface GridProps {
   onBackRequested?: () => void;
   contextSubtitle?: string;
   onEditContext?: () => void;
+  contextScopeKey?: string;
   disableViewSalesRecordAction?: boolean;
   rowInvokeEnabled?: boolean;
   assignUsers?: AssignUser[];
@@ -799,6 +800,7 @@ export const Grid = React.memo((props: GridProps) => {
     onBackRequested,
     contextSubtitle,
     onEditContext,
+    contextScopeKey,
     disableViewSalesRecordAction = false,
     rowInvokeEnabled = true,
     assignUsers: assignUsersProp,
@@ -1220,8 +1222,8 @@ export const Grid = React.memo((props: GridProps) => {
         ? qcViewText.emptyState
         : commonText.emptyState;
   const prefilterStorageKey = React.useMemo(
-    () => buildPrefilterStorageKey(tableKey, derivedScreenKind),
-    [derivedScreenKind, tableKey],
+    () => buildPrefilterStorageKey(tableKey, derivedScreenKind, contextScopeKey),
+    [contextScopeKey, derivedScreenKind, tableKey],
   );
   const legacyPrefilterStorageKey = React.useMemo(
     () => `voa-prefilters:${tableKey}:${screenName || 'default'}`,
@@ -6416,7 +6418,7 @@ export const Grid = React.memo((props: GridProps) => {
             calloutProps={{ setInitialFocus: true }}
           />
         )}
-        {showResults && (!compactViewport || totalPages > 1) && (
+        {showResults && (!compactViewport || totalPages > 0) && (
           <Stack
             id="voa-grid-pagination"
             horizontal
@@ -6434,7 +6436,7 @@ export const Grid = React.memo((props: GridProps) => {
                 {resultsSummaryText}
               </Text>
             )}
-            {totalPages > 1 && (
+            {totalPages > 0 && (
               <>
                 <FocusableActionButton
                   text={commonText.buttons.previous}

@@ -207,7 +207,7 @@ export const getCreateTaskActionRule = ({
   if (!canCreateTask) {
     return {
       disabled: true,
-      reason: 'Create task is available only to manager role/team.',
+      reason: 'Create task is available only to users with both manager and caseworker role/team access.',
     };
   }
 

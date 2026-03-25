@@ -14,6 +14,8 @@ export interface AssignmentStatusResult {
 
 interface AssignableUserPayload {
   id?: unknown;
+  systemUserId?: unknown;
+  entraObjectId?: unknown;
   firstName?: unknown;
   lastName?: unknown;
   email?: unknown;
@@ -251,6 +253,8 @@ export const parseAssignableUsersResponse = (
   const normalized = users
     .map((u) => {
       const id = toSafeString(u?.id).trim();
+      const systemUserId = toSafeString(u?.systemUserId).trim();
+      const entraObjectId = toSafeString(u?.entraObjectId).trim();
       const teamRaw = toSafeString(u?.team).trim();
       const roleRaw = toSafeString(u?.role).trim();
       const teams = mergeSingleIntoList(normalizeStringList(u?.teams), teamRaw);
@@ -259,6 +263,8 @@ export const parseAssignableUsersResponse = (
       const role = roleRaw || roles[0] || '';
       return {
         id,
+        systemUserId,
+        entraObjectId,
         firstName: toSafeString(u?.firstName),
         lastName: toSafeString(u?.lastName),
         email: toSafeString(u?.email),

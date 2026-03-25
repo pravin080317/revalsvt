@@ -101,6 +101,45 @@ const resolveAssignedByUserId = (context: ComponentFramework.Context<IInputs>): 
   return normalizeUserId(fromXrm);
 };
 
+const tryParseJsonRecord = (value: unknown): Record<string, unknown> | undefined => {
+  if (!value) return undefined;
+  if (typeof value === 'string') {
+    try {
+      const parsed = JSON.parse(value) as unknown;
+      if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+        return parsed as Record<string, unknown>;
+      }
+    } catch {
+      return undefined;
+    }
+    return undefined;
+  }
+  if (typeof value === 'object' && !Array.isArray(value)) {
+    return value as Record<string, unknown>;
+  }
+  return undefined;
+};
+
+const findUserContextValue = (record: Record<string, unknown>, ...candidates: string[]): unknown => {
+  const keys = Object.keys(record);
+  for (const candidate of candidates) {
+    if (Object.prototype.hasOwnProperty.call(record, candidate)) {
+      return record[candidate];
+    }
+    const match = keys.find((key) => key.toLowerCase() === candidate.toLowerCase());
+    if (match) return record[match];
+  }
+  return undefined;
+};
+
+const parseUserContextEntraObjectId = (payload: unknown): string => {
+  const rootRecord = tryParseJsonRecord(payload) ?? {};
+  const nestedRecord = tryParseJsonRecord(findUserContextValue(rootRecord, 'Result', 'result'));
+  const record = nestedRecord ?? rootRecord;
+  const rawValue = findUserContextValue(record, 'entraObjectId');
+  return typeof rawValue === 'string' ? normalizeUserId(rawValue).toLowerCase() : '';
+};
+
 const SALES_SEARCH_DEFAULT_FILTERS: GridFilterState = {
   ...createDefaultGridFilters(),
   searchBy: 'address',
@@ -348,6 +387,7 @@ export const DetailsListHost: React.FC<DetailsListHostProps> = ({
     [isLocalHost],
   );
   const fallbackQcUserOptions = React.useMemo(() => fallbackCaseworkerOptions, [fallbackCaseworkerOptions]);
+  const currentSystemUserId = React.useMemo(() => resolveAssignedByUserId(context).toLowerCase(), [context]);
 
   // Column display names and configs
   const [columnDisplayNames, setColumnDisplayNames] = React.useState<Record<string, string>>({});
@@ -518,7 +558,70 @@ export const DetailsListHost: React.FC<DetailsListHostProps> = ({
     return resolveAssignmentScreenName(canvasScreenName ?? '', screenKind);
   }, [canvasScreenName, screenKind]);
   const userMappingScreenName = QC_ASSIGNMENT_SCREEN_NAME;
-  const currentUserId = React.useMemo(() => entraObjectId ?? resolveAssignedByUserId(context), [entraObjectId, context]);
+  const requiresCurrentUserEntra = isCaseworkerView || isQcView;
+  const [resolvedCurrentUserEntraId, setResolvedCurrentUserEntraId] = React.useState('');
+  const [currentUserEntraLoading, setCurrentUserEntraLoading] = React.useState(false);
+  const currentUserId = React.useMemo(
+    () => normalizeUserId(resolvedCurrentUserEntraId).toLowerCase(),
+    [resolvedCurrentUserEntraId],
+  );
+
+  const userContextApiName = React.useMemo(() => {
+    const raw = (context.parameters as unknown as Record<string, { raw?: string }>).userContextApiName?.raw;
+    const fromContext = normalizeCustomApiName(typeof raw === 'string' ? raw : undefined);
+    const fallback = normalizeCustomApiName(CONTROL_CONFIG.userContextApiName);
+    return fromContext || fallback || '';
+  }, [context]);
+
+  const userContextApiType = React.useMemo(() => {
+    const raw = (context.parameters as unknown as Record<string, { raw?: string }>).userContextApiType?.raw;
+    const fromContext = typeof raw === 'string' ? raw : undefined;
+    return resolveCustomApiOperationType(fromContext ?? CONTROL_CONFIG.userContextApiType ?? CONTROL_CONFIG.customApiType);
+  }, [context]);
+
+  React.useEffect(() => {
+    let active = true;
+
+    if (!requiresCurrentUserEntra) {
+      setCurrentUserEntraLoading(false);
+      return () => {
+        active = false;
+      };
+    }
+
+    if (!userContextApiName) {
+      setResolvedCurrentUserEntraId('');
+      setCurrentUserEntraLoading(false);
+      return () => {
+        active = false;
+      };
+    }
+
+    setCurrentUserEntraLoading(true);
+    void (async () => {
+      try {
+        const rawPayload = await executeUnboundCustomApi<unknown>(
+          context,
+          userContextApiName,
+          {},
+          { operationType: userContextApiType },
+        );
+        if (!active) return;
+        setResolvedCurrentUserEntraId(parseUserContextEntraObjectId(rawPayload));
+      } catch {
+        if (!active) return;
+        setResolvedCurrentUserEntraId('');
+      } finally {
+        if (active) {
+          setCurrentUserEntraLoading(false);
+        }
+      }
+    })();
+
+    return () => {
+      active = false;
+    };
+  }, [context, requiresCurrentUserEntra, userContextApiName, userContextApiType]);
   const [salesSearchApplied, setSalesSearchApplied] = React.useState(!isSalesSearch);
   const handlePrefilterDirty = React.useCallback(() => {
     if (!isPrefilterScreen) return;
@@ -552,13 +655,10 @@ export const DetailsListHost: React.FC<DetailsListHostProps> = ({
       setLoadErrorMessage(undefined);
       return;
     }
-    // Non-sales screens keep their existing defaults.
+    // Non-sales screens should not inject a transient taskStatus filter,
+    // otherwise prefilter auto-apply can trigger a double-load race on entry.
     setSalesSearchApplied(true);
-    setSearchFilters({
-      ...createDefaultGridFilters(),
-      searchBy: 'taskStatus',
-      taskStatus: ['New'],
-    });
+    setSearchFilters(createDefaultGridFilters());
   }, [isSalesSearch]);
 
   const parseAssignableUsersResponse = React.useCallback(
@@ -599,6 +699,73 @@ export const DetailsListHost: React.FC<DetailsListHostProps> = ({
     });
     return map;
   }, [assignableUsersCache, getUserDisplayName]);
+
+  const systemUserIdToEntraIdMap = React.useMemo(() => {
+    const map: Record<string, string> = {};
+    assignableUsersCache.forEach((user) => {
+      const systemUserId = normalizeUserId(String(user.systemUserId ?? '')).toLowerCase();
+      const entraId = normalizeUserId(String(user.entraObjectId ?? user.id ?? '')).toLowerCase();
+      if (systemUserId && entraId && isGuidValue(entraId)) {
+        map[systemUserId] = entraId;
+      }
+    });
+    if (currentSystemUserId && currentUserId) {
+      map[currentSystemUserId] = currentUserId;
+    }
+    return map;
+  }, [assignableUsersCache, currentSystemUserId, currentUserId]);
+
+  const knownEntraIds = React.useMemo(() => {
+    const ids = new Set<string>();
+    assignableUsersCache.forEach((user) => {
+      const entraId = normalizeUserId(String(user.entraObjectId ?? user.id ?? '')).toLowerCase();
+      if (entraId && isGuidValue(entraId)) {
+        ids.add(entraId);
+      }
+    });
+    if (currentUserId && isGuidValue(currentUserId)) {
+      ids.add(currentUserId);
+    }
+    return ids;
+  }, [assignableUsersCache, currentUserId]);
+
+  const normalizePrefilterGuidToEntra = React.useCallback((value: string): string => {
+    const normalized = normalizeUserId(String(value ?? '')).toLowerCase();
+    if (!normalized || !isGuidValue(normalized)) {
+      return '';
+    }
+    if (knownEntraIds.has(normalized)) {
+      return normalized;
+    }
+    return systemUserIdToEntraIdMap[normalized] ?? '';
+  }, [knownEntraIds, systemUserIdToEntraIdMap]);
+
+  const normalizePrefilterUsersToEntra = React.useCallback((values: string[]): string[] => {
+    const normalizedValues = values
+      .map((value) => {
+        const raw = String(value ?? '').trim();
+        if (!raw) return '';
+        if (raw === '__all__') return raw;
+        const normalizedGuid = normalizeUserId(raw).toLowerCase();
+        if (isGuidValue(normalizedGuid)) {
+          return normalizePrefilterGuidToEntra(normalizedGuid);
+        }
+        return raw;
+      })
+      .filter((value) => value !== '');
+    return Array.from(new Set(normalizedValues));
+  }, [normalizePrefilterGuidToEntra]);
+
+  const normalizePrefilterStateUserIds = React.useCallback((state: ManagerPrefilterState): ManagerPrefilterState => {
+    const normalizedCaseworkers = normalizePrefilterUsersToEntra(state.caseworkers ?? []);
+    if ((state.caseworkers ?? []).join('|') === normalizedCaseworkers.join('|')) {
+      return state;
+    }
+    return {
+      ...state,
+      caseworkers: normalizedCaseworkers,
+    };
+  }, [normalizePrefilterUsersToEntra]);
 
   const mapCaseworkerNamesToIds = React.useCallback(
     (values: string[]): string[] =>
@@ -1249,16 +1416,27 @@ export const DetailsListHost: React.FC<DetailsListHostProps> = ({
       columnFilters: nextColumnFilters,
       contextScope: contextScopeKey,
     };
-    setLoadErrorMessage(undefined);
-    setApimLoading(true);
-    void (async () => {
+    if (requiresCurrentUserEntra && currentUserEntraLoading) {
+      setApimLoading(false);
+      return;
+    }
+    if (requiresCurrentUserEntra && !currentUserId) {
+      resetHostResultsState();
+      setLoadErrorMessage('Unable to resolve current user Entra ID.');
+      return;
+    }
       const requestedBy = (isCaseworkerView || isQcView) && currentUserId
         ? currentUserId.toLowerCase()
         : undefined;
+      const normalizedPrefilters = prefilters ? normalizePrefilterStateUserIds(prefilters) : prefilters;
+      const apiPrefilters = requestedBy ? undefined : normalizedPrefilters;
+    setLoadErrorMessage(undefined);
+    setApimLoading(true);
+    void (async () => {
       console.debug('[Prefilter] host load start', {
         screen: screenKind,
         prefilterApplied,
-        prefilters,
+        prefilters: apiPrefilters,
         requestedBy,
         searchNonce,
       });
@@ -1270,7 +1448,7 @@ export const DetailsListHost: React.FC<DetailsListHostProps> = ({
         currentPage,
         pageSize,
         clientSort: serverClientSort,
-        prefilters,
+        prefilters: apiPrefilters,
         searchQuery: columnFilterQuery,
         country: includeCountryListYearApiParams ? country : undefined,
         listYear: includeCountryListYearApiParams ? listYear : undefined,
@@ -1288,7 +1466,7 @@ export const DetailsListHost: React.FC<DetailsListHostProps> = ({
       }
       setApiFilterOptions(normalizeFilterOptions(tableKey, res.filters));
     })();
-  }, [context, tableKey, sourceCode, searchFilters, currentPage, pageSize, clientSort, userSortActive, clientSideEligible, searchNonce, hasLoadedApim, apimLoading, prefilters, prefilterApplied, isCaseworkerView, currentUserId, isPrefilterScreen, isSalesSearch, salesSearchApplied, prefilterStorageKey, screenKind, columnFilterQuery, mapSearchFiltersForApi, resetHostResultsState, country, listYear, contextScopeKey]);
+  }, [context, tableKey, sourceCode, searchFilters, currentPage, pageSize, clientSort, userSortActive, clientSideEligible, searchNonce, hasLoadedApim, apimLoading, currentUserEntraLoading, prefilters, prefilterApplied, isCaseworkerView, currentUserId, isPrefilterScreen, isQcView, isSalesSearch, normalizePrefilterStateUserIds, requiresCurrentUserEntra, salesSearchApplied, prefilterStorageKey, screenKind, columnFilterQuery, mapSearchFiltersForApi, resetHostResultsState, country, listYear, contextScopeKey]);
 
   React.useEffect(() => {
     if (!assignPanelOpen || !assignmentContextKey) {
@@ -2160,6 +2338,7 @@ export const DetailsListHost: React.FC<DetailsListHostProps> = ({
         resolved = { ...next, caseworkers: mapCaseworkerNamesToIds(nextCaseworkers) };
       }
     }
+    resolved = normalizePrefilterStateUserIds(resolved);
     setPrefilters(resolved);
     setPrefilterApplied(true);
     setCurrentPage(0);
@@ -2187,6 +2366,7 @@ export const DetailsListHost: React.FC<DetailsListHostProps> = ({
     isCaseworkerView,
     isQcAssign,
     mapCaseworkerNamesToIds,
+    normalizePrefilterStateUserIds,
     onSelectionChange,
     onSelectionCountChange,
     screenKind,
@@ -2319,6 +2499,7 @@ export const DetailsListHost: React.FC<DetailsListHostProps> = ({
     disableClientFiltering,
     taskCount: serverDriven ? totalCount : filteredIds.length,
     canvasScreenName,
+    contextScopeKey,
     prefilterApplied,
     onPrefilterDirty: handlePrefilterDirty,
     onSearchDirty: handleSalesSearchDirty,

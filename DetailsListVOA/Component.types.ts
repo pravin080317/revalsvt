@@ -63,6 +63,8 @@ export interface ColumnConfig {
 
 export interface AssignUser {
     id: string;
+    systemUserId?: string;
+    entraObjectId?: string;
     firstName: string;
     lastName: string;
     email: string;

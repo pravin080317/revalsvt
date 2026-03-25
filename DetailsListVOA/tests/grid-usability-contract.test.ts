@@ -39,6 +39,8 @@ describe('grid usability contract', () => {
 
   test('shows page-range context and a visible overflow hint so people know where they are in the results', () => {
     expect(gridSource).toContain('const resultsSummaryText = React.useMemo(() => {');
+    expect(gridSource).toContain('showResults && (!compactViewport || totalPages > 0)');
+    expect(gridSource).toContain('{totalPages > 0 && (');
     expect(gridSource).toContain('voa-grid-results__overflow-hint');
     expect(gridSource).toContain('resultsScrollHintText');
     expect(cssSource).toContain('.voa-grid-pagination__summary');
@@ -132,10 +134,10 @@ describe('grid usability contract', () => {
 
   test('gives the search and prefilter areas a visible but restrained shadow so they read as control sections', () => {
     expect(cssSource).toContain('.voa-prefilter-bar {');
-    expect(cssSource).toContain('0 6px 12px -8px rgba(11, 12, 12, 0.24);');
+    expect(cssSource).toContain('0 2px 4px rgba(11, 12, 12, 0.06);');
     expect(cssSource).toContain('.voa-prefilter-bar--inline {');
     expect(cssSource).toContain('.voa-search-panel {');
-    expect(cssSource).toContain('0 6px 12px -8px rgba(11, 12, 12, 0.2);');
+    expect(cssSource).toContain('0 2px 8px rgba(11, 12, 12, 0.08);');
   });
 
   test('renders Flagged for Review as yes/no chips instead of raw booleans so scanning is faster', () => {

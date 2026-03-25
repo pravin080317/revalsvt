@@ -215,7 +215,7 @@ export const SalesVerificationTaskSection: React.FC<SalesVerificationTaskSection
 
   const createTaskDisabled = createTaskActionRule.disabled;
   const createTaskUnavailableReason = createTaskActionRule.reason;
-  const modifyTaskUnavailableReason = modifyTaskActionRule.reason ?? 'Modify task is currently unavailable.';
+  const modifyTaskUnavailableReason = modifyTaskActionRule.reason;
 
   return (
     <section className="voa-sale-details-card" aria-labelledby="svt-task-details-heading">
@@ -274,6 +274,19 @@ export const SalesVerificationTaskSection: React.FC<SalesVerificationTaskSection
         <article className="voa-task-panel voa-task-panel--actions" aria-labelledby="task-actions-heading">
           <h3 id="task-actions-heading" className="voa-task-panel__title">Task Actions</h3>
           <div className="voa-task-actions" role="group" aria-label="Task actions">
+            {canShowModifyTaskButton && (
+              <DefaultButton
+                text="Modify SVT Task"
+                disabled={modifyTaskActionRule.disabled}
+                ariaLabel={modifyTaskActionRule.disabled
+                  ? modifyTaskUnavailableReason ?? 'Modify task is currently unavailable.'
+                  : 'Modify SVT Task'}
+                title={modifyTaskActionRule.disabled
+                  ? modifyTaskUnavailableReason ?? 'Modify task is currently unavailable.'
+                  : undefined}
+                onClick={handleOpenModifyTaskConfirmation}
+              />
+            )}
             <DefaultButton
               text="Create Task"
               disabled={createTaskDisabled}
@@ -283,15 +296,6 @@ export const SalesVerificationTaskSection: React.FC<SalesVerificationTaskSection
               title={createTaskUnavailableReason}
               onClick={handleOpenCreateTaskConfirmation}
             />
-            {canShowModifyTaskButton && (
-              <DefaultButton
-                text="Modify SVT Task"
-                disabled={modifyTaskActionRule.disabled}
-                ariaLabel={modifyTaskActionRule.disabled ? modifyTaskUnavailableReason : 'Modify SVT Task'}
-                title={modifyTaskUnavailableReason}
-                onClick={handleOpenModifyTaskConfirmation}
-              />
-            )}
           </div>
           {createTaskUnavailableReason && (hasTaskId || !canCreateTask) && (
             <Text variant="small" className="voa-task-actions__note">{createTaskUnavailableReason}</Text>
@@ -367,7 +371,7 @@ export const SalesVerificationTaskSection: React.FC<SalesVerificationTaskSection
       >
         <DialogFooter>
           <PrimaryButton
-            text={modifyTaskBusy ? 'Modifying...' : 'Confirm Modify SVT Task'}
+            text={modifyTaskBusy ? 'Modifying...' : 'Confirm'}
             ariaLabel="Confirm modify SVT task"
             disabled={modifyTaskBusy}
             onClick={() => { void handleConfirmModifyTask(); }}

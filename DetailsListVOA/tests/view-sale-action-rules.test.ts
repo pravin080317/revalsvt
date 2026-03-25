@@ -39,7 +39,7 @@ describe('view sale action rules', () => {
     expect(rule.reason).toBe('A task ID already exists for this sale record.');
   });
 
-  test('create task action is disabled for missing manager access', () => {
+  test('create task action is disabled without manager+caseworker access', () => {
     const rule = getCreateTaskActionRule({
       createTaskBusy: false,
       saleId: 'S-1001',
@@ -49,7 +49,7 @@ describe('view sale action rules', () => {
     });
 
     expect(rule.disabled).toBe(true);
-    expect(rule.reason).toBe('Create task is available only to manager role/team.');
+    expect(rule.reason).toBe('Create task is available only to users with both manager and caseworker role/team access.');
   });
 
   test('create task action is enabled only when all conditions pass', () => {

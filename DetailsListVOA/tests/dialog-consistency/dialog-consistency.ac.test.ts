@@ -112,7 +112,7 @@ describe('Dialog Consistency – all 5 actions have a confirmation dialog', () =
     });
 
     test('AC-D12: Modify Task confirm button shows busy text while in flight', () => {
-      expect(taskSectionSource).toContain("text={modifyTaskBusy ? 'Modifying...' : 'Confirm Modify SVT Task'}");
+      expect(taskSectionSource).toContain("text={modifyTaskBusy ? 'Modifying...' : 'Confirm'}");
     });
 
     test('AC-D13: Modify Task inline success notification auto-dismisses after 3 seconds', () => {

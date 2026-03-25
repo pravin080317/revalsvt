@@ -105,6 +105,8 @@ describe('assignment helpers', () => {
             { id: '', firstName: 'Ignore', lastName: 'Me', email: '', team: '', role: '' },
             {
               id: '1',
+              systemUserId: 's1',
+              entraObjectId: 'e1',
               firstName: 'A',
               lastName: 'B',
               email: 'a@b.com',
@@ -121,6 +123,8 @@ describe('assignment helpers', () => {
     );
     expect(parsed.users).toHaveLength(2);
     expect(parsed.users[0].id).toBe('1');
+    expect(parsed.users[0].systemUserId).toBe('s1');
+    expect(parsed.users[0].entraObjectId).toBe('e1');
     expect(parsed.users[0].roles).toEqual(['r', 'r2']);
     expect(parsed.users[1].role).toBe('r3');
   });

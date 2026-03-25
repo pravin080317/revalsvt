@@ -300,6 +300,8 @@ namespace VOA.SVT.Plugins.CustomAPI
                 record = new AssignableUserRecord
                 {
                     Id = entraOidStr,
+                    SystemUserId = id.ToString(),
+                    EntraObjectId = entraOid != Guid.Empty ? entraOid.ToString() : string.Empty,
                     FirstName = entity.GetAttributeValue<string>("firstname") ?? string.Empty,
                     LastName = entity.GetAttributeValue<string>("lastname") ?? string.Empty,
                     Email = email ?? string.Empty,
@@ -383,6 +385,8 @@ namespace VOA.SVT.Plugins.CustomAPI
         private sealed class AssignableUserRecord
         {
             public string Id { get; set; }  // Entra Object ID (azureactivedirectoryobjectid)
+            public string SystemUserId { get; set; }
+            public string EntraObjectId { get; set; }
             public string FirstName { get; set; }
             public string LastName { get; set; }
             public string Email { get; set; }

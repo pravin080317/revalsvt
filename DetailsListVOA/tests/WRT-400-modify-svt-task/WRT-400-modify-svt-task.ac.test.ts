@@ -27,13 +27,14 @@ describe('WRT-400 Modify SVT Task AC', () => {
 
   test('AC2: Modify button remains disabled for users without caseworker permissions', () => {
     expect(taskSectionSource).toContain('disabled={modifyTaskActionRule.disabled}');
+    expect(taskSectionSource).toContain("title={modifyTaskActionRule.disabled");
     expect(rulesSource).toContain("reason: 'Modify task is available only to caseworker role/team.'");
   });
 
   test('AC3: clicking Modify SVT Task opens a Yes/No confirmation prompt', () => {
     expect(taskSectionSource).toContain('setShowModifyTaskConfirmation(true);');
     expect(taskSectionSource).toContain("subText: 'Are you sure you want to modify this SVT Task?");
-    expect(taskSectionSource).toContain("text={modifyTaskBusy ? 'Modifying...' : 'Confirm Modify SVT Task'}");
+    expect(taskSectionSource).toContain("text={modifyTaskBusy ? 'Modifying...' : 'Confirm'}");
     expect(taskSectionSource).toContain('ariaLabel="Confirm modify SVT task"');
     expect(taskSectionSource).toContain('text="Cancel"');
     expect(taskSectionSource).toContain('ariaLabel="Cancel modify SVT task"');

@@ -27,15 +27,15 @@ describe('WRT-308 Manual Task Creation AC', () => {
     expect(configSource).toContain("manualTaskCreationApiName: 'voa_SvtManualTaskCreation'");
   });
 
-  test('AC2: Create Task is disabled when a task ID already exists and for non-manager persona', () => {
+  test('AC2: Create Task is disabled when a task ID already exists and without manager+caseworker access', () => {
     expect(sectionSource).toContain('getCreateTaskActionRule({');
     expect(sectionSource).toContain('const createTaskDisabled = createTaskActionRule.disabled;');
     expect(rulesSource).toContain('export const getCreateTaskActionRule = ({');
     expect(rulesSource).toContain("reason: 'A task ID already exists for this sale record.'");
-    expect(rulesSource).toContain("reason: 'Create task is available only to manager role/team.'");
+    expect(rulesSource).toContain("reason: 'Create task is available only to users with both manager and caseworker role/team access.'");
     expect(runtimeSource).toContain('const existingTaskId = resolveCurrentTaskIdFromDetails(this._saleDetails, this.selectedTaskId);');
-    expect(runtimeSource).toContain("if (!this.hasManagerAccess) {");
-    expect(runtimeSource).toContain("throw new Error('Manual task creation is restricted to manager role/team.');");
+    expect(runtimeSource).toContain('if (!this.hasManagerAccess || !this.hasCaseworkerAccess) {');
+    expect(runtimeSource).toContain("throw new Error('Manual task creation is restricted to users with both manager and caseworker role/team access.');");
   });
 
   test('AC3: manual task IDs use the M- prefix path', () => {

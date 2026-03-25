@@ -16,6 +16,7 @@ import { IInputs } from '../../generated/ManifestTypes';
 import { CONTROL_CONFIG } from '../../config/ControlConfig';
 import { executeUnboundCustomApi, normalizeCustomApiName, resolveCustomApiOperationType } from '../../services/CustomApi';
 import { DetailsListHost } from '../DetailsListHost/DetailsListHost';
+import { normalizeUserId } from '../../utils/IdentifierUtils';
 import {
   HOME_JOURNEY_AUTOMATION_IDS,
   HOME_JOURNEY_COPY,
@@ -36,6 +37,7 @@ interface ParsedUserContext {
   persona: SvtPersona;
   resolutionSource: string;
   hasSvtAccess: boolean;
+  entraObjectId: string;
 }
 
 interface ManagerJourneyShellProps {
@@ -112,6 +114,7 @@ const parseUserContext = (payload: unknown): ParsedUserContext => {
   const personaValue = findRecordValue(record, 'svtPersona', 'persona');
   const sourceValue = findRecordValue(record, 'resolutionSource', 'source');
   const accessValue = findRecordValue(record, 'hasSvtAccess', 'hasAccess');
+  const entraObjectIdValue = findRecordValue(record, 'entraObjectId');
 
   const persona = normalizePersona(personaValue);
   const hasSvtAccess = toBoolean(accessValue)
@@ -124,6 +127,7 @@ const parseUserContext = (payload: unknown): ParsedUserContext => {
     persona,
     resolutionSource: normalizeText(sourceValue),
     hasSvtAccess,
+    entraObjectId: normalizeUserId(normalizeText(entraObjectIdValue)),
   };
 };
 
@@ -179,7 +183,13 @@ export const ManagerJourneyShell: React.FC<ManagerJourneyShellProps> = ({
     persona: 'unknown',
     resolutionSource: '',
     hasSvtAccess: false,
+    entraObjectId: '',
   });
+
+  const effectiveEntraObjectId = React.useMemo(
+    () => normalizeUserId(userContext.entraObjectId || entraObjectId),
+    [userContext.entraObjectId, entraObjectId],
+  );
 
   React.useEffect(() => {
     if (initialCountryValue && !country) {
@@ -221,6 +231,7 @@ export const ManagerJourneyShell: React.FC<ManagerJourneyShellProps> = ({
         persona: 'manager',
         resolutionSource: 'Fallback',
         hasSvtAccess: true,
+        entraObjectId: '',
       });
       setUserContextError(HOME_JOURNEY_COPY.userContextApiMissingMessage);
       setUserContextLoading(false);
@@ -253,6 +264,7 @@ export const ManagerJourneyShell: React.FC<ManagerJourneyShellProps> = ({
           persona: 'manager',
           resolutionSource: 'Fallback',
           hasSvtAccess: true,
+          entraObjectId: '',
         });
         setUserContextError(HOME_JOURNEY_COPY.userContextFallbackMessage);
       } finally {
@@ -475,7 +487,7 @@ export const ManagerJourneyShell: React.FC<ManagerJourneyShellProps> = ({
                   contextSubtitle={`${country} · ${listYear}`}
                   onEditContext={changeContext}
                   refreshNonce={refreshNonce}
-                  entraObjectId={entraObjectId}
+                  entraObjectId={effectiveEntraObjectId}
                 />
               </div>
             </section>
