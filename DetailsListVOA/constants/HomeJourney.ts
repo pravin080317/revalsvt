@@ -10,12 +10,11 @@ export interface HomeJourneyTileDefinition {
   tableKey: string;
 }
 
-export const HOME_JOURNEY_COUNTRY_BASE_VALUES = ['England', 'Welsh'];
+export const HOME_JOURNEY_COUNTRY_BASE_VALUES = ['England', 'Wales'];
 
-export const HOME_JOURNEY_LIST_YEAR_RANGE = {
-  min: 2020,
-  max: 2035,
-};
+// List year choices are discrete business cycles, not a continuous yearly range.
+// Keep this list to 2-3 options and update when cycle years change.
+export const HOME_JOURNEY_LIST_YEAR_BASE_VALUES = ['2026', '2036', '2048'] as const;
 
 export const HOME_JOURNEY_AUTOMATION_IDS = {
   contextStage: 'voa-home-context-stage',

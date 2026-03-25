@@ -134,7 +134,7 @@ namespace VOA.SVT.Plugins.CustomAPI
                         // Trace minimal response snippet (avoid PII / noisy logs)
                         localPluginContext.TracingService.Trace($"APIM response snippet: {Truncate(body, 200)}");
 
-                        // Enrich response with user display names for assignedTo / qcAssignedTo GUIDs
+                        // Enrich response with user display names for assignment/request/QC reviewer GUIDs
                         body = EnrichWithUserDisplayNames(
                             body,
                             localPluginContext.SystemUserService,
@@ -212,9 +212,9 @@ namespace VOA.SVT.Plugins.CustomAPI
             => string.IsNullOrEmpty(s) ? s : (s.Length > maxLen ? s.Substring(0, maxLen) : s);
 
         /// <summary>
-        /// Extracts assignedTo and qcAssignedTo GUIDs from the APIM response,
+        /// Extracts assignment/request/QC reviewer GUIDs from the APIM response,
         /// resolves them to display names via the Dataverse systemuser table,
-        /// and injects assignedToName / qcAssignedToName into the JSON.
+        /// and injects name fields (for example assignedToName / qcAssignedToName / qcReviewedByName) into the JSON.
         /// </summary>
         private static string EnrichWithUserDisplayNames(
             string responseBody,
@@ -232,6 +232,7 @@ namespace VOA.SVT.Plugins.CustomAPI
                 ExtractGuidField(responseBody, "assignedTo", guidsByField);
                 ExtractGuidField(responseBody, "qcAssignedTo", guidsByField);
                 ExtractGuidField(responseBody, "requestedBy", guidsByField);
+                ExtractGuidField(responseBody, "qcReviewedBy", guidsByField);
 
                 if (guidsByField.Count == 0)
                 {
@@ -296,15 +297,61 @@ namespace VOA.SVT.Plugins.CustomAPI
                 return users;
             }
 
-            var query = new QueryExpression("systemuser")
+            var unresolvedIds = new HashSet<Guid>(userIds.Where(id => id != Guid.Empty));
+
+            // Primary lookup by Entra object id.
+            var entraQuery = new QueryExpression("systemuser")
             {
                 ColumnSet = new ColumnSet("azureactivedirectoryobjectid", "fullname", "firstname", "lastname"),
                 NoLock = true
             };
-            query.Criteria.AddCondition("azureactivedirectoryobjectid", ConditionOperator.In,
-                userIds.Cast<object>().ToArray());
 
-            var result = service.RetrieveMultiple(query);
+            var lookupIds = unresolvedIds.Cast<object>().ToArray();
+            entraQuery.Criteria.AddCondition("azureactivedirectoryobjectid", ConditionOperator.In, lookupIds);
+
+            var entraResult = service.RetrieveMultiple(entraQuery);
+            if (entraResult?.Entities != null && entraResult.Entities.Count > 0)
+            {
+                foreach (var entity in entraResult.Entities)
+                {
+                    var entraOid = entity.GetAttributeValue<Guid>("azureactivedirectoryobjectid");
+                    if (entraOid == Guid.Empty || !unresolvedIds.Contains(entraOid))
+                    {
+                        continue;
+                    }
+
+                    var displayName = entity.GetAttributeValue<string>("fullname");
+                    if (string.IsNullOrWhiteSpace(displayName))
+                    {
+                        var firstName = entity.GetAttributeValue<string>("firstname") ?? string.Empty;
+                        var lastName = entity.GetAttributeValue<string>("lastname") ?? string.Empty;
+                        displayName = $"{firstName} {lastName}".Trim();
+                    }
+
+                    if (!string.IsNullOrWhiteSpace(displayName))
+                    {
+                        users[entraOid] = displayName;
+                        unresolvedIds.Remove(entraOid);
+                    }
+                }
+            }
+
+            // Fallback lookup by Dataverse systemuserid.
+            if (unresolvedIds.Count == 0)
+            {
+                trace?.Trace($"ResolveUserDisplayNames: resolved {users.Count} of {userIds.Length} user(s).");
+                return users;
+            }
+
+            var systemQuery = new QueryExpression("systemuser")
+            {
+                ColumnSet = new ColumnSet("systemuserid", "fullname", "firstname", "lastname"),
+                NoLock = true
+            };
+
+            systemQuery.Criteria.AddCondition("systemuserid", ConditionOperator.In, unresolvedIds.Cast<object>().ToArray());
+
+            var result = service.RetrieveMultiple(systemQuery);
             if (result?.Entities == null || result.Entities.Count == 0)
             {
                 return users;
@@ -312,8 +359,11 @@ namespace VOA.SVT.Plugins.CustomAPI
 
             foreach (var entity in result.Entities)
             {
-                var entraOid = entity.GetAttributeValue<Guid>("azureactivedirectoryobjectid");
-                if (entraOid == Guid.Empty) continue;
+                var systemUserId = entity.Id;
+                if (systemUserId == Guid.Empty || !unresolvedIds.Contains(systemUserId))
+                {
+                    continue;
+                }
 
                 var displayName = entity.GetAttributeValue<string>("fullname");
                 if (string.IsNullOrWhiteSpace(displayName))
@@ -325,7 +375,8 @@ namespace VOA.SVT.Plugins.CustomAPI
 
                 if (!string.IsNullOrWhiteSpace(displayName))
                 {
-                    users[entraOid] = displayName;
+                    users[systemUserId] = displayName;
+                    unresolvedIds.Remove(systemUserId);
                 }
             }
 

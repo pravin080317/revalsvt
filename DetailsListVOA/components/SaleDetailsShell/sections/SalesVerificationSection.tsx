@@ -218,9 +218,9 @@ export const SalesVerificationSection: React.FC<SalesVerificationSectionProps> =
   const [qcOutcomeSelectionError, setQcOutcomeSelectionError] = React.useState<string | undefined>(undefined);
   const [qcOutcomeRemarksError, setQcOutcomeRemarksError] = React.useState<string | undefined>(undefined);
   const [actionError, setActionError] = React.useState<string | undefined>(undefined);
-  const [showCompleteSuccess, setShowCompleteSuccess] = React.useState(false);
+  const [submitForQcDialogError, setSubmitForQcDialogError] = React.useState<string | undefined>(undefined);
+  const [qcOutcomeDialogError, setQcOutcomeDialogError] = React.useState<string | undefined>(undefined);
   const [showConfirmQcOutcomeDialog, setShowConfirmQcOutcomeDialog] = React.useState(false);
-  const [showQcOutcomeSuccess, setShowQcOutcomeSuccess] = React.useState(false);
   const [showCompleteConfirmDialog, setShowCompleteConfirmDialog] = React.useState(false);
 
   const clearCrossSectionFieldErrors = React.useCallback(() => {
@@ -245,9 +245,10 @@ export const SalesVerificationSection: React.FC<SalesVerificationSectionProps> =
     setQcOutcomeSelectionError(undefined);
     setQcOutcomeRemarksError(undefined);
     setActionError(undefined);
+    setSubmitForQcDialogError(undefined);
+    setQcOutcomeDialogError(undefined);
     setShowSubmitForQcDialog(false);
     setShowConfirmQcOutcomeDialog(false);
-    setShowQcOutcomeSuccess(false);
     setShowCompleteConfirmDialog(false);
     clearCrossSectionFieldErrors();
   }, [clearCrossSectionFieldErrors, model]);
@@ -260,6 +261,28 @@ export const SalesVerificationSection: React.FC<SalesVerificationSectionProps> =
   }, [clearCrossSectionFieldErrors, salesParticularModel, padConfirmationKey]);
 
   const isNotUseful = isSaleUsefulKey === 'no';
+
+  // Guard against stale-closure scenarios: only show the inline error if the
+  // corresponding field is actually still empty in the current render.
+  const effectiveIsSaleUsefulError = isSaleUsefulError && !isSaleUsefulKey ? isSaleUsefulError : undefined;
+  const effectiveWhyNotUsefulError = whyNotUsefulError && isNotUseful && !whyNotUsefulKey ? whyNotUsefulError : undefined;
+
+  // Similarly, filter any top-level mandatory messages that no longer apply
+  // (e.g. "Select whether the sale is useful" when the user has since picked Yes).
+  // Section-prefixed messages (Sales Particulars:, Property Attribute Details:) are always kept.
+  const derivedMandatoryMessages = React.useMemo(() =>
+    mandatoryErrorMessages.filter((msg) => {
+      if (msg.startsWith('Sales Particulars:') || msg.startsWith('Property Attribute Details:')) {
+        return true;
+      }
+      // Top-level: re-evaluate whether the condition is still true
+      if (!isSaleUsefulKey) return true; // saleUseful field is still empty
+      if (isNotUseful && !whyNotUsefulKey) return true; // whyNotUseful field still empty
+      return false;
+    }),
+    [mandatoryErrorMessages, isSaleUsefulKey, whyNotUsefulKey, isNotUseful],
+  );
+
   const maxNotesLength = 2000;
   const notesRemaining = Math.max(0, maxNotesLength - additionalNotes.length);
 
@@ -272,9 +295,8 @@ export const SalesVerificationSection: React.FC<SalesVerificationSectionProps> =
   const shouldShowQcRemarksRequiredMessage = canSubmitQcOutcome && qcOutcomeIsFail && !trimValue(qcOutcomeRemarks);
   const effectiveQcOutcomeRemarksError = qcOutcomeRemarksError ?? (shouldShowQcRemarksRequiredMessage ? qcRemarksRequiredMessage : undefined);
   const qcUndertakenByDisplay = trimValue(
-    canSubmitQcOutcome
-      ? (qcAssignedTo || currentUserDisplayName || model.qcReviewedBy)
-      : (model.qcReviewedBy || qcAssignedTo),
+    qcAssignedTo
+    || model.qcReviewedBy,
   ) || '-';
   const showCaseworkerActions = !canSubmitQcOutcome && !isQcView;
   const qcSubmitButtonText = resolveQcSubmitButtonText(qcOutcomeKey);
@@ -384,7 +406,6 @@ export const SalesVerificationSection: React.FC<SalesVerificationSectionProps> =
 
     setShowCompleteConfirmDialog(false);
     setActionError(undefined);
-    setShowCompleteSuccess(false);
     setBusyAction('complete');
     try {
       await Promise.resolve(onCompleteTask(payload));
@@ -392,7 +413,6 @@ export const SalesVerificationSection: React.FC<SalesVerificationSectionProps> =
       setIsSaleUsefulError(undefined);
       setWhyNotUsefulError(undefined);
       clearCrossSectionFieldErrors();
-      setShowCompleteSuccess(true);
     } catch (err) {
       setActionError(err instanceof Error ? err.message : 'Failed to complete sales verification task.');
     } finally {
@@ -444,7 +464,7 @@ export const SalesVerificationSection: React.FC<SalesVerificationSectionProps> =
       return;
     }
 
-    setActionError(undefined);
+    setSubmitForQcDialogError(undefined);
     setBusyAction('submit');
     try {
       await Promise.resolve(onSubmitForQc({
@@ -458,7 +478,7 @@ export const SalesVerificationSection: React.FC<SalesVerificationSectionProps> =
       setWhyNotUsefulError(undefined);
       clearCrossSectionFieldErrors();
     } catch (err) {
-      setActionError(err instanceof Error ? err.message : 'Failed to submit sales verification task for QC.');
+      setSubmitForQcDialogError(err instanceof Error ? err.message : 'Failed to submit sales verification task for QC.');
     } finally {
       setBusyAction(undefined);
     }
@@ -475,7 +495,7 @@ export const SalesVerificationSection: React.FC<SalesVerificationSectionProps> =
       highlightedSections.add(SECTION_PAD_ID);
     }
 
-    if (isSaleUsefulError || whyNotUsefulError) {
+    if ((isSaleUsefulError && !isSaleUsefulKey) || (whyNotUsefulError && isNotUseful && !whyNotUsefulKey)) {
       highlightedSections.add(SECTION_VERIFICATION_ID);
     }
 
@@ -499,7 +519,7 @@ export const SalesVerificationSection: React.FC<SalesVerificationSectionProps> =
         section?.classList.remove(SECTION_ERROR_HIGHLIGHT_CLASS);
       });
     };
-  }, [isSaleUsefulError, mandatoryErrorMessages, whyNotUsefulError]);
+  }, [isSaleUsefulError, isSaleUsefulKey, isNotUseful, mandatoryErrorMessages, whyNotUsefulError, whyNotUsefulKey]);
 
 
   const handleSubmitQcOutcome = React.useCallback(() => {
@@ -550,11 +570,11 @@ export const SalesVerificationSection: React.FC<SalesVerificationSectionProps> =
     }
     const normalizedRemarks = qcOutcomeRemarks.trim();
     const reviewedBy = trimValue(qcAssignedTo)
-      || trimValue(currentUserDisplayName)
       || trimValue(model.qcReviewedBy)
+      || trimValue(currentUserDisplayName)
       || 'QC User';
 
-    setActionError(undefined);
+    setQcOutcomeDialogError(undefined);
     setBusyAction('qcsubmit');
     try {
       await Promise.resolve(onSubmitQcOutcome({
@@ -563,9 +583,8 @@ export const SalesVerificationSection: React.FC<SalesVerificationSectionProps> =
         qcReviewedBy: reviewedBy,
       }));
       setShowConfirmQcOutcomeDialog(false);
-      setShowQcOutcomeSuccess(true);
     } catch (err) {
-      setActionError(err instanceof Error ? err.message : 'Failed to submit QC outcome.');
+      setQcOutcomeDialogError(err instanceof Error ? err.message : 'Failed to submit QC outcome.');
     } finally {
       setBusyAction(undefined);
     }
@@ -611,7 +630,11 @@ export const SalesVerificationSection: React.FC<SalesVerificationSectionProps> =
                   const nextKey = option?.key as string | undefined;
                   setIsSaleUsefulKey(nextKey);
                   setIsSaleUsefulError(undefined);
-                  setMandatoryErrorMessages([]);
+                  // Only remove the top-level saleUseful/whyNotUseful messages;
+                  // preserve any Sales Particulars / PAD errors that are still relevant.
+                  setMandatoryErrorMessages((prev) =>
+                    prev.filter((msg) => msg.startsWith('Sales Particulars:') || msg.startsWith('Property Attribute Details:')),
+                  );
                   clearCrossSectionFieldErrors();
                   if (nextKey !== 'no') {
                     setWhyNotUsefulKey(undefined);
@@ -619,9 +642,9 @@ export const SalesVerificationSection: React.FC<SalesVerificationSectionProps> =
                   }
                 }}
                 ariaLabel="Is this sale useful"
-                className={`voa-sales-verification-row__dropdown${isSaleUsefulError ? ' voa-sales-verification-row__dropdown--error' : ''}`}
+                className={`voa-sales-verification-row__dropdown${effectiveIsSaleUsefulError ? ' voa-sales-verification-row__dropdown--error' : ''}`}
               />
-              {isSaleUsefulError && <span className="voa-sales-verification-row__error" role="alert">{isSaleUsefulError}</span>}
+              {effectiveIsSaleUsefulError && <span className="voa-sales-verification-row__error" role="alert">{effectiveIsSaleUsefulError}</span>}
             </div>
           </div>
 
@@ -637,13 +660,15 @@ export const SalesVerificationSection: React.FC<SalesVerificationSectionProps> =
                 onChange={(_, option) => {
                   setWhyNotUsefulKey(option?.key as string | undefined);
                   setWhyNotUsefulError(undefined);
-                  setMandatoryErrorMessages([]);
+                  setMandatoryErrorMessages((prev) =>
+                    prev.filter((msg) => msg.startsWith('Sales Particulars:') || msg.startsWith('Property Attribute Details:')),
+                  );
                   clearCrossSectionFieldErrors();
                 }}
                 ariaLabel="Why is the sale not useful"
-                className={`voa-sales-verification-row__dropdown${whyNotUsefulError ? ' voa-sales-verification-row__dropdown--error' : ''}`}
+                className={`voa-sales-verification-row__dropdown${effectiveWhyNotUsefulError ? ' voa-sales-verification-row__dropdown--error' : ''}`}
               />
-              {whyNotUsefulError && <span className="voa-sales-verification-row__error" role="alert">{whyNotUsefulError}</span>}
+              {effectiveWhyNotUsefulError && <span className="voa-sales-verification-row__error" role="alert">{effectiveWhyNotUsefulError}</span>}
             </div>
           </div>
         </div>
@@ -668,30 +693,6 @@ export const SalesVerificationSection: React.FC<SalesVerificationSectionProps> =
         </div>
       </div>
 
-      {showCompleteSuccess && (
-        <MessageBar
-          messageBarType={MessageBarType.success}
-          className="voa-sales-verification-mandatory"
-          role="status"
-          onDismiss={() => setShowCompleteSuccess(false)}
-          dismissButtonAriaLabel="Close"
-        >
-          Sales verification task completed successfully. Returning to task list...
-        </MessageBar>
-      )}
-
-      {showQcOutcomeSuccess && (
-        <MessageBar
-          messageBarType={MessageBarType.success}
-          className="voa-sales-verification-mandatory"
-          role="status"
-          onDismiss={() => setShowQcOutcomeSuccess(false)}
-          dismissButtonAriaLabel="Close"
-        >
-          QC outcome submitted successfully. Returning to task list...
-        </MessageBar>
-      )}
-
       {actionError && (
         <MessageBar
           messageBarType={MessageBarType.error}
@@ -704,7 +705,7 @@ export const SalesVerificationSection: React.FC<SalesVerificationSectionProps> =
         </MessageBar>
       )}
 
-      {mandatoryErrorMessages.length > 0 && (
+      {derivedMandatoryMessages.length > 0 && (
         <MessageBar
           messageBarType={MessageBarType.warning}
           className="voa-sales-verification-mandatory"
@@ -714,7 +715,7 @@ export const SalesVerificationSection: React.FC<SalesVerificationSectionProps> =
         >
           <strong>Please complete the following mandatory fields:</strong>
           <ul className="voa-sales-verification-mandatory__list">
-            {mandatoryErrorMessages.map((error) => (
+            {derivedMandatoryMessages.map((error) => (
               <li key={error}>
                 <button type="button" className="voa-error-section-link" onClick={() => scrollToSection(error)}>
                   {error}
@@ -871,9 +872,20 @@ export const SalesVerificationSection: React.FC<SalesVerificationSectionProps> =
         minWidth={480}
         maxWidth={560}
       >
+        {qcOutcomeDialogError && (
+          <MessageBar
+            messageBarType={MessageBarType.error}
+            role="alert"
+            onDismiss={() => setQcOutcomeDialogError(undefined)}
+            dismissButtonAriaLabel="Close"
+            styles={{ root: { marginBottom: 8 } }}
+          >
+            {qcOutcomeDialogError}
+          </MessageBar>
+        )}
         <DialogFooter>
           <PrimaryButton
-            text="Confirm"
+            text={busyAction === 'qcsubmit' ? 'Submitting...' : 'Confirm'}
             ariaLabel="Confirm QC outcome submission"
             disabled={busyAction === 'qcsubmit'}
             onClick={() => { void handleConfirmQcOutcome(); }}
@@ -912,9 +924,20 @@ export const SalesVerificationSection: React.FC<SalesVerificationSectionProps> =
             setSubmitForQcRemarksError(undefined);
           }}
         />
+        {submitForQcDialogError && (
+          <MessageBar
+            messageBarType={MessageBarType.error}
+            role="alert"
+            onDismiss={() => setSubmitForQcDialogError(undefined)}
+            dismissButtonAriaLabel="Close"
+            styles={{ root: { marginBottom: 8 } }}
+          >
+            {submitForQcDialogError}
+          </MessageBar>
+        )}
         <DialogFooter>
           <PrimaryButton
-            text="Submit for QC"
+            text={busyAction === 'submit' ? 'Submitting...' : 'Submit for QC'}
             ariaLabel="Submit sales verification task for quality control"
             disabled={busyAction === 'submit'}
             onClick={() => { void handleConfirmSubmitForQc(); }}

@@ -235,4 +235,6 @@ export interface QualityControlOutcome {
   qcRemark?: string | null;
   /** GUID or display name of the QC reviewer */
   qcReviewedBy?: string | null;
+  /** Display name resolved from qcReviewedBy GUID by the plugin */
+  qcReviewedByName?: string | null;
 }

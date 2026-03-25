@@ -41,7 +41,28 @@ describe('WRT-308 Manual Task Creation AC', () => {
   test('AC3: manual task IDs use the M- prefix path', () => {
     expect(runtimeSource).toContain("sourceType: 'M'");
     expect(actionsSource).toContain('/\\bM-\\d+\\b/i');
-    expect(sectionSource).toContain("text={createTaskBusy ? 'Creating Task...' : 'Create Task'}");
+    // Trigger button always shows static label; busy text is on the dialog confirm button
+    expect(sectionSource).toContain('text="Create Task"');
+    expect(sectionSource).toContain("text={createTaskBusy ? 'Creating...' : 'Create Task'}");
     expect(sectionSource).toContain('aria-label="Task actions"');
+  });
+
+  test('AC3b: clicking Create Task opens a confirmation dialog before creating', () => {
+    // Button click must open dialog rather than calling the API directly
+    expect(sectionSource).toContain('onClick={handleOpenCreateTaskConfirmation}');
+    expect(sectionSource).toContain('showCreateTaskConfirmation');
+    expect(sectionSource).toContain("title: 'Create SVT Task'");
+    expect(sectionSource).toContain(
+      "subText: 'Are you sure you want to create an SVT task for this sale record? The task will be assigned to you.'",
+    );
+    expect(sectionSource).toContain('handleConfirmCreateTask');
+    expect(sectionSource).toContain('handleCancelCreateTask');
+    expect(sectionSource).toContain('ariaLabel="Confirm create SVT task"');
+    expect(sectionSource).toContain('ariaLabel="Cancel create SVT task"');
+  });
+
+  test('AC3c: Create Task success notification auto-dismisses (short-lived, stays on details view)', () => {
+    expect(sectionSource).toContain('setTimeout(() => setCreateTaskMessage(undefined), 3000)');
+    expect(sectionSource).toContain("{createTaskMessage && (");
   });
 });

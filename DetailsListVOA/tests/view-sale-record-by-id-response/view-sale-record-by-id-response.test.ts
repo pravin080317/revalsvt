@@ -150,6 +150,7 @@ const REAL_API_RESPONSE: ViewSaleRecordByIdResponse = {
     qcOutcome: null,
     qcRemark: null,
     qcReviewedBy: null,
+    qcReviewedByName: null,
   },
 };
 
@@ -568,6 +569,7 @@ describe('ViewSaleRecordById response model', () => {
       expect(getValue(qc, 'qcOutcome')).toBe('');
       expect(getValue(qc, 'qcRemark')).toBe('');
       expect(getValue(qc, 'qcReviewedBy')).toBe('');
+      expect(getValue(qc, 'qcReviewedByName')).toBe('');
     });
   });
 
@@ -626,6 +628,7 @@ describe('ViewSaleRecordById response model', () => {
         qcOutcome: 'Fail',
         qcRemark: 'Missing EPC data',
         qcReviewedBy: 'aabbccdd-1122-3344-5566-778899aabbcc',
+        qcReviewedByName: 'Alice QC Reviewer',
       },
       repeatSaleInfo: {
         previousRatioRange: '0.95 - 1.05',
@@ -674,6 +677,7 @@ describe('ViewSaleRecordById response model', () => {
     test('QC outcome fields are populated', () => {
       expect(getValue(qc, 'qcOutcome')).toBe('Fail');
       expect(getValue(qc, 'qcRemark')).toBe('Missing EPC data');
+      expect(getValue(qc, 'qcReviewedByName')).toBe('Alice QC Reviewer');
     });
 
     test('repeat sale info ratio ranges are populated', () => {

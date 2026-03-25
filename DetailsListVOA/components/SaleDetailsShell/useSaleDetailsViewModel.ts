@@ -462,6 +462,28 @@ const QC_ASSIGNED_TO_ID_KEYS = [
   'assignedtoqcid',
 ];
 
+const QC_REVIEWED_BY_NAME_KEYS = [
+  'qcReviewedByName',
+  'qcReviewedByDisplayName',
+  'reviewedByName',
+  'reviewedByDisplayName',
+  'qcReviewedBy',
+  'qcreviewedby',
+  'reviewedBy',
+  'reviewedby',
+];
+
+const QC_REVIEWED_BY_ID_KEYS = [
+  'qcReviewedByUserId',
+  'qcReviewedById',
+  'reviewedByUserId',
+  'reviewedById',
+  'qcreviewedbyuserid',
+  'qcreviewedbyid',
+  'reviewedbyuserid',
+  'reviewedbyid',
+];
+
 const resolveUserDisplayFromRecord = (
   record: SaleDetailsRecord,
   nameKeys: string[],
@@ -808,6 +830,50 @@ const normalizeAuditFieldKey = (value: string): string => value
   .toLowerCase()
   .replace(/[^a-z0-9]/g, '');
 
+const AUDIT_ASSIGNEE_FIELD_KEY_MATCHERS = [
+  (normalized: string) => normalized === 'assignedto',
+  (normalized: string) => normalized === 'qcassignedto',
+  (normalized: string) => normalized.endsWith('assignedto'),
+  (normalized: string) => normalized.endsWith('assignedtoid'),
+  (normalized: string) => normalized.endsWith('assignedtouserid'),
+];
+
+const AUDIT_GUID_CONTAINS_PATTERN = /\{?[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\}?/i;
+const AUDIT_GUID_TOKEN_PATTERN = /\{?[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\}?/ig;
+
+const isAuditAssigneeField = (rawFieldName: string): boolean => {
+  const normalized = normalizeAuditFieldKey(rawFieldName);
+  if (!normalized) {
+    return false;
+  }
+  return AUDIT_ASSIGNEE_FIELD_KEY_MATCHERS.some((matches) => matches(normalized));
+};
+
+const resolveAuditUserToken = (value: string, lookup: Record<string, string>): string => {
+  const resolved = resolveUserDisplayName(value, lookup).trim();
+  if (!resolved || resolved === 'Unknown User') {
+    return value.trim();
+  }
+  return resolved;
+};
+
+const resolveAuditUserValue = (value: string, lookup: Record<string, string>): string => {
+  const trimmed = value.trim();
+  if (!trimmed) {
+    return '';
+  }
+
+  if (isGuidLikeValue(trimmed)) {
+    return resolveAuditUserToken(trimmed, lookup);
+  }
+
+  if (!AUDIT_GUID_CONTAINS_PATTERN.test(trimmed)) {
+    return trimmed;
+  }
+
+  return trimmed.replace(AUDIT_GUID_TOKEN_PATTERN, (token) => resolveAuditUserToken(token, lookup));
+};
+
 const AUDIT_FIELD_LABEL_BY_KEY: Record<string, string> = {
   taskstatus: 'Task Status',
   status: 'Task Status',
@@ -868,22 +934,36 @@ const toAuditFieldLabel = (value: string): string => {
 
   return toReadableLabel(trimmed).replace(/\s+/g, ' ').trim();
 };
-const mapAuditFieldChanges = (record: SaleDetailsRecord): { fieldName: string; oldValue: string; newValue: string }[] => {
+const mapAuditFieldChanges = (
+  record: SaleDetailsRecord,
+  lookup: Record<string, string>,
+): { fieldName: string; oldValue: string; newValue: string }[] => {
   const rawChanges = getRecordArray(record, 'changes');
 
-  const fromChanges = rawChanges.map((change) => ({
-    fieldName: formatValue(toAuditFieldLabel(getValue(change, 'fieldName'))),
-    oldValue: formatValue(getValue(change, 'oldValue')),
-    newValue: formatValue(getValue(change, 'newValue')),
-  }));
+  const fromChanges = rawChanges.map((change) => {
+    const rawFieldName = getValue(change, 'fieldName');
+    const rawOldValue = getValue(change, 'oldValue');
+    const rawNewValue = getValue(change, 'newValue');
+    const useAssigneeResolution = isAuditAssigneeField(rawFieldName);
+
+    return {
+      fieldName: formatValue(toAuditFieldLabel(rawFieldName)),
+      oldValue: formatValue(useAssigneeResolution ? resolveAuditUserValue(rawOldValue, lookup) : rawOldValue),
+      newValue: formatValue(useAssigneeResolution ? resolveAuditUserValue(rawNewValue, lookup) : rawNewValue),
+    };
+  });
 
   if (fromChanges.length > 0) {
     return fromChanges;
   }
 
-  const singleField = formatValue(toAuditFieldLabel(getValue(record, 'fieldName')));
-  const singleOldValue = formatValue(getValue(record, 'oldValue'));
-  const singleNewValue = formatValue(getValue(record, 'newValue'));
+  const singleFieldRaw = getValue(record, 'fieldName');
+  const singleField = formatValue(toAuditFieldLabel(singleFieldRaw));
+  const singleOldRaw = getValue(record, 'oldValue');
+  const singleNewRaw = getValue(record, 'newValue');
+  const useSingleAssigneeResolution = isAuditAssigneeField(singleFieldRaw);
+  const singleOldValue = formatValue(useSingleAssigneeResolution ? resolveAuditUserValue(singleOldRaw, lookup) : singleOldRaw);
+  const singleNewValue = formatValue(useSingleAssigneeResolution ? resolveAuditUserValue(singleNewRaw, lookup) : singleNewRaw);
 
   if (singleField !== '-' || singleOldValue !== '-' || singleNewValue !== '-') {
     return [{
@@ -920,10 +1000,10 @@ const mapAuditHistoryModel = (
       const parsedChangedOn = parseAuditDateTime(changedOnRaw);
 
       const changeId = formatValue(firstNonEmpty(getValue(record, 'changeID'), getValue(record, 'changeId'), `${index + 1}`));
-      const changedBy = formatValue(resolveUserDisplayName(getValue(record, 'changedBy'), effectiveLookup));
+      const changedBy = formatValue(resolveAuditUserValue(getValue(record, 'changedBy'), effectiveLookup));
       const changedOn = formatValue(toUkDateTime(changedOnRaw));
       const eventType = formatValue(getValue(record, 'eventType'));
-      const changes = mapAuditFieldChanges(record);
+      const changes = mapAuditFieldChanges(record, effectiveLookup);
 
       if (changes.length === 0) {
         return undefined;
@@ -1513,7 +1593,12 @@ export const useSaleDetailsViewModel = (
       remarks: toEditableInput(getValue(salesVerificationDetails, 'remarks')),
       qcOutcome: toEditableInput(getValue(qualityControlOutcome, 'qcOutcome')),
       qcRemark: toEditableInput(getValue(qualityControlOutcome, 'qcRemark')),
-      qcReviewedBy: formatValue(resolveUserDisplayName(getValue(qualityControlOutcome, 'qcReviewedBy'), effectiveLookup)),
+      qcReviewedBy: formatValue(resolveUserDisplayFromRecord(
+        qualityControlOutcome,
+        QC_REVIEWED_BY_NAME_KEYS,
+        QC_REVIEWED_BY_ID_KEYS,
+        effectiveLookup,
+      )),
     };
 
     const mainAuditHistorySource = resolveAuditPayload(details, 'main');

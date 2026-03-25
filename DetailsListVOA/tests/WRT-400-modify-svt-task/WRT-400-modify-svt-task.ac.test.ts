@@ -32,11 +32,29 @@ describe('WRT-400 Modify SVT Task AC', () => {
 
   test('AC3: clicking Modify SVT Task opens a Yes/No confirmation prompt', () => {
     expect(taskSectionSource).toContain('setShowModifyTaskConfirmation(true);');
-    expect(taskSectionSource).toContain("subText: 'Are you sure you want to modify this SVT Task?'");
-    expect(taskSectionSource).toContain('text="Confirm Modify SVT Task"');
+    expect(taskSectionSource).toContain("subText: 'Are you sure you want to modify this SVT Task?");
+    expect(taskSectionSource).toContain("text={modifyTaskBusy ? 'Modifying...' : 'Confirm Modify SVT Task'}");
     expect(taskSectionSource).toContain('ariaLabel="Confirm modify SVT task"');
     expect(taskSectionSource).toContain('text="Cancel"');
     expect(taskSectionSource).toContain('ariaLabel="Cancel modify SVT task"');
+  });
+
+  test('AC3b: Modify Task confirmation dialog is consistently sized (minWidth 480, maxWidth 560)', () => {
+    const modifyDialogIdx = taskSectionSource.indexOf('hidden={!showModifyTaskConfirmation}');
+    const modifyDialogSlice = taskSectionSource.slice(modifyDialogIdx, modifyDialogIdx + 800);
+    expect(modifyDialogSlice).toContain('minWidth={480}');
+    expect(modifyDialogSlice).toContain('maxWidth={560}');
+  });
+
+  test('AC3c: Modify Task dialog subText informs user the task will be reassigned to them', () => {
+    expect(taskSectionSource).toContain(
+      "subText: 'Are you sure you want to modify this SVT Task? The task will be reassigned to you.'",
+    );
+  });
+
+  test('AC3d: Modify Task success notification auto-dismisses (short-lived, stays on details view)', () => {
+    expect(taskSectionSource).toContain('setTimeout(() => setModifyTaskMessage(undefined), 3000)');
+    expect(taskSectionSource).toContain('{modifyTaskMessage && (');
   });
 
   test('AC3b: task and audit action groups are labelled for assistive technology', () => {

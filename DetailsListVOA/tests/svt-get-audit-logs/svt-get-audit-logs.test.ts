@@ -426,7 +426,10 @@ describe('Plugin GUID transformation', () => {
   test('plugin resolves user names from systemuser table in batches of 200', () => {
     expect(pluginSource).toContain('const int batchSize = 200;');
     expect(pluginSource).toContain('new QueryExpression("systemuser")');
+    expect(pluginSource).toContain('new ColumnSet("azureactivedirectoryobjectid", "fullname", "firstname", "lastname")');
+    expect(pluginSource).toContain('query.Criteria.AddCondition("azureactivedirectoryobjectid", ConditionOperator.In, batch);');
     expect(pluginSource).toContain('new ColumnSet("systemuserid", "fullname", "firstname", "lastname")');
+    expect(pluginSource).toContain('query.Criteria.AddCondition("systemuserid", ConditionOperator.In, batch);');
   });
 
   test('plugin uses fullname first, then firstname + lastname fallback', () => {
@@ -964,7 +967,7 @@ describe('mapAuditHistoryModel', () => {
   });
 
   test('maps changedBy with user display name resolution', () => {
-    expect(viewModelSource).toContain("resolveUserDisplayName(getValue(record, 'changedBy'), effectiveLookup)");
+    expect(viewModelSource).toContain("resolveAuditUserValue(getValue(record, 'changedBy'), effectiveLookup)");
   });
 
   test('maps changedOn using toUkDateTime', () => {
@@ -987,19 +990,22 @@ describe('mapAuditHistoryModel', () => {
 describe('mapAuditFieldChanges', () => {
 
   test('function exists in view model source', () => {
-    expect(viewModelSource).toContain('const mapAuditFieldChanges = (record: SaleDetailsRecord)');
+    expect(viewModelSource).toContain('const mapAuditFieldChanges = (');
+    expect(viewModelSource).toContain('lookup: Record<string, string>');
   });
 
   test('maps changes array with fieldName, oldValue, newValue', () => {
-    expect(viewModelSource).toContain("fieldName: formatValue(toAuditFieldLabel(getValue(change, 'fieldName'))),");
-    expect(viewModelSource).toContain("oldValue: formatValue(getValue(change, 'oldValue')),");
-    expect(viewModelSource).toContain("newValue: formatValue(getValue(change, 'newValue')),");
+    expect(viewModelSource).toContain("const rawFieldName = getValue(change, 'fieldName');");
+    expect(viewModelSource).toContain("fieldName: formatValue(toAuditFieldLabel(rawFieldName)),");
+    expect(viewModelSource).toContain("oldValue: formatValue(useAssigneeResolution ? resolveAuditUserValue(rawOldValue, lookup) : rawOldValue),");
+    expect(viewModelSource).toContain("newValue: formatValue(useAssigneeResolution ? resolveAuditUserValue(rawNewValue, lookup) : rawNewValue),");
   });
 
   test('falls back to single-field format when changes array is empty', () => {
-    expect(viewModelSource).toContain("const singleField = formatValue(toAuditFieldLabel(getValue(record, 'fieldName')));");
-    expect(viewModelSource).toContain("const singleOldValue = formatValue(getValue(record, 'oldValue'));");
-    expect(viewModelSource).toContain("const singleNewValue = formatValue(getValue(record, 'newValue'));");
+    expect(viewModelSource).toContain("const singleFieldRaw = getValue(record, 'fieldName');");
+    expect(viewModelSource).toContain("const singleField = formatValue(toAuditFieldLabel(singleFieldRaw));");
+    expect(viewModelSource).toContain("const singleOldValue = formatValue(useSingleAssigneeResolution ? resolveAuditUserValue(singleOldRaw, lookup) : singleOldRaw);");
+    expect(viewModelSource).toContain("const singleNewValue = formatValue(useSingleAssigneeResolution ? resolveAuditUserValue(singleNewRaw, lookup) : singleNewRaw);");
   });
 });
 

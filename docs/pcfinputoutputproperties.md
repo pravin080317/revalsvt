@@ -11,8 +11,8 @@ This document lists every manifest property from `DetailsListVOA/ControlManifest
 | --- | --- | --- | --- |
 | `canvasScreenName` | `SingleLine.Text` | `""` | Recommended: `SalesRecordSearch`, `ManagerAssignment`, `CaseworkerView`, `QualityControlAssignment`, `QualityControlView`. |
 | `tableKey` | `SingleLine.Text` | `""` | One of: `sales`, `allsales`, `myassignment`, `manager`, `qaassign`, `qaview`, `qa` (legacy alias). |
-| `country` | `SingleLine.Text` | `""` | Country context string. Example: `England`, `Welsh`. |
-| `listYear` | `SingleLine.Text` | `""` | List year string. Example: `2026`. |
+| `country` | `SingleLine.Text` | `""` | Country context string. Example: `England`, `Wales`. |
+| `listYear` | `SingleLine.Text` | `""` | List year string from configured cycle options (typically 2-3 values, for example `2026`, `2036`, `2048`). |
 | `fxEnvironmentUrl` | `SingleLine.Text` | `""` | Full Dataverse environment URL. Example: `https://org.crm11.dynamics.com`. |
 | `vmsBaseUrl` | `SingleLine.Text` | `""` | Full VMS base URL. Example: `https://geo-dev-vms-4x.voa.ns3n.corp.hmrc.gov.uk`. |
 | `sharePointOptionsJson` | `SingleLine.Text` | `{}` | Compact JSON object of option arrays. Example keys: `age_kitchen`, `spec_kitchen`, `age_bath`, `spec_bath`, `decorative_finishes`. |

@@ -6,7 +6,7 @@ Date: 2026-03-19
 - User selects `country` and `listYear` on a Canvas page **before** entering the 5 SVT screens.
 - For **all APIs that reach APIM** in those 5 screens, PCF must send `country` and `listYear` as additional parameters.
 - `country` and `listYear` should be treated as **global context**, not grid/table columns.
-- `country` values are business values like `England` or `Welsh`; `listYear` is a year value (for example `2026`).
+- `country` values are business values like `England` or `Wales`; `listYear` is a business-cycle year from configured options (typically 2-3 values, for example `2026`, `2036`, `2048`).
 
 ## 2) Key answer first
 - **Table/column schema changes:** `0` mandatory.
@@ -168,6 +168,6 @@ Mandatory touchpoints:
   - `docs/svt-screen-configuration.md`
 
 ## 9) Open decisions to confirm before implementation
-1. Final country value contract: `England/Welsh` exact text, or normalized internal codes.
-2. `listYear` format contract: string vs number, and accepted range (for example `2020-2035`).
+1. Final country value contract: `England/Wales` exact text, or normalized internal codes.
+2. `listYear` format contract: string vs number, and accepted configured options (for example `2026`, `2036`, `2048`).
 3. For view-sale endpoint, confirm whether APIM expects these as query params or inside path/body.

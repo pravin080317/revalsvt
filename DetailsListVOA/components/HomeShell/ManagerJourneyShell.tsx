@@ -20,7 +20,7 @@ import {
   HOME_JOURNEY_AUTOMATION_IDS,
   HOME_JOURNEY_COPY,
   HOME_JOURNEY_COUNTRY_BASE_VALUES,
-  HOME_JOURNEY_LIST_YEAR_RANGE,
+  HOME_JOURNEY_LIST_YEAR_BASE_VALUES,
   HOME_JOURNEY_PERSONA_LABELS,
   HOME_JOURNEY_TILE_DEFINITIONS,
   HOME_JOURNEY_VISIBLE_TILE_KEYS_BY_PERSONA,
@@ -136,10 +136,7 @@ const buildCountryOptions = (currentValue: string): IDropdownOption[] => {
 };
 
 const buildListYearOptions = (currentValue: string): IComboBoxOption[] => {
-  const yearValues = new Set<string>();
-  for (let year = HOME_JOURNEY_LIST_YEAR_RANGE.max; year >= HOME_JOURNEY_LIST_YEAR_RANGE.min; year -= 1) {
-    yearValues.add(String(year));
-  }
+  const yearValues = new Set<string>(HOME_JOURNEY_LIST_YEAR_BASE_VALUES);
   if (currentValue) {
     yearValues.add(currentValue);
   }

@@ -51,6 +51,10 @@ import { hasDisplayText, normalizeTextValue } from './runtime/text';
 const EDITABLE_CASEWORKER_STATUSES = new Set(['assigned', 'assigned qc failed']);
 const EDITABLE_QC_STATUSES = new Set(['assigned to qc', 'reassigned to qc']);
 const MODIFY_TASK_ALLOWED_STATUSES = new Set(['complete', 'complete passed qc']);
+const MODIFY_TASK_API_STATUS_MAP: Record<string, string> = {
+  complete: 'Complete',
+  'complete passed qc': 'Complete Passed QC',
+};
 const PRE_QC_STATUSES = new Set(['assigned', 'complete']);
 const ENABLE_COUNTRY_LIST_YEAR_API_PARAMS = CONTROL_CONFIG.enableCountryListYearApiParams === true;
 
@@ -387,8 +391,8 @@ export class DetailsListRuntimeController {
       throw new Error('Task ID is invalid for modify SVT task.');
     }
 
-    // SP expects title-case: 'Complete' or 'Complete Passed QC'
-    const taskStatusForApi = taskStatus.replace(/\b\w/g, (c) => c.toUpperCase());
+    // Use canonical status labels expected by SP/APIM (preserve QC acronym casing).
+    const taskStatusForApi = MODIFY_TASK_API_STATUS_MAP[taskStatus] || 'Complete';
     const requestedBy = this.entraObjectId;
     const response = await executeUnboundCustomApi<unknown>(
       this._context,

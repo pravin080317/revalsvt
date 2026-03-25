@@ -406,7 +406,10 @@ namespace VOA.SVT.Plugins.CustomAPI
                 return users;
             }
 
+            var unresolvedIds = new HashSet<Guid>(ids);
+
             const int batchSize = 200;
+            // Primary lookup by Entra object id (preferred contract).
             for (var i = 0; i < ids.Length; i += batchSize)
             {
                 var batch = ids
@@ -431,8 +434,7 @@ namespace VOA.SVT.Plugins.CustomAPI
                 foreach (var entity in result.Entities)
                 {
                     var entraOid = entity.GetAttributeValue<Guid>("azureactivedirectoryobjectid");
-
-                    if (entraOid == Guid.Empty)
+                    if (entraOid == Guid.Empty || !unresolvedIds.Contains(entraOid))
                     {
                         continue;
                     }
@@ -448,6 +450,57 @@ namespace VOA.SVT.Plugins.CustomAPI
                     if (!string.IsNullOrWhiteSpace(displayName))
                     {
                         users[entraOid] = displayName;
+                        unresolvedIds.Remove(entraOid);
+                    }
+                }
+            }
+
+            // Fallback lookup by Dataverse systemuserid for any unresolved ids.
+            if (unresolvedIds.Count > 0)
+            {
+                var fallbackIds = unresolvedIds.ToArray();
+                for (var i = 0; i < fallbackIds.Length; i += batchSize)
+                {
+                    var batch = fallbackIds
+                        .Skip(i)
+                        .Take(batchSize)
+                        .Cast<object>()
+                        .ToArray();
+
+                    var query = new QueryExpression("systemuser")
+                    {
+                        ColumnSet = new ColumnSet("systemuserid", "fullname", "firstname", "lastname"),
+                        NoLock = true
+                    };
+                    query.Criteria.AddCondition("systemuserid", ConditionOperator.In, batch);
+
+                    var result = service.RetrieveMultiple(query);
+                    if (result?.Entities == null || result.Entities.Count == 0)
+                    {
+                        continue;
+                    }
+
+                    foreach (var entity in result.Entities)
+                    {
+                        var systemUserId = entity.Id;
+                        if (systemUserId == Guid.Empty || !unresolvedIds.Contains(systemUserId))
+                        {
+                            continue;
+                        }
+
+                        var displayName = entity.GetAttributeValue<string>("fullname");
+                        if (string.IsNullOrWhiteSpace(displayName))
+                        {
+                            var firstName = entity.GetAttributeValue<string>("firstname") ?? string.Empty;
+                            var lastName = entity.GetAttributeValue<string>("lastname") ?? string.Empty;
+                            displayName = $"{firstName} {lastName}".Trim();
+                        }
+
+                        if (!string.IsNullOrWhiteSpace(displayName))
+                        {
+                            users[systemUserId] = displayName;
+                            unresolvedIds.Remove(systemUserId);
+                        }
                     }
                 }
             }

@@ -47,8 +47,8 @@ export interface SvtModifyTaskRequest {
   source: string;
 
   /**
-   * Current task status — PCF resolves this from the loaded sale-details JSON
-   * and sends it as-is (e.g. `'complete'`, `'complete passed qc'`).
+  * Current task status — PCF resolves this from the loaded sale-details JSON
+  * and sends canonical API labels (e.g. `'Complete'`, `'Complete Passed QC'`).
    * The API/DB uses this value to validate the transition and assign the task.
    * Required by the plugin.
    */

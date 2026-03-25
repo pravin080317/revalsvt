@@ -31,7 +31,7 @@
     <property
       name="country"
       display-name-key="Country"
-      description-key="Global country context passed to SVT APIs (e.g., England, Welsh)."
+      description-key="Global country context passed to SVT APIs (e.g., England, Wales)."
       of-type="SingleLine.Text"
       usage="input"
       required="false"

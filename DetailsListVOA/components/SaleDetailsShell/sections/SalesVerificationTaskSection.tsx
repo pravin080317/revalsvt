@@ -79,6 +79,7 @@ export const SalesVerificationTaskSection: React.FC<SalesVerificationTaskSection
 }) => {
   const [createTaskBusy, setCreateTaskBusy] = React.useState(false);
   const [createTaskMessage, setCreateTaskMessage] = React.useState<{ text: string; type: MessageBarType } | undefined>(undefined);
+  const [showCreateTaskConfirmation, setShowCreateTaskConfirmation] = React.useState(false);
   const [modifyTaskBusy, setModifyTaskBusy] = React.useState(false);
   const [showModifyTaskConfirmation, setShowModifyTaskConfirmation] = React.useState(false);
   const [modifyTaskMessage, setModifyTaskMessage] = React.useState<{ text: string; type: MessageBarType } | undefined>(undefined);
@@ -125,7 +126,35 @@ export const SalesVerificationTaskSection: React.FC<SalesVerificationTaskSection
     }
   }, [hasTaskId, taskId]);
 
-  const handleCreateTask = React.useCallback(async () => {
+  // Auto-dismiss success notifications after 3 seconds
+  React.useEffect(() => {
+    if (!createTaskMessage || createTaskMessage.type !== MessageBarType.success) return;
+    const timer = setTimeout(() => setCreateTaskMessage(undefined), 3000);
+    return () => clearTimeout(timer);
+  }, [createTaskMessage]);
+
+  React.useEffect(() => {
+    if (!modifyTaskMessage || modifyTaskMessage.type !== MessageBarType.success) return;
+    const timer = setTimeout(() => setModifyTaskMessage(undefined), 3000);
+    return () => clearTimeout(timer);
+  }, [modifyTaskMessage]);
+
+  const handleOpenCreateTaskConfirmation = React.useCallback(() => {
+    if (!onCreateTask || createTaskActionRule.disabled) {
+      return;
+    }
+    setCreateTaskMessage(undefined);
+    setShowCreateTaskConfirmation(true);
+  }, [createTaskActionRule.disabled, onCreateTask]);
+
+  const handleCancelCreateTask = React.useCallback(() => {
+    if (createTaskBusy) {
+      return;
+    }
+    setShowCreateTaskConfirmation(false);
+  }, [createTaskBusy]);
+
+  const handleConfirmCreateTask = React.useCallback(async () => {
     if (!onCreateTask || createTaskActionRule.disabled) {
       return;
     }
@@ -134,6 +163,7 @@ export const SalesVerificationTaskSection: React.FC<SalesVerificationTaskSection
     setCreateTaskMessage(undefined);
     try {
       await Promise.resolve(onCreateTask());
+      setShowCreateTaskConfirmation(false);
       setCreateTaskMessage({ text: 'Manual SVT task created and assigned to you.', type: MessageBarType.success });
     } catch (error) {
       const message = error instanceof Error && error.message.trim().length > 0
@@ -245,13 +275,13 @@ export const SalesVerificationTaskSection: React.FC<SalesVerificationTaskSection
           <h3 id="task-actions-heading" className="voa-task-panel__title">Task Actions</h3>
           <div className="voa-task-actions" role="group" aria-label="Task actions">
             <DefaultButton
-              text={createTaskBusy ? 'Creating Task...' : 'Create Task'}
+              text="Create Task"
               disabled={createTaskDisabled}
               ariaLabel={createTaskDisabled
                 ? createTaskUnavailableReason ?? 'Create task is currently unavailable.'
                 : 'Create sales verification task'}
               title={createTaskUnavailableReason}
-              onClick={() => { void handleCreateTask(); }}
+              onClick={handleOpenCreateTaskConfirmation}
             />
             {canShowModifyTaskButton && (
               <DefaultButton
@@ -290,21 +320,54 @@ export const SalesVerificationTaskSection: React.FC<SalesVerificationTaskSection
       </div>
 
       <Dialog
-        hidden={!showModifyTaskConfirmation}
-        onDismiss={handleCancelModifyTask}
+        hidden={!showCreateTaskConfirmation}
+        onDismiss={handleCancelCreateTask}
         dialogContentProps={{
           type: DialogType.normal,
-          title: 'Modify SVT Task',
-          subText: 'Are you sure you want to modify this SVT Task?',
+          title: 'Create SVT Task',
+          subText: 'Are you sure you want to create an SVT task for this sale record? The task will be assigned to you.',
         }}
         modalProps={{
           isBlocking: true,
           className: 'voa-confirm-dialog',
         }}
+        minWidth={480}
+        maxWidth={560}
       >
         <DialogFooter>
           <PrimaryButton
-            text="Confirm Modify SVT Task"
+            text={createTaskBusy ? 'Creating...' : 'Create Task'}
+            ariaLabel="Confirm create SVT task"
+            disabled={createTaskBusy}
+            onClick={() => { void handleConfirmCreateTask(); }}
+          />
+          <DefaultButton
+            text="Cancel"
+            ariaLabel="Cancel create SVT task"
+            disabled={createTaskBusy}
+            onClick={handleCancelCreateTask}
+          />
+        </DialogFooter>
+      </Dialog>
+
+      <Dialog
+        hidden={!showModifyTaskConfirmation}
+        onDismiss={handleCancelModifyTask}
+        dialogContentProps={{
+          type: DialogType.normal,
+          title: 'Modify SVT Task',
+          subText: 'Are you sure you want to modify this SVT Task? The task will be reassigned to you.',
+        }}
+        modalProps={{
+          isBlocking: true,
+          className: 'voa-confirm-dialog',
+        }}
+        minWidth={480}
+        maxWidth={560}
+      >
+        <DialogFooter>
+          <PrimaryButton
+            text={modifyTaskBusy ? 'Modifying...' : 'Confirm Modify SVT Task'}
             ariaLabel="Confirm modify SVT task"
             disabled={modifyTaskBusy}
             onClick={() => { void handleConfirmModifyTask(); }}
