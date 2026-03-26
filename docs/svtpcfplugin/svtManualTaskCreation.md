@@ -3,6 +3,9 @@
 ## Purpose
 `voa_SvtManualTaskCreation` is an **unbound** Dataverse Custom API used to create a task for a given Sale ID by calling APIM. The plugin enforces **manager-only** access, posts the request to APIM, and returns a single `Result` string for both success and error cases.
 
+Current release scope: single sale ID per request.
+Upcoming requirement: bulk task creation with multiple sale IDs (endpoint contract to be updated in a future change).
+
 ---
 
 ## Custom API contract
@@ -16,6 +19,26 @@ Recommended setup (adjust names to your prefix):
   - `createdBy` (String, optional; Dataverse user GUID)
 - Response parameters:
   - `Result` (String)
+
+SIT payload for current single-sale flow:
+
+APIM endpoint:
+```text
+POST /v1/sales/S-1000042/task
+```
+
+Request body:
+```json
+{
+  "sourceType": "M",
+  "createdBy": "05b749d9-f8cb-47ea-8487-5e891176e36d"
+}
+```
+
+Notes:
+- `createdBy` must be a valid GUID.
+- Plugin normalizes GUID to canonical lowercase format before posting.
+- `sourceType` defaults to `M` when not supplied.
 
 ---
 
@@ -48,6 +71,10 @@ Implemented in `VOA.SVT.Plugins/Plugins/CustomAPI/SvtManualTaskCreation.cs`:
    { "sourceType": "M", "createdBy": "<user-guid>" }
    ```
 5. Returns `Result` as JSON string (success or failure).
+
+Bulk creation note:
+- Current implementation builds URL with a single `saleId`.
+- When bulk endpoint is introduced, both runtime request shape and plugin URL builder must be updated together.
 
 ---
 
@@ -106,6 +133,6 @@ The plugin already sets a clear `message` when the APIM response body is empty, 
 ---
 
 ## Related docs
-- `docs/svtGetSaleRecords.md` (search + grid data retrieval).
-- `docs/svtTaskAssignment.md` (task assignment endpoint).
-- `docs/task-creation-api-urls.md` (manual task creation URL examples).
+- `docs/svtpcfplugin/svtGetSaleRecords.md` (search + grid data retrieval).
+- `docs/svtpcfplugin/svtTaskAssignment.md` (task assignment endpoint).
+- `docs/svtpcfplugin/task-creation-api-urls.md` (manual task creation URL examples).

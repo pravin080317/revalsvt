@@ -22,6 +22,7 @@ export type SearchByOption =
   | 'taskStatus'
   | 'assignedTo'
   | 'assignedDate'
+  | 'taskCompletedDate'
   | 'qcAssignedTo'
   | 'qcAssignedDate'
   | 'qcCompletedDate';
@@ -66,6 +67,7 @@ export interface GridFilterState {
   taskStatus?: string[];
   assignedTo?: string;
   assignedDate?: DateRangeFilter;
+  taskCompletedDate?: DateRangeFilter;
   qcAssignedTo?: string;
   qcAssignedDate?: DateRangeFilter;
   qcCompletedDate?: DateRangeFilter;
@@ -222,6 +224,14 @@ export const sanitizeFilters = (filters: GridFilterState): GridFilterState => {
       }
     : undefined;
   if (assignedDate && (assignedDate.from || assignedDate.to)) sanitized.assignedDate = assignedDate;
+
+  const taskCompletedDate = filters.taskCompletedDate
+    ? {
+        from: filters.taskCompletedDate.from?.trim() ?? undefined,
+        to: filters.taskCompletedDate.to?.trim() ?? undefined,
+      }
+    : undefined;
+  if (taskCompletedDate && (taskCompletedDate.from || taskCompletedDate.to)) sanitized.taskCompletedDate = taskCompletedDate;
 
   if (filters.qcAssignedTo) {
     const trimmed = filters.qcAssignedTo.trim();

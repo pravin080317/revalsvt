@@ -625,12 +625,8 @@ export const DetailsListHost: React.FC<DetailsListHostProps> = ({
   const [salesSearchApplied, setSalesSearchApplied] = React.useState(!isSalesSearch);
   const handlePrefilterDirty = React.useCallback(() => {
     if (!isPrefilterScreen) return;
-    console.debug('[Prefilter] host dirty', {
-      screen: screenKind,
-      prefilterApplied,
-    });
     setPrefilterApplied(false);
-  }, [isPrefilterScreen, prefilterApplied, screenKind]);
+  }, [isPrefilterScreen]);
   const handleSalesSearchDirty = React.useCallback(() => {
     if (!isSalesSearch) return;
     setSalesSearchApplied(false);
@@ -930,10 +926,23 @@ export const DetailsListHost: React.FC<DetailsListHostProps> = ({
   const userDisplayNameMap = React.useMemo(() => {
     const map: Record<string, string> = {};
     assignableUsersCache.forEach((user) => {
-      const id = normalizeAssignableUserId(user.id);
-      if (!id) return;
       const name = getUserDisplayName(user);
-      if (name) map[id] = name;
+      if (!name) return;
+
+      // Entra object ID is the primary identity key; keep fallbacks for legacy/system IDs.
+      const primaryId = normalizeAssignableUserId(user.entraObjectId ?? user.id);
+      const userId = normalizeAssignableUserId(user.id);
+      const systemUserId = normalizeAssignableUserId(user.systemUserId);
+
+      if (primaryId) {
+        map[primaryId] = name;
+      }
+      if (userId) {
+        map[userId] = name;
+      }
+      if (systemUserId) {
+        map[systemUserId] = name;
+      }
     });
     return map;
   }, [assignableUsersCache, getUserDisplayName]);
@@ -1417,7 +1426,8 @@ export const DetailsListHost: React.FC<DetailsListHostProps> = ({
       contextScope: contextScopeKey,
     };
     if (requiresCurrentUserEntra && currentUserEntraLoading) {
-      setApimLoading(false);
+      setLoadErrorMessage(undefined);
+      setApimLoading(true);
       return;
     }
     if (requiresCurrentUserEntra && !currentUserId) {
@@ -1429,7 +1439,9 @@ export const DetailsListHost: React.FC<DetailsListHostProps> = ({
         ? currentUserId.toLowerCase()
         : undefined;
       const normalizedPrefilters = prefilters ? normalizePrefilterStateUserIds(prefilters) : prefilters;
-      const apiPrefilters = requestedBy ? undefined : normalizedPrefilters;
+      // Keep status/date prefilters even when RequestedBy is set.
+      // Plugin-side query builder already suppresses searchBy/preFilter for RequestedBy flows.
+      const apiPrefilters = normalizedPrefilters;
     setLoadErrorMessage(undefined);
     setApimLoading(true);
     void (async () => {

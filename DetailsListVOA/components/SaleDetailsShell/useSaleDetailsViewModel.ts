@@ -852,7 +852,8 @@ const isAuditAssigneeField = (rawFieldName: string): boolean => {
 const resolveAuditUserToken = (value: string, lookup: Record<string, string>): string => {
   const resolved = resolveUserDisplayName(value, lookup).trim();
   if (!resolved || resolved === 'Unknown User') {
-    return value.trim();
+    // Never surface raw GUIDs in audit UI when display-name resolution fails.
+    return 'Unknown User';
   }
   return resolved;
 };

@@ -211,6 +211,16 @@ describe('grid usability contract', () => {
     expect(gridSource).toContain('prefilterText.labels.completedDateRange');
   });
 
+  test('keeps the column date filter apply button visible but disabled until an end date is selected', () => {
+    expect(gridSource).toContain('const isDateRangeMissingEndDate = cfg?.control === \'dateRange\'');
+    expect(gridSource).toContain('const applyUnavailableReason = isDateRangeMissingEndDate');
+    expect(gridSource).toContain('text={commonText.columnMenu.apply}');
+    expect(gridSource).toContain('unavailable={applyDisabled}');
+    expect(gridSource).toContain('unavailableReason={applyUnavailableReason}');
+    expect(gridSource).toContain('Select an end date for ${columnName} to apply this filter.');
+    expect(gridSource).not.toContain('{!isDateRangeMissingEndDate && (');
+  });
+
   test('shows a visible UPRN input hint so the digit-only restriction is obvious before typing', () => {
     expect(gridSource).toContain("aria-describedby={buildAriaDescribedBy('voa-sales-uprn-hint')}");
     expect(gridSource).toContain('voa-sales-uprn-hint');

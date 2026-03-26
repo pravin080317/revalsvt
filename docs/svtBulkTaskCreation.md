@@ -198,7 +198,7 @@ The following are **not** required for this scope:
 
 ## Related docs
 
-- `docs/svtManualTaskCreation.md`
-- `docs/task-creation-api-urls.md`
-- `docs/SvtGetSalesMetadata.README.md`
+- `docs/svtpcfplugin/svtManualTaskCreation.md`
+- `docs/svtpcfplugin/task-creation-api-urls.md`
+- `docs/svtpcfplugin/SvtGetSalesMetadata.README.md`
 - `docs/svt-sales-record-search-technical-doc.md`

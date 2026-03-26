@@ -163,8 +163,8 @@ Mandatory touchpoints:
 - Add context-aware storage keys (`country` + `listYear`) for persisted filters/prefilters to avoid carrying old selections across contexts.
 - Add integration tests for prefilter screen load plus context switch.
 - Update docs:
-  - `docs/prefilter-api-urls.md`
-  - `docs/plugin-calling-guide.md`
+  - `docs/svtpcfplugin/prefilter-api-urls.md`
+  - `docs/svtpcfplugin/plugin-calling-guide.md`
   - `docs/svt-screen-configuration.md`
 
 ## 9) Open decisions to confirm before implementation

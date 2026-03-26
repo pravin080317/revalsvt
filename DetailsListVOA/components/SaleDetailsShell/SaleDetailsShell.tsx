@@ -40,6 +40,7 @@ export const SaleDetailsShell: React.FC<SaleDetailsShellProps> = ({
   loading = false,
   userLookup,
   onBack,
+  onReturnToTableAfterSubmit,
   onRefresh,
   onCreateManualTask,
   onModifySvtTask,
@@ -83,6 +84,7 @@ export const SaleDetailsShell: React.FC<SaleDetailsShellProps> = ({
   const [promotionMessage, setPromotionMessage] = React.useState<string | undefined>(undefined);
   const [masterHighlighted, setMasterHighlighted] = React.useState(false);
   const [showScrollToTop, setShowScrollToTop] = React.useState(false);
+  const [dismissedReadOnlyBanner, setDismissedReadOnlyBanner] = React.useState(false);
   const promotionMessageTimeoutRef = React.useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const masterHighlightTimeoutRef = React.useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const masterSectionRef = React.useRef<HTMLDivElement>(null);
@@ -126,6 +128,12 @@ export const SaleDetailsShell: React.FC<SaleDetailsShellProps> = ({
     setSalesParticularFieldErrors({});
     setSalesParticularReviewStatusError(undefined);
   }, [model.saleId, model.taskId, model.salesParticular]);
+
+  React.useEffect(() => {
+    if (readOnly && readOnlyReason) {
+      setDismissedReadOnlyBanner(false);
+    }
+  }, [readOnly, readOnlyReason]);
 
   const handleCrossSectionValidationChange = React.useCallback((errors: {
     salesParticularReviewStatusError?: string;
@@ -339,8 +347,13 @@ export const SaleDetailsShell: React.FC<SaleDetailsShellProps> = ({
           </div>
         )}
 
-        {readOnly && readOnlyReason && (
-          <MessageBar messageBarType={MessageBarType.info} isMultiline={false}>
+        {readOnly && readOnlyReason && !dismissedReadOnlyBanner && (
+          <MessageBar
+            messageBarType={MessageBarType.info}
+            isMultiline={false}
+            onDismiss={() => setDismissedReadOnlyBanner(true)}
+            dismissButtonAriaLabel="Close"
+          >
             {readOnlyReason}
           </MessageBar>
         )}
@@ -426,6 +439,7 @@ export const SaleDetailsShell: React.FC<SaleDetailsShellProps> = ({
             isQcView={isQcWorkspace}
             qcAssignedTo={model.qcAssignedTo}
             currentUserDisplayName={currentUserDisplayName}
+            onReturnToTableAfterSubmit={onReturnToTableAfterSubmit}
             onCrossSectionValidationChange={handleCrossSectionValidationChange}
           /></div>
         </Stack>

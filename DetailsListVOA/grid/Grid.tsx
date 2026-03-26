@@ -229,6 +229,9 @@ export const Grid = React.memo((props: GridProps) => {
   const [assignRole, setAssignRole] = React.useState<string | number | undefined>();
   const [assignLoading, setAssignLoading] = React.useState(false);
   const [assignSelectedUserId, setAssignSelectedUserId] = React.useState<string | undefined>();
+  const [dismissedColumnConfigMessage, setDismissedColumnConfigMessage] = React.useState(false);
+  const [dismissedErrorMessage, setDismissedErrorMessage] = React.useState(false);
+  const [dismissedStatusMessage, setDismissedStatusMessage] = React.useState(false);
 
   // No sync needed; columnFilters is controlled by host
 
@@ -261,6 +264,18 @@ export const Grid = React.memo((props: GridProps) => {
   React.useEffect(() => {
     setFilters(searchFilters);
   }, [searchFilters]);
+
+  React.useEffect(() => {
+    setDismissedColumnConfigMessage(false);
+  }, [columnDatasetNotDefined]);
+
+  React.useEffect(() => {
+    setDismissedErrorMessage(false);
+  }, [errorMessage]);
+
+  React.useEffect(() => {
+    setDismissedStatusMessage(false);
+  }, [statusMessage?.text, statusMessage?.type]);
 
   const toISODateString = React.useCallback((date?: Date | null): string | undefined => {
     if (!date) return undefined;
@@ -1263,18 +1278,33 @@ export const Grid = React.memo((props: GridProps) => {
           <a href="#voa-grid-results">Skip to results</a>
           <a href="#voa-grid-pagination">Skip to pagination</a>
         </div>
-        {columnDatasetNotDefined && (
-          <MessageBar messageBarType={MessageBarType.error} style={{ marginBottom: 16 }}>
+        {columnDatasetNotDefined && !dismissedColumnConfigMessage && (
+          <MessageBar
+            messageBarType={MessageBarType.error}
+            style={{ marginBottom: 16 }}
+            onDismiss={() => setDismissedColumnConfigMessage(true)}
+            dismissButtonAriaLabel="Close"
+          >
             One or more column configurations reference fields that do not exist in the dataset.
           </MessageBar>
         )}
-        {errorMessage && (
-          <MessageBar messageBarType={MessageBarType.error} style={{ marginBottom: 16 }}>
+        {errorMessage && !dismissedErrorMessage && (
+          <MessageBar
+            messageBarType={MessageBarType.error}
+            style={{ marginBottom: 16 }}
+            onDismiss={() => setDismissedErrorMessage(true)}
+            dismissButtonAriaLabel="Close"
+          >
             {errorMessage}
           </MessageBar>
         )}
-        {statusMessage && (
-          <MessageBar messageBarType={statusMessage.type} style={{ marginBottom: 16 }}>
+        {statusMessage && !dismissedStatusMessage && (
+          <MessageBar
+            messageBarType={statusMessage.type}
+            style={{ marginBottom: 16 }}
+            onDismiss={() => setDismissedStatusMessage(true)}
+            dismissButtonAriaLabel="Close"
+          >
             {statusMessage.text}
           </MessageBar>
         )}

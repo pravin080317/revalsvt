@@ -16,7 +16,7 @@ describe('WR-212 QC user can view sale record and update QC remarks AC', () => {
 
   test('AC1: sale details remain read-only while a dedicated QC section is conditionally shown for QC assignment', () => {
     expect(runtimeSource).toContain('private resolveQcSectionAccess(detailsPayload: string): { canSubmit: boolean; showSection: boolean }');
-    expect(runtimeSource).toContain('if (!this.hasQaAccess) {');
+    expect(runtimeSource).toContain('if (!this.hasQaAccess && !this.hasManagerAccess) {');
     expect(runtimeSource).toContain("return { canSubmit: false, showSection: true };");
     expect(runtimeSource).toContain('const assignedToCurrentQcUser = this.isSaleRecordQcAssignedToCurrentUser(detailsPayload);');
     expect(runtimeSource).toContain("return { canSubmit: false, showSection: false };");
@@ -64,15 +64,10 @@ describe('WR-212 QC user can view sale record and update QC remarks AC', () => {
     expect(runtimeSource).toContain('private extractQcAssignedToCandidates(detailsPayload: string): string[] {');
   });
 
-  test('AC6: QC submit auto-navigates back to grid with success notification', () => {
-    // The submitQcOutcome method closes the detail view
-    expect(runtimeSource).toContain("this.submitSuccessNotification = 'QC outcome submitted successfully.'");
-    // Same pattern as caseworker submission: showPcfSaleDetails = false
-    const submitBlock = runtimeSource.slice(
-      runtimeSource.indexOf('async submitQcOutcome'),
-      runtimeSource.indexOf("this.emitAction('submitQcOutcome')"),
-    );
-    expect(submitBlock).toContain('this.showPcfSaleDetails = false;');
+  test('AC6: QC submit shows success in the dialog, then returns through the shell callback', () => {
+    expect(sectionSource).toContain('QC outcome submitted successfully. Returning to table...');
+    expect(sectionSource).toContain('setQcOutcomeDialogSuccessMessage');
+    expect(shellSource).toContain('onReturnToTableAfterSubmit={onReturnToTableAfterSubmit}');
   });
 
   test('AC7: caseworker buttons are hidden for QC users via isQcView prop', () => {

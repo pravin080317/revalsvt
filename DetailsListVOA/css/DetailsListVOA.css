@@ -889,7 +889,12 @@
   flex-direction: column;
   align-items: flex-start;
   justify-content: center;
-  padding: 16px 12px 24px;
+  position: sticky;
+  left: 0;
+  width: fit-content;
+  max-width: min(420px, calc(100vw - 32px));
+  margin-left: clamp(48px, 18vw, 360px);
+  padding: 24px 12px;
   color: #5d656e;
   text-align: left;
 }
@@ -901,7 +906,7 @@
   background: #e5e5e5;
   color: #6b6b6b;
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   justify-content: center;
   font-size: 28px;
   margin-bottom: 8px;
@@ -2084,6 +2089,18 @@
 .voa-home-shell .ms-MessageBar {
   margin: 0;
   border-radius: 12px;
+}
+
+.voa-submit-success-banner {
+  position: relative;
+  z-index: 10;
+  pointer-events: auto;
+}
+
+.voa-submit-success-banner .ms-MessageBar,
+.voa-submit-success-banner .ms-MessageBar-actions,
+.voa-submit-success-banner button {
+  pointer-events: auto;
 }
 
 .voa-home-header {

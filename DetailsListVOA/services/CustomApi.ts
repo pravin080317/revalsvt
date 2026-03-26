@@ -92,10 +92,28 @@ export const executeUnboundCustomApi = async <T>(
   svtDebug.log('API', 'Request params:', params);
   try {
     const result = await executor.execute(request);
-    const json = (await result.json()) as T;
-    svtDebug.log('API', 'Response:', json);
-    svtDebug.groupEnd();
-    return json;
+    const raw = await result.text();
+    const trimmed = raw.trim();
+    if (!trimmed) {
+      svtDebug.log('API', 'Response body was empty; returning empty object fallback.');
+      const empty = {} as T;
+      svtDebug.log('API', 'Response:', empty);
+      svtDebug.groupEnd();
+      return empty;
+    }
+
+    try {
+      const json = JSON.parse(trimmed) as T;
+      svtDebug.log('API', 'Response:', json);
+      svtDebug.groupEnd();
+      return json;
+    } catch {
+      // Some APIs return plain text instead of JSON. Return raw text safely.
+      const text = trimmed as unknown as T;
+      svtDebug.log('API', 'Response (non-JSON text):', text);
+      svtDebug.groupEnd();
+      return text;
+    }
   } catch (err) {
     svtDebug.error('API', `${operationName} failed:`, err);
     svtDebug.groupEnd();

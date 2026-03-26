@@ -63,7 +63,7 @@ describe('WRT-205 Sales Verification Complete/Submit AC', () => {
     expect(sectionSource).toContain('showSubmitForQcDialog');
     expect(sectionSource).toContain("title: 'Submit Sales Verification Task for QC'");
     expect(sectionSource).toContain("'Remarks are mandatory before submitting this task for Quality Control.'");
-    expect(sectionSource).toContain('text="Submit for QC"');
+    expect(sectionSource).toContain(": 'Submit for QC'");
     expect(sectionSource).toContain('ariaLabel="Submit sales verification task for quality control"');
     expect(sectionSource).toContain('ariaLabel="Cancel submit for quality control"');
     expect(sectionSource).toContain("setSubmitForQcRemarksError('Enter remarks before submitting for QC');");
@@ -98,15 +98,11 @@ describe('WRT-205 Sales Verification Complete/Submit AC', () => {
     expect(viewModelSource).toContain('.sort((left, right) => right.sortValue - left.sortValue)');
   });
 
-  test('AC10: auto-navigate back to grid with success notification after submit', () => {
-    const controlShellSource = readRepoFile('DetailsListVOA/components/ControlShell/DetailsListControlShell.tsx');
-    // Controller sets showPcfSaleDetails = false + success message after submit
-    expect(runtimeSource).toContain('this.showPcfSaleDetails = false;');
-    expect(runtimeSource).toContain("'Sales verification task completed successfully.'");
-    expect(runtimeSource).toContain("'Sales verification task submitted for QC successfully.'");
-    // ControlShell renders success MessageBar
-    expect(controlShellSource).toContain('MessageBarType.success');
-    expect(controlShellSource).toContain('submitSuccessMessage');
+  test('AC10: submit success is shown in the dialog before returning to the table', () => {
+    const sectionSource = readRepoFile('DetailsListVOA/components/SaleDetailsShell/sections/SalesVerificationSection.tsx');
+    expect(sectionSource).toContain('Sales verification task completed successfully. Returning to table...');
+    expect(sectionSource).toContain('Sales verification task submitted for QC successfully. Returning to table...');
+    expect(sectionSource).toContain('onReturnToTableAfterSubmit?.();');
   });
 });
 

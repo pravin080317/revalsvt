@@ -3,6 +3,7 @@ import { IInputs, IOutputs } from './generated/ManifestTypes';
 import * as React from 'react';
 import { DetailsListControlShell } from './components/ControlShell/DetailsListControlShell';
 import { DetailsListRuntimeController } from './services/DetailsListRuntimeController';
+import { CONTROL_CONFIG } from './config/ControlConfig';
 
 export class DetailsListVOA implements ComponentFramework.ReactControl<IInputs, IOutputs> {
   private readonly runtime = new DetailsListRuntimeController();
@@ -22,6 +23,7 @@ export class DetailsListVOA implements ComponentFramework.ReactControl<IInputs, 
 
   public updateView(context: ComponentFramework.Context<IInputs>): React.ReactElement {
     this.runtime.setContext(context);
+    CONTROL_CONFIG.mdaAppId = this.runtime.getMdaAppId();
 
     try {
       const raw = (context.parameters as unknown as Record<string, { raw?: boolean | string }>).perfLogsEnabled?.raw;
@@ -74,6 +76,7 @@ export class DetailsListVOA implements ComponentFramework.ReactControl<IInputs, 
       onBackToCanvas: () => this.runtime.handleBackToCanvas(),
       onContextChange: (args) => this.runtime.updateManagerJourneyContext(args),
       onDetailsBack: () => this.runtime.handleDetailsBack(),
+      onReturnToTableAfterSubmit: () => this.runtime.closeDetailsAfterSubmit(),
       onDetailsRefresh: () => this.runtime.refreshDetails(),
       onCreateManualTask: (saleId) => this.runtime.createManualTask(saleId),
       onModifySvtTask: () => this.runtime.modifySvtTask(),

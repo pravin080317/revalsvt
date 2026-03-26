@@ -9,6 +9,8 @@ import {
   MessageBar,
   MessageBarType,
   PrimaryButton,
+  Spinner,
+  SpinnerSize,
   Text,
   TextField,
 } from '@fluentui/react';
@@ -44,6 +46,7 @@ interface SalesVerificationSectionProps {
   isQcView?: boolean;
   qcAssignedTo?: string;
   currentUserDisplayName?: string;
+  onReturnToTableAfterSubmit?: () => void;
   onCrossSectionValidationChange?: (errors: {
     salesParticularReviewStatusError?: string;
     salesParticularFieldErrors: Partial<Record<keyof SalesParticularDraftPayload, string>>;
@@ -107,6 +110,15 @@ const resolveQcSubmitButtonText = (outcomeKey?: string): string => {
   if (outcomeKey === 'pass') { return 'Submit QC pass'; }
   if (outcomeKey === 'fail') { return 'Submit QC fail'; }
   return 'Submit QC outcome';
+};
+
+const isInlineQcValidationReason = (reason?: string): boolean => {
+  if (!reason) {
+    return false;
+  }
+
+  return reason === 'Select QC outcome before submitting.'
+    || reason === 'Please provide QC remarks before submitting';
 };
 
 const SECTION_ERROR_HIGHLIGHT_CLASS = 'voa-section-error-highlight';
@@ -201,6 +213,7 @@ export const SalesVerificationSection: React.FC<SalesVerificationSectionProps> =
   isQcView = false,
   qcAssignedTo = '',
   currentUserDisplayName = '',
+  onReturnToTableAfterSubmit,
   onCrossSectionValidationChange,
 }) => {
   const [isSaleUsefulKey, setIsSaleUsefulKey] = React.useState<string | undefined>(toUsefulKey(model.isSaleUseful));
@@ -222,6 +235,28 @@ export const SalesVerificationSection: React.FC<SalesVerificationSectionProps> =
   const [qcOutcomeDialogError, setQcOutcomeDialogError] = React.useState<string | undefined>(undefined);
   const [showConfirmQcOutcomeDialog, setShowConfirmQcOutcomeDialog] = React.useState(false);
   const [showCompleteConfirmDialog, setShowCompleteConfirmDialog] = React.useState(false);
+  const [completeDialogSuccessMessage, setCompleteDialogSuccessMessage] = React.useState<string | undefined>(undefined);
+  const [submitForQcDialogSuccessMessage, setSubmitForQcDialogSuccessMessage] = React.useState<string | undefined>(undefined);
+  const [qcOutcomeDialogSuccessMessage, setQcOutcomeDialogSuccessMessage] = React.useState<string | undefined>(undefined);
+  const returnToTableTimeoutRef = React.useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+
+  const clearReturnToTableTimeout = React.useCallback(() => {
+    if (!returnToTableTimeoutRef.current) {
+      return;
+    }
+
+    clearTimeout(returnToTableTimeoutRef.current);
+    returnToTableTimeoutRef.current = undefined;
+  }, []);
+
+  const scheduleReturnToTable = React.useCallback((setMessage: React.Dispatch<React.SetStateAction<string | undefined>>, message: string) => {
+    clearReturnToTableTimeout();
+    setMessage(message);
+    returnToTableTimeoutRef.current = setTimeout(() => {
+      returnToTableTimeoutRef.current = undefined;
+      onReturnToTableAfterSubmit?.();
+    }, 1200);
+  }, [clearReturnToTableTimeout, onReturnToTableAfterSubmit]);
 
   const clearCrossSectionFieldErrors = React.useCallback(() => {
     onCrossSectionValidationChange?.({
@@ -232,6 +267,7 @@ export const SalesVerificationSection: React.FC<SalesVerificationSectionProps> =
   }, [onCrossSectionValidationChange]);
 
   React.useEffect(() => {
+    clearReturnToTableTimeout();
     setIsSaleUsefulKey(toUsefulKey(model.isSaleUseful));
     setWhyNotUsefulKey(toWhyKey(model.whyNotUseful) ?? (model.whyNotUseful || undefined));
     setAdditionalNotes(model.additionalNotes);
@@ -250,8 +286,13 @@ export const SalesVerificationSection: React.FC<SalesVerificationSectionProps> =
     setShowSubmitForQcDialog(false);
     setShowConfirmQcOutcomeDialog(false);
     setShowCompleteConfirmDialog(false);
+    setCompleteDialogSuccessMessage(undefined);
+    setSubmitForQcDialogSuccessMessage(undefined);
+    setQcOutcomeDialogSuccessMessage(undefined);
     clearCrossSectionFieldErrors();
-  }, [clearCrossSectionFieldErrors, model]);
+  }, [clearCrossSectionFieldErrors, clearReturnToTableTimeout, model]);
+
+  React.useEffect(() => clearReturnToTableTimeout, [clearReturnToTableTimeout]);
 
   // Also clear mandatory errors when cross-section props change (fixes stale
   // "select the value" errors after Submit for QC → OK → refresh → resubmit).
@@ -347,6 +388,9 @@ export const SalesVerificationSection: React.FC<SalesVerificationSectionProps> =
     }),
     [busy, canSubmitQcOutcome, onSubmitQcOutcome, qcOutcomeKey, qcOutcomeRemarks, showQcSection],
   );
+  const qcSubmitButtonTitle = isInlineQcValidationReason(submitQcOutcomeActionRule.reason)
+    ? undefined
+    : submitQcOutcomeActionRule.reason;
   const editingDisabled = salesVerificationEditRule.disabled;
 
   const validate = React.useCallback((): boolean => {
@@ -404,8 +448,8 @@ export const SalesVerificationSection: React.FC<SalesVerificationSectionProps> =
       return;
     }
 
-    setShowCompleteConfirmDialog(false);
     setActionError(undefined);
+    setCompleteDialogSuccessMessage(undefined);
     setBusyAction('complete');
     try {
       await Promise.resolve(onCompleteTask(payload));
@@ -413,19 +457,23 @@ export const SalesVerificationSection: React.FC<SalesVerificationSectionProps> =
       setIsSaleUsefulError(undefined);
       setWhyNotUsefulError(undefined);
       clearCrossSectionFieldErrors();
+      scheduleReturnToTable(
+        setCompleteDialogSuccessMessage,
+        'Sales verification task completed successfully. Returning to table...',
+      );
     } catch (err) {
       setActionError(err instanceof Error ? err.message : 'Failed to complete sales verification task.');
     } finally {
       setBusyAction(undefined);
     }
-  }, [clearCrossSectionFieldErrors, completeTaskActionRule.disabled, onCompleteTask, payload, validate]);
+  }, [clearCrossSectionFieldErrors, completeTaskActionRule.disabled, onCompleteTask, payload, scheduleReturnToTable, validate]);
 
   const handleCancelComplete = React.useCallback(() => {
-    if (busyAction === 'complete') {
+    if (busyAction === 'complete' || completeDialogSuccessMessage) {
       return;
     }
     setShowCompleteConfirmDialog(false);
-  }, [busyAction]);
+  }, [busyAction, completeDialogSuccessMessage]);
 
   const handleSubmitForQc = React.useCallback(() => {
     if (!onSubmitForQc || submitForQcActionRule.disabled) {
@@ -440,13 +488,13 @@ export const SalesVerificationSection: React.FC<SalesVerificationSectionProps> =
   }, [onSubmitForQc, submitForQcActionRule.disabled, validate]);
 
   const handleCancelSubmitForQc = React.useCallback(() => {
-    if (busyAction === 'submit') {
+    if (busyAction === 'submit' || submitForQcDialogSuccessMessage) {
       return;
     }
 
     setShowSubmitForQcDialog(false);
     setSubmitForQcRemarksError(undefined);
-  }, [busyAction]);
+  }, [busyAction, submitForQcDialogSuccessMessage]);
 
   const handleConfirmSubmitForQc = React.useCallback(async () => {
     if (!onSubmitForQc || submitForQcActionRule.disabled) {
@@ -465,24 +513,28 @@ export const SalesVerificationSection: React.FC<SalesVerificationSectionProps> =
     }
 
     setSubmitForQcDialogError(undefined);
+    setSubmitForQcDialogSuccessMessage(undefined);
     setBusyAction('submit');
     try {
       await Promise.resolve(onSubmitForQc({
         ...payload,
         remarks: normalizedRemarks,
       }));
-      setShowSubmitForQcDialog(false);
       setSubmitForQcRemarksError(undefined);
       setMandatoryErrorMessages([]);
       setIsSaleUsefulError(undefined);
       setWhyNotUsefulError(undefined);
       clearCrossSectionFieldErrors();
+      scheduleReturnToTable(
+        setSubmitForQcDialogSuccessMessage,
+        'Sales verification task submitted for QC successfully. Returning to table...',
+      );
     } catch (err) {
       setSubmitForQcDialogError(err instanceof Error ? err.message : 'Failed to submit sales verification task for QC.');
     } finally {
       setBusyAction(undefined);
     }
-  }, [clearCrossSectionFieldErrors, onSubmitForQc, payload, qcRemarks, submitForQcActionRule.disabled, validate]);
+  }, [clearCrossSectionFieldErrors, onSubmitForQc, payload, qcRemarks, scheduleReturnToTable, submitForQcActionRule.disabled, validate]);
 
   React.useEffect(() => {
     const highlightedSections = new Set<string>();
@@ -552,11 +604,11 @@ export const SalesVerificationSection: React.FC<SalesVerificationSectionProps> =
   ]);
 
   const handleCancelQcOutcomeDialog = React.useCallback(() => {
-    if (busyAction === 'qcsubmit') {
+    if (busyAction === 'qcsubmit' || qcOutcomeDialogSuccessMessage) {
       return;
     }
     setShowConfirmQcOutcomeDialog(false);
-  }, [busyAction]);
+  }, [busyAction, qcOutcomeDialogSuccessMessage]);
 
   const handleConfirmQcOutcome = React.useCallback(async () => {
     if (!onSubmitQcOutcome || submitQcOutcomeActionRule.disabled) {
@@ -575,6 +627,7 @@ export const SalesVerificationSection: React.FC<SalesVerificationSectionProps> =
       || 'QC User';
 
     setQcOutcomeDialogError(undefined);
+    setQcOutcomeDialogSuccessMessage(undefined);
     setBusyAction('qcsubmit');
     try {
       await Promise.resolve(onSubmitQcOutcome({
@@ -582,7 +635,10 @@ export const SalesVerificationSection: React.FC<SalesVerificationSectionProps> =
         qcRemark: normalizedRemarks,
         qcReviewedBy: reviewedBy,
       }));
-      setShowConfirmQcOutcomeDialog(false);
+      scheduleReturnToTable(
+        setQcOutcomeDialogSuccessMessage,
+        'QC outcome submitted successfully. Returning to table...',
+      );
     } catch (err) {
       setQcOutcomeDialogError(err instanceof Error ? err.message : 'Failed to submit QC outcome.');
     } finally {
@@ -595,6 +651,7 @@ export const SalesVerificationSection: React.FC<SalesVerificationSectionProps> =
     qcAssignedTo,
     qcOutcomeKey,
     qcOutcomeRemarks,
+    scheduleReturnToTable,
     submitQcOutcomeActionRule.disabled,
   ]);
 
@@ -744,6 +801,12 @@ export const SalesVerificationSection: React.FC<SalesVerificationSectionProps> =
             title={submitForQcActionRule.reason}
             onClick={() => { void handleSubmitForQc(); }}
           />
+          {(busyAction === 'complete' || busyAction === 'submit') && (
+            <div role="status" aria-live="polite" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <Spinner size={SpinnerSize.small} aria-hidden />
+              <Text variant="small">{busyAction === 'complete' ? 'Completing task...' : 'Submitting for QC...'}</Text>
+            </div>
+          )}
         </div>
       )}
 
@@ -822,11 +885,14 @@ export const SalesVerificationSection: React.FC<SalesVerificationSectionProps> =
               ariaLabel={qcSubmitButtonText}
               className="voa-sales-verification-action-btn"
               disabled={submitQcOutcomeActionRule.disabled}
-              title={submitQcOutcomeActionRule.reason}
+              title={qcSubmitButtonTitle}
               onClick={handleSubmitQcOutcome}
             />
-            {shouldShowQcRemarksRequiredMessage && (
-              <span className="voa-sales-verification-row__error" role="alert">{qcRemarksRequiredMessage}</span>
+            {busyAction === 'qcsubmit' && (
+              <div role="status" aria-live="polite" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <Spinner size={SpinnerSize.small} aria-hidden />
+                <Text variant="small">Submitting QC outcome...</Text>
+              </div>
             )}
           </div>
         </section>
@@ -844,17 +910,33 @@ export const SalesVerificationSection: React.FC<SalesVerificationSectionProps> =
         minWidth={480}
         maxWidth={560}
       >
+        {completeDialogSuccessMessage && (
+          <MessageBar
+            messageBarType={MessageBarType.success}
+            role="status"
+            dismissButtonAriaLabel="Close"
+            styles={{ root: { marginBottom: 8 } }}
+          >
+            {completeDialogSuccessMessage}
+          </MessageBar>
+        )}
         <DialogFooter>
+          {busyAction === 'complete' && !completeDialogSuccessMessage && (
+            <div role="status" aria-live="polite" style={{ display: 'flex', alignItems: 'center', gap: 8, marginRight: 'auto' }}>
+              <Spinner size={SpinnerSize.small} aria-hidden />
+              <Text variant="small">Completing task...</Text>
+            </div>
+          )}
           <PrimaryButton
-            text="Complete"
+            text={completeDialogSuccessMessage ? 'Returning...' : busyAction === 'complete' ? 'Completing...' : 'Complete'}
             ariaLabel="Confirm complete sales verification task"
-            disabled={busyAction === 'complete'}
+            disabled={busyAction === 'complete' || Boolean(completeDialogSuccessMessage)}
             onClick={() => { void handleConfirmComplete(); }}
           />
           <DefaultButton
             text="Cancel"
             ariaLabel="Cancel complete sales verification task"
-            disabled={busyAction === 'complete'}
+            disabled={busyAction === 'complete' || Boolean(completeDialogSuccessMessage)}
             onClick={handleCancelComplete}
           />
         </DialogFooter>
@@ -872,6 +954,16 @@ export const SalesVerificationSection: React.FC<SalesVerificationSectionProps> =
         minWidth={480}
         maxWidth={560}
       >
+        {qcOutcomeDialogSuccessMessage && (
+          <MessageBar
+            messageBarType={MessageBarType.success}
+            role="status"
+            dismissButtonAriaLabel="Close"
+            styles={{ root: { marginBottom: 8 } }}
+          >
+            {qcOutcomeDialogSuccessMessage}
+          </MessageBar>
+        )}
         {qcOutcomeDialogError && (
           <MessageBar
             messageBarType={MessageBarType.error}
@@ -884,16 +976,22 @@ export const SalesVerificationSection: React.FC<SalesVerificationSectionProps> =
           </MessageBar>
         )}
         <DialogFooter>
+          {busyAction === 'qcsubmit' && !qcOutcomeDialogSuccessMessage && (
+            <div role="status" aria-live="polite" style={{ display: 'flex', alignItems: 'center', gap: 8, marginRight: 'auto' }}>
+              <Spinner size={SpinnerSize.small} aria-hidden />
+              <Text variant="small">Submitting QC outcome...</Text>
+            </div>
+          )}
           <PrimaryButton
-            text={busyAction === 'qcsubmit' ? 'Submitting...' : 'Confirm'}
+            text={qcOutcomeDialogSuccessMessage ? 'Returning...' : busyAction === 'qcsubmit' ? 'Submitting...' : 'Confirm'}
             ariaLabel="Confirm QC outcome submission"
-            disabled={busyAction === 'qcsubmit'}
+            disabled={busyAction === 'qcsubmit' || Boolean(qcOutcomeDialogSuccessMessage)}
             onClick={() => { void handleConfirmQcOutcome(); }}
           />
           <DefaultButton
             text="Cancel"
             ariaLabel="Cancel QC outcome submission"
-            disabled={busyAction === 'qcsubmit'}
+            disabled={busyAction === 'qcsubmit' || Boolean(qcOutcomeDialogSuccessMessage)}
             onClick={handleCancelQcOutcomeDialog}
           />
         </DialogFooter>
@@ -919,11 +1017,22 @@ export const SalesVerificationSection: React.FC<SalesVerificationSectionProps> =
           rows={6}
           required
           errorMessage={submitForQcRemarksError}
+          disabled={busyAction === 'submit' || Boolean(submitForQcDialogSuccessMessage)}
           onChange={(_, nextValue) => {
             setQcRemarks(nextValue ?? '');
             setSubmitForQcRemarksError(undefined);
           }}
         />
+        {submitForQcDialogSuccessMessage && (
+          <MessageBar
+            messageBarType={MessageBarType.success}
+            role="status"
+            dismissButtonAriaLabel="Close"
+            styles={{ root: { marginBottom: 8 } }}
+          >
+            {submitForQcDialogSuccessMessage}
+          </MessageBar>
+        )}
         {submitForQcDialogError && (
           <MessageBar
             messageBarType={MessageBarType.error}
@@ -936,16 +1045,22 @@ export const SalesVerificationSection: React.FC<SalesVerificationSectionProps> =
           </MessageBar>
         )}
         <DialogFooter>
+          {busyAction === 'submit' && !submitForQcDialogSuccessMessage && (
+            <div role="status" aria-live="polite" style={{ display: 'flex', alignItems: 'center', gap: 8, marginRight: 'auto' }}>
+              <Spinner size={SpinnerSize.small} aria-hidden />
+              <Text variant="small">Submitting for QC...</Text>
+            </div>
+          )}
           <PrimaryButton
-            text={busyAction === 'submit' ? 'Submitting...' : 'Submit for QC'}
+            text={submitForQcDialogSuccessMessage ? 'Returning...' : busyAction === 'submit' ? 'Submitting...' : 'Submit for QC'}
             ariaLabel="Submit sales verification task for quality control"
-            disabled={busyAction === 'submit'}
+            disabled={busyAction === 'submit' || Boolean(submitForQcDialogSuccessMessage)}
             onClick={() => { void handleConfirmSubmitForQc(); }}
           />
           <DefaultButton
             text="Cancel"
             ariaLabel="Cancel submit for quality control"
-            disabled={busyAction === 'submit'}
+            disabled={busyAction === 'submit' || Boolean(submitForQcDialogSuccessMessage)}
             onClick={handleCancelSubmitForQc}
           />
         </DialogFooter>

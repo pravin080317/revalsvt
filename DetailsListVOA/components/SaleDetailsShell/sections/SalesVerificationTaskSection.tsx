@@ -9,6 +9,8 @@ import {
   MessageBar,
   MessageBarType,
   PrimaryButton,
+  Spinner,
+  SpinnerSize,
   Text,
 } from '@fluentui/react';
 import { statusIconByTone } from '../constants';
@@ -297,6 +299,16 @@ export const SalesVerificationTaskSection: React.FC<SalesVerificationTaskSection
               onClick={handleOpenCreateTaskConfirmation}
             />
           </div>
+          {(createTaskBusy || modifyTaskBusy) && (
+            <div
+              role="status"
+              aria-live="polite"
+              style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 8 }}
+            >
+              <Spinner size={SpinnerSize.small} aria-hidden />
+              <Text variant="small">{createTaskBusy ? 'Creating task...' : 'Modifying task...'}</Text>
+            </div>
+          )}
           {createTaskUnavailableReason && (hasTaskId || !canCreateTask) && (
             <Text variant="small" className="voa-task-actions__note">{createTaskUnavailableReason}</Text>
           )}
@@ -339,6 +351,12 @@ export const SalesVerificationTaskSection: React.FC<SalesVerificationTaskSection
         maxWidth={560}
       >
         <DialogFooter>
+          {createTaskBusy && (
+            <div role="status" aria-live="polite" style={{ display: 'flex', alignItems: 'center', gap: 8, marginRight: 'auto' }}>
+              <Spinner size={SpinnerSize.small} aria-hidden />
+              <Text variant="small">Creating task...</Text>
+            </div>
+          )}
           <PrimaryButton
             text={createTaskBusy ? 'Creating...' : 'Create Task'}
             ariaLabel="Confirm create SVT task"
@@ -370,6 +388,12 @@ export const SalesVerificationTaskSection: React.FC<SalesVerificationTaskSection
         maxWidth={560}
       >
         <DialogFooter>
+          {modifyTaskBusy && (
+            <div role="status" aria-live="polite" style={{ display: 'flex', alignItems: 'center', gap: 8, marginRight: 'auto' }}>
+              <Spinner size={SpinnerSize.small} aria-hidden />
+              <Text variant="small">Modifying task...</Text>
+            </div>
+          )}
           <PrimaryButton
             text={modifyTaskBusy ? 'Modifying...' : 'Confirm'}
             ariaLabel="Confirm modify SVT task"

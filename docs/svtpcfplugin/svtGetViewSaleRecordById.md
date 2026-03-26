@@ -55,12 +55,11 @@ When you bind to `saleDetails`, parse it once:
 ```
 Set(parsedSale, ParseJSON(DetailsListVOA.saleDetails));
 ```
-Then read values with `Text()`, `Value()`, or `Boolean()` in Power Fx. This pattern is documented in the main sales record API doc for reuse.【F:docs/svtGetSaleRecords.md†L166-L200】
+Then read values with `Text()`, `Value()`, or `Boolean()` in Power Fx. This pattern is documented in the main sales record API doc for reuse.【F:docs/svtpcfplugin/svtGetSaleRecords.md†L166-L200】
 
 ---
 
 ## Related docs
-- `docs/svtGetSaleRecords.md` (search + grid data retrieval).
-- `docs/svtTaskAssignment.md` (assignment custom API).
-- `docs/svtManualTaskCreation.md` (manual task creation endpoint).
-
+- `docs/svtpcfplugin/svtGetSaleRecords.md` (search + grid data retrieval).
+- `docs/svtpcfplugin/svtTaskAssignment.md` (assignment custom API).
+- `docs/svtpcfplugin/svtManualTaskCreation.md` (manual task creation endpoint).

@@ -56,6 +56,15 @@
       default-value=""
     />
     <property
+      name="mdaAppId"
+      display-name-key="MDA App ID"
+      description-key="Environment-specific Model-driven App ID used to build main.aspx links. When set, this overrides the default config app id."
+      of-type="SingleLine.Text"
+      usage="input"
+      required="false"
+      default-value=""
+    />
+    <property
       name="vmsBaseUrl"
       display-name-key="VMS Base URL"
       description-key="Base VMS URL used to build map hyperlinks in Sale Record details (e.g., https://geo-dev-vms-4x.voa.ns3n.corp.hmrc.gov.uk)."

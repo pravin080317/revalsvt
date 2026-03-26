@@ -78,12 +78,13 @@ The plugin resolves assignment context from the screen name (manager vs QA), the
 
 ## Assignment vs. reassignment (manager)
 - **Assignment**: all selected tasks are `New` -> send `taskStatus = "New"` to the assignment API.
-- **Reassignment**: tasks already assigned (status not `New`) -> send `taskStatus = "NULL"` to the assignment API.
+- **Reassignment**: tasks already assigned (status not `New`) -> send the current selected status to the assignment API (for example `Assigned`, `Assigned QC failed`, `QC requested`).
 - Mixed `New` + non-`New` selections are blocked by the client with the invalid-status message.
+- `Complete` and `Complete Passed QC` are excluded from manager assignment.
 
 ## PCF configuration (inputs + outputs)
 For the full and current manifest parameter inventory, use:
-- `docs/pcf-input-output-parameters.md`
+- `docs/svtpcfplugin/pcf-input-output-parameters.md`
 
 Manager Assignment typically sets or relies on:
 - `canvasScreenName`, `tableKey`

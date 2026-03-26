@@ -157,16 +157,10 @@ describe('Dialog Consistency – all 5 actions have a confirmation dialog', () =
       expect(slice).toContain("className: 'voa-confirm-dialog'");
     });
 
-    test('AC-D18: Completing sale navigates to table and shows grid-level success notification', () => {
-      // Controller sets showPcfSaleDetails = false → returns to grid
-      expect(runtimeSource).toContain('this.showPcfSaleDetails = false;');
-      expect(runtimeSource).toContain(
-        "'Sales verification task completed successfully.'",
-      );
-      // ControlShell renders and auto-dismisses the notification
-      expect(controlShellSource).toContain('submitSuccessMessage');
-      expect(controlShellSource).toContain('MessageBarType.success');
-      expect(controlShellSource).toContain('setTimeout(');
+    test('AC-D18: Completing sale shows success in the dialog, then returns to table', () => {
+      expect(sectionSource).toContain('Sales verification task completed successfully. Returning to table...');
+      expect(sectionSource).toContain('setCompleteDialogSuccessMessage');
+      expect(sectionSource).toContain('onReturnToTableAfterSubmit?.();');
     });
   });
 
@@ -190,11 +184,9 @@ describe('Dialog Consistency – all 5 actions have a confirmation dialog', () =
       expect(slice).toContain('id="voa-submit-qc-remarks"');
     });
 
-    test('AC-D21: Submitting for QC navigates to table and shows grid success notification', () => {
-      expect(runtimeSource).toContain(
-        "'Sales verification task submitted for QC successfully.'",
-      );
-      expect(controlShellSource).toContain('submitSuccessMessage');
+    test('AC-D21: Submitting for QC shows success in the dialog, then returns to table', () => {
+      expect(sectionSource).toContain('Sales verification task submitted for QC successfully. Returning to table...');
+      expect(sectionSource).toContain('setSubmitForQcDialogSuccessMessage');
     });
   });
 
@@ -218,9 +210,9 @@ describe('Dialog Consistency – all 5 actions have a confirmation dialog', () =
       expect(slice).toContain("className: 'voa-confirm-dialog'");
     });
 
-    test('AC-D24: Submitting QC outcome navigates to table and shows grid success notification', () => {
-      expect(runtimeSource).toContain("'QC outcome submitted successfully.'");
-      expect(controlShellSource).toContain('submitSuccessMessage');
+    test('AC-D24: Submitting QC outcome shows success in the dialog, then returns to table', () => {
+      expect(sectionSource).toContain('QC outcome submitted successfully. Returning to table...');
+      expect(sectionSource).toContain('setQcOutcomeDialogSuccessMessage');
     });
   });
 
@@ -242,24 +234,21 @@ describe('Dialog Consistency – all 5 actions have a confirmation dialog', () =
       expect(taskSectionSource).toContain('{modifyTaskMessage && (');
     });
 
-    test('AC-D27: Submit Sale, Request QC, QC Submit all set submitSuccessNotification on the controller', () => {
-      expect(runtimeSource).toContain("'Sales verification task completed successfully.'");
-      expect(runtimeSource).toContain("'Sales verification task submitted for QC successfully.'");
-      expect(runtimeSource).toContain("'QC outcome submitted successfully.'");
+    test('AC-D27: Submit dialogs own their success messages and delayed return flow', () => {
+      expect(sectionSource).toContain('completeDialogSuccessMessage');
+      expect(sectionSource).toContain('submitForQcDialogSuccessMessage');
+      expect(sectionSource).toContain('qcOutcomeDialogSuccessMessage');
     });
 
-    test('AC-D28: Grid-level notification in ControlShell auto-dismisses after 5 seconds', () => {
-      // ControlShell has a useEffect that sets a timeout for onDismissSubmitSuccess
-      expect(controlShellSource).toContain('submitSuccessMessage');
-      expect(controlShellSource).toContain('setTimeout(');
-      expect(controlShellSource).toContain('onDismissSubmitSuccess');
+    test('AC-D28: Dialog success uses a short delayed return callback', () => {
+      expect(sectionSource).toContain('setTimeout(() => {');
+      expect(sectionSource).toContain('onReturnToTableAfterSubmit?.();');
     });
 
-    test('AC-D29: All navigate-back actions set showPcfSaleDetails = false via controller', () => {
-      // Counting how many times showPcfSaleDetails is set to false post-action
+    test('AC-D29: Controller still owns the actual detail-close operation', () => {
       const matches = runtimeSource.match(/this\.showPcfSaleDetails = false/g) ?? [];
-      // At minimum: Complete Sale + Submit for QC share one path, QC Submit, plus back button handlers
       expect(matches.length).toBeGreaterThanOrEqual(3);
+      expect(runtimeSource).toContain('public closeDetailsAfterSubmit(): void');
     });
   });
 });

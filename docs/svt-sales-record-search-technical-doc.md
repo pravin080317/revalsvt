@@ -197,4 +197,4 @@ This table aligns the story requirements with the implementation.
 ---
 
 ## References
-- `docs/svtGetSaleRecords.md` is a general Custom API overview and can be used as a supplement for API execution behavior and response mapping details.【F:docs/svtGetSaleRecords.md†L1-L198】
+- `docs/svtpcfplugin/svtGetSaleRecords.md` is a general Custom API overview and can be used as a supplement for API execution behavior and response mapping details.【F:docs/svtpcfplugin/svtGetSaleRecords.md†L1-L198】

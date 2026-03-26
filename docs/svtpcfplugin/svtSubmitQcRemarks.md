@@ -80,5 +80,5 @@ If(
 ---
 
 ## Related docs
-- `docs/svtTaskAssignment.md` (task assignment endpoint).
-- `docs/svtModifySvtTask.md` (task status update endpoint).
+- `docs/svtpcfplugin/svtTaskAssignment.md` (task assignment endpoint).
+- `docs/svtpcfplugin/svtModifySvtTask.md` (task status update endpoint).

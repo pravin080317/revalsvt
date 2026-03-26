@@ -9,6 +9,7 @@ function readRepoFile(relativePath: string): string {
 
 describe('prefilter identity uses Entra IDs only', () => {
   const hostSource = readRepoFile('DetailsListVOA/components/DetailsListHost/DetailsListHost.tsx');
+  const gridSource = readRepoFile('DetailsListVOA/Grid.tsx');
   const journeySource = readRepoFile('DetailsListVOA/components/HomeShell/ManagerJourneyShell.tsx');
   const pluginSource = readRepoFile('VOA.SVT.Plugins/Plugins/CustomAPI/SvtGetAssignableUsers.cs');
   const salesRecordModelsSource = readRepoFile('VOA.SVT.Plugins/Plugins/CustomAPI/DataAccessLayer/Model/SalesRecordModels.cs');
@@ -35,11 +36,20 @@ describe('prefilter identity uses Entra IDs only', () => {
   });
 
   test('caseworker and QC browser requests mirror the APIM and store proc contract', () => {
-    expect(hostSource).toContain('const apiPrefilters = requestedBy ? undefined : normalizedPrefilters;');
+    expect(hostSource).toContain('const apiPrefilters = normalizedPrefilters;');
     expect(hostSource).toContain('prefilters: apiPrefilters,');
     expect(salesRecordModelsSource).toContain('var preFilter = useRequestedBy ? null : PreFilter;');
     expect(salesRecordModelsSource).toContain('var searchBy = useRequestedBy ? null : SearchBy;');
     expect(salesRecordModelsSource).toContain('["RequestedBy"] = requestedBy,');
+  });
+
+  test('grid restores retained prefilters and auto-applies stored searches without fallback loops', () => {
+    expect(gridSource).toContain('if (!raw) return;');
+    expect(gridSource).toContain('markPrefilterHydrating();');
+    expect(gridSource).toContain('setPrefilters(normalizedNext);');
+    expect(gridSource).toContain("const shouldAutoApply = storedApplied === false ? false : canAutoApply;");
+    expect(gridSource).toContain("onPrefilterApply(normalizedNext, { source: 'auto' });");
+    expect(gridSource).not.toContain(':fallback');
   });
 
   test('assignable users plugin returns both systemuserid and entra oid for remapping', () => {

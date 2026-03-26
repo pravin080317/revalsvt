@@ -118,13 +118,18 @@ export const buildColumnFilterTokens = (
   if (cfg.control === 'dateRange' && isDateRangeFilterValue(value)) {
     const from = value.from?.trim();
     const to = value.to?.trim();
-    const start = from && from.length > 0 ? from : to;
-    const end = to && to.length > 0 ? to : from;
-    if (!start || !end) return undefined;
-    const formattedStart = formatApiDate(start);
-    const formattedEnd = formatApiDate(end);
-    if (!formattedStart || !formattedEnd) return undefined;
-    return [apiField, 'between', formattedStart, formattedEnd];
+    const formattedFrom = from && from.length > 0 ? formatApiDate(from) : undefined;
+    const formattedTo = to && to.length > 0 ? formatApiDate(to) : undefined;
+    if (formattedFrom && formattedTo) {
+      return [apiField, 'between', formattedFrom, formattedTo];
+    }
+    if (formattedFrom) {
+      return [apiField, 'GTE', formattedFrom];
+    }
+    if (formattedTo) {
+      return [apiField, 'LTE', formattedTo];
+    }
+    return undefined;
   }
 
   return undefined;

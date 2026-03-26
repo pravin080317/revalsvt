@@ -322,7 +322,7 @@ describe('Plugin source cross-checks (SvtModifyTask.cs)', () => {
 
   test('plugin falls back to initiating user ID when requestedBy is empty', () => {
     expect(pluginSource).toContain('context.InitiatingUserId');
-    expect(pluginSource).toContain('fallbackId == Guid.Empty');
+    expect(pluginSource).toContain('requestedBy = NormalizeGuidOrEmpty(requestedBy);');
   });
 
   test('plugin validates taskStatus and taskList are required', () => {
@@ -501,7 +501,7 @@ describe('PCF modifySvtTask() flow (DetailsListRuntimeController.ts)', () => {
 
   test('resolves requestedBy from current user context', () => {
     expect(runtimeSource).toContain(
-      'const requestedBy = resolveCurrentUserId(this._context)',
+      'const requestedBy = this.entraObjectId',
     );
   });
 
@@ -1093,7 +1093,7 @@ describe('PCF ↔ Plugin field alignment', () => {
   });
 
   test('both PCF and plugin resolve requestedBy from current user', () => {
-    expect(runtimeSource).toContain('resolveCurrentUserId(this._context)');
+    expect(runtimeSource).toContain('const requestedBy = this.entraObjectId');
     expect(pluginSource).toContain('context.InitiatingUserId');
   });
 
@@ -1148,7 +1148,7 @@ describe('Control config for modify task API', () => {
 /* ================================================================== */
 
 describe('Documentation alignment (svtModifySvtTask.md)', () => {
-  const doc = readRepoFile('docs/svtModifySvtTask.md');
+  const doc = readRepoFile('docs/svtpcfplugin/svtModifySvtTask.md');
 
   test('docs describe voa_SvtModifyTask as an unbound action', () => {
     expect(doc.toLowerCase()).toContain('voa_svtmodifytask');

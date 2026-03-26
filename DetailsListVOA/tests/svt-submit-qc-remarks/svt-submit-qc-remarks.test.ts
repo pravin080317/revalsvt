@@ -37,6 +37,8 @@ function readRepoFile(relativePath: string): string {
   return fs.readFileSync(path.join(repoRoot, relativePath), 'utf8');
 }
 
+const sectionSource = readRepoFile('DetailsListVOA/components/SaleDetailsShell/sections/SalesVerificationSection.tsx');
+
 /* ================================================================== */
 /*  Real API payload fixture (user-provided Fail scenario)            */
 /* ================================================================== */
@@ -252,7 +254,7 @@ describe('Plugin source cross-checks (SvtSubmitQcRemarks.cs)', () => {
 
   test('plugin falls back to initiating user ID when qcReviewedBy is empty', () => {
     expect(pluginSource).toContain('context.InitiatingUserId');
-    expect(pluginSource).toContain('qcReviewedBy = fallbackId == Guid.Empty');
+    expect(pluginSource).toContain('qcReviewedBy = NormalizeGuidOrEmpty(qcReviewedBy);');
   });
 
   test('plugin builds APIM payload with qcTaskList key', () => {
@@ -349,7 +351,7 @@ describe('PCF submitQcOutcome() flow (DetailsListRuntimeController.ts)', () => {
 
   test('resolves qcReviewedBy from the current user context', () => {
     expect(runtimeSource).toContain(
-      'qcReviewedBy: resolveCurrentUserId(this._context)',
+      'qcReviewedBy: this.entraObjectId',
     );
   });
 
@@ -380,22 +382,18 @@ describe('PCF submitQcOutcome() flow (DetailsListRuntimeController.ts)', () => {
     expect(runtimeSource).toContain("this.emitAction('submitQcOutcome')");
   });
 
-  test('auto-navigates back to grid after QC submit (showPcfSaleDetails = false)', () => {
+  test('keeps the dialog open after QC submit success until the delayed return callback fires', () => {
     const submitBlock = runtimeSource.slice(
       runtimeSource.indexOf('async submitQcOutcome'),
       runtimeSource.indexOf("this.emitAction('submitQcOutcome')"),
     );
-    expect(submitBlock).toContain('this.showPcfSaleDetails = false;');
-    expect(submitBlock).toContain('this.activeViewSaleRequestId = undefined;');
-    expect(submitBlock).toContain('this.viewSalePending = false;');
+    expect(submitBlock).not.toContain('this.showPcfSaleDetails = false;');
+    expect(sectionSource).toContain('QC outcome submitted successfully. Returning to table...');
   });
 
-  test('shows success notification after QC submit', () => {
-    const submitBlock = runtimeSource.slice(
-      runtimeSource.indexOf('async submitQcOutcome'),
-      runtimeSource.indexOf("this.emitAction('submitQcOutcome')"),
-    );
-    expect(submitBlock).toContain("this.submitSuccessNotification = 'QC outcome submitted successfully.'");
+  test('uses section-level success state after QC submit', () => {
+    expect(sectionSource).toContain('qcOutcomeDialogSuccessMessage');
+    expect(sectionSource).toContain('setQcOutcomeDialogSuccessMessage');
   });
 });
 
@@ -763,8 +761,8 @@ describe('PCF ↔ Plugin field alignment', () => {
     expect(pluginSource).toContain('JsonSerializer.Deserialize<string[]>');
   });
 
-  test('PCF uses resolveCurrentUserId; plugin falls back to InitiatingUserId', () => {
-    expect(runtimeSource).toContain('resolveCurrentUserId(this._context)');
+  test('PCF uses resolved Entra object id; plugin falls back to InitiatingUserId', () => {
+    expect(runtimeSource).toContain('qcReviewedBy: this.entraObjectId');
     expect(pluginSource).toContain('context.InitiatingUserId');
   });
 
@@ -799,7 +797,7 @@ describe('Control config for QC remarks API', () => {
 /* ================================================================== */
 
 describe('Documentation discrepancy: taskId vs taskList', () => {
-  const doc = readRepoFile('docs/svtSubmitQcRemarks.md');
+  const doc = readRepoFile('docs/svtpcfplugin/svtSubmitQcRemarks.md');
   const pluginSource = readRepoFile(
     'VOA.SVT.Plugins/Plugins/CustomAPI/SvtSubmitQcRemarks.cs',
   );

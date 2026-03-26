@@ -47,6 +47,7 @@ namespace VOA.SVT.Plugins.CustomAPI
             var saleId = GetInput(context, "saleId");
             var sourceType = GetInput(context, "sourceType");
             var createdBy = GetInput(context, "createdBy");
+            createdBy = NormalizeGuidOrEmpty(createdBy);
 
             if (string.IsNullOrWhiteSpace(saleId))
             {
@@ -64,6 +65,13 @@ namespace VOA.SVT.Plugins.CustomAPI
                 createdBy = !string.IsNullOrWhiteSpace(userContext.EntraObjectId)
                     ? userContext.EntraObjectId
                     : context.InitiatingUserId.ToString();
+                createdBy = NormalizeGuidOrEmpty(createdBy);
+            }
+
+            if (string.IsNullOrWhiteSpace(createdBy))
+            {
+                context.OutputParameters["Result"] = BuildResult(false, "createdBy must be a valid GUID.", string.Empty);
+                return;
             }
 
             // 1) Read secrets/config from credential provider action
@@ -212,5 +220,14 @@ namespace VOA.SVT.Plugins.CustomAPI
 
         private static string Truncate(string s, int maxLen)
             => string.IsNullOrEmpty(s) ? s : (s.Length > maxLen ? s.Substring(0, maxLen) : s);
+
+        private static string NormalizeGuidOrEmpty(string value)
+        {
+            if (string.IsNullOrWhiteSpace(value)) return string.Empty;
+            var trimmed = value.Trim().Trim('{', '}');
+            return Guid.TryParse(trimmed, out var parsed)
+                ? parsed.ToString("D").ToLowerInvariant()
+                : string.Empty;
+        }
     }
 }

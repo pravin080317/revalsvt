@@ -50,6 +50,7 @@ namespace VOA.SVT.Plugins.CustomAPI
             var taskListRaw = GetInput(context, "taskList");
             var requestedBy = GetInput(context, "requestedBy");
             var taskIds = ParseTaskIds(taskListRaw);
+            requestedBy = NormalizeGuidOrEmpty(requestedBy);
 
             if (string.IsNullOrWhiteSpace(source))
             {
@@ -61,6 +62,7 @@ namespace VOA.SVT.Plugins.CustomAPI
                 requestedBy = !string.IsNullOrWhiteSpace(userContext.EntraObjectId)
                     ? userContext.EntraObjectId
                     : context.InitiatingUserId.ToString();
+                requestedBy = NormalizeGuidOrEmpty(requestedBy);
             }
 
             if (string.IsNullOrWhiteSpace(taskStatus) || taskIds.Count == 0)
@@ -244,5 +246,14 @@ namespace VOA.SVT.Plugins.CustomAPI
 
         private static string Truncate(string s, int maxLen)
             => string.IsNullOrEmpty(s) ? s : (s.Length > maxLen ? s.Substring(0, maxLen) : s);
+
+        private static string NormalizeGuidOrEmpty(string value)
+        {
+            if (string.IsNullOrWhiteSpace(value)) return string.Empty;
+            var trimmed = value.Trim().Trim('{', '}');
+            return Guid.TryParse(trimmed, out var parsed)
+                ? parsed.ToString("D").ToLowerInvariant()
+                : string.Empty;
+        }
     }
 }

@@ -6,6 +6,25 @@ import {
 } from '../utils/AssignmentHelpers';
 
 describe('assignment helpers', () => {
+  // Mirrors manager assignment rules used by the runtime config.
+  const managerAssignmentCfg: AssignmentConfig = {
+    allowedStatusesManager: ['New', 'Assigned', 'Assigned QC failed', 'QC requested'],
+    allowedStatusesQc: [],
+    allowedStatuses: [],
+  };
+
+  // QC assignment rules:
+  // - Included statuses: QC requested, Complete, Assigned QC failed, Assigned To QC, Reassigned To QC
+  // - Excluded status: Complete Passed QC
+  // - taskStatus sent to API:
+  //   * QC requested -> QC Requested (assignment to QC)
+  //   * other included statuses -> current status (reassignment)
+  const qcAssignmentCfg: AssignmentConfig = {
+    allowedStatusesManager: [],
+    allowedStatusesQc: ['QC requested', 'Complete', 'Assigned QC failed', 'Assigned To QC', 'Reassigned To QC'],
+    allowedStatuses: [],
+  };
+
   const messages = {
     noUsersFound: 'No users found.',
     assignableUsersParseFailed: 'Parse failed.',
@@ -24,15 +43,56 @@ describe('assignment helpers', () => {
   });
 
   test('manager assignment sets task status for all new', () => {
-    const cfg: AssignmentConfig = { allowedStatusesManager: [], allowedStatusesQc: [], allowedStatuses: [] };
     const result = resolveAssignmentStatusValidation(
       [{ taskstatus: 'New' }],
       'managerAssign',
-      cfg,
+      managerAssignmentCfg,
       'invalid',
     );
     expect(result.assignmentTaskStatus).toBe('New');
     expect(result.error).toBeUndefined();
+  });
+
+  test('manager assignment sends current task status for reassignment payload', () => {
+    const result = resolveAssignmentStatusValidation(
+      [{ taskstatus: 'Assigned' }],
+      'managerAssign',
+      managerAssignmentCfg,
+      'invalid',
+    );
+    expect(result.error).toBeUndefined();
+    expect(result.assignmentTaskStatus).toBe('Assigned');
+  });
+
+  test('manager assignment sends current task status for non-new allowed statuses', () => {
+    const result = resolveAssignmentStatusValidation(
+      [{ taskstatus: 'QC requested' }],
+      'managerAssign',
+      managerAssignmentCfg,
+      'invalid',
+    );
+    expect(result.error).toBeUndefined();
+    expect(result.assignmentTaskStatus).toBe('QC requested');
+  });
+
+  test('manager assignment is restricted for Complete status', () => {
+    const result = resolveAssignmentStatusValidation(
+      [{ taskstatus: 'Complete' }],
+      'managerAssign',
+      managerAssignmentCfg,
+      'invalid',
+    );
+    expect(result.error).toBe('invalid');
+  });
+
+  test('manager assignment is restricted for Complete Passed QC status', () => {
+    const result = resolveAssignmentStatusValidation(
+      [{ taskstatus: 'Complete Passed QC' }],
+      'managerAssign',
+      managerAssignmentCfg,
+      'invalid',
+    );
+    expect(result.error).toBe('invalid');
   });
 
   test('qc assignment errors on mixed qc requested/non-qc requested', () => {
@@ -46,20 +106,47 @@ describe('assignment helpers', () => {
     expect(result.error).toBe('invalid');
   });
 
-  test('qc assignment allows complete status when configured and treats it as reassignment', () => {
-    const cfg: AssignmentConfig = {
-      allowedStatusesManager: [],
-      allowedStatusesQc: ['QC requested', 'Complete'],
-      allowedStatuses: [],
-    };
+  test('qc assignment sends current status for complete-task reassignment', () => {
     const result = resolveAssignmentStatusValidation(
       [{ taskstatus: 'Complete' }],
       'qcAssign',
-      cfg,
+      qcAssignmentCfg,
       'invalid',
     );
     expect(result.error).toBeUndefined();
-    expect(result.assignmentTaskStatus).toBe('NULL');
+    expect(result.assignmentTaskStatus).toBe('Complete');
+  });
+
+  test('qc assignment sends QC Requested when selected rows are QC Requested', () => {
+    const result = resolveAssignmentStatusValidation(
+      [{ taskstatus: 'QC Requested' }],
+      'qcAssign',
+      qcAssignmentCfg,
+      'invalid',
+    );
+    expect(result.error).toBeUndefined();
+    expect(result.assignmentTaskStatus).toBe('QC Requested');
+  });
+
+  test('qc assignment sends current status for assigned-to-qc reassignment', () => {
+    const result = resolveAssignmentStatusValidation(
+      [{ taskstatus: 'Assigned To QC' }],
+      'qcAssign',
+      qcAssignmentCfg,
+      'invalid',
+    );
+    expect(result.error).toBeUndefined();
+    expect(result.assignmentTaskStatus).toBe('Assigned To QC');
+  });
+
+  test('qc assignment is restricted for Complete Passed QC status', () => {
+    const result = resolveAssignmentStatusValidation(
+      [{ taskstatus: 'Complete Passed QC' }],
+      'qcAssign',
+      qcAssignmentCfg,
+      'invalid',
+    );
+    expect(result.error).toBe('invalid');
   });
 
   test('enforces allowed statuses for non-assignment screens', () => {

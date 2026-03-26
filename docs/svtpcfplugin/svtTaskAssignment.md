@@ -25,7 +25,7 @@ The Custom API is called with the following parameters (per selected task):
 | Parameter | Type | Notes |
 | --- | --- | --- |
 | `assignedToUserId` | string | Selected assignee’s Dataverse user ID. | 
-| `taskStatus` | string | Manager assignment: `New` for first-time assignment, `NULL` for reassignment. QC assignment: `QC Requested` for first-time assignment, `NULL` for reassignment. (PCF blocks mixed New + non-New and mixed QC Requested + non-QC Requested selections.) |
+| `taskStatus` | string | Sent from selected rows per assignment rules. Manager: `New` for `New`, otherwise current status for reassignment. QC: `QC Requested` for `QC Requested`, otherwise current status for reassignment. |
 | `saleId` | string | Sale ID from the selected record. |
 | `taskId` | string | Task ID from the selected record. **Required** by plugin. |
 | `assignedByUserId` | string | Current user ID (from context). |
@@ -74,8 +74,17 @@ Parameter notes:
 - The plugin maps taskId to taskList in the APIM payload.
 - screenName (or canvasScreenName) is used for authorization and source mapping.
 - QC assignment screenName sent by the PCF is `quality control assignment`.
-- Manager assignment taskStatus rules: if all selected tasks are `New`, send `taskStatus = "New"`. If the tasks are already assigned (status not `New`), send `taskStatus = "NULL"`.
-- QC assignment taskStatus rules: if all selected tasks are `QC Requested`, send `taskStatus = "QC Requested"`. If the tasks are already assigned (status not `QC Requested`), send `taskStatus = "NULL"`.
+
+### Assignment rules matrix
+
+| Screen | Included statuses | Excluded statuses | taskStatus sent |
+| --- | --- | --- | --- |
+| Manager assignment (`MAT`) | `New`, `Assigned`, `Assigned QC failed`, `QC requested` | `Complete`, `Complete Passed QC` | If selected rows are `New`: `New`. Otherwise send current selected status (reassignment). |
+| QC assignment (`QCAT`) | `QC requested`, `Complete`, `Assigned QC failed`, `Assigned To QC`, `Reassigned To QC` | `Complete Passed QC` | If selected rows are `QC Requested`: `QC Requested`. Otherwise send current selected status (reassignment). |
+
+Validation guards:
+- Mixed `New` + non-`New` is blocked in manager assignment.
+- Mixed `QC Requested` + non-`QC Requested` is blocked in QC assignment.
 
 ### APIM URL formed by the plugin
 The plugin POSTs to the Address from `SVTTaskAssignment` with a JSON body (no query string).
@@ -105,11 +114,13 @@ APIM request body (QC assignment):
   "assignedTo": "22222222-2222-2222-2222-222222222222",
   "taskList": ["1000234", "1000235"],
   "requestedBy": "11111111-1111-1111-1111-111111111111",
-  "taskStatus": "QC Requested",
+  "taskStatus": "Complete",
   "saleId": "",
   "date": ""
 }
 ```
+
+Note: for first-time QC assignment, `taskStatus` is `QC Requested`.
 
 Source mapping (plugin):
 - Manager assignment -> MAT
@@ -159,7 +170,7 @@ The plugin sets the `Result` string for both success and failure cases.【F:VOA.
 ---
 
 ## Related docs
-- `docs/svtGetSaleRecords.md` (search + grid data retrieval).
-- `docs/svtGetViewSaleRecordById.md` (sale details retrieval).
-- `docs/svtManualTaskCreation.md` (manual task creation endpoint).
-- `docs/svtGetUserContext.md` (user persona/roles context for Canvas apps).
+- `docs/svtpcfplugin/svtGetSaleRecords.md` (search + grid data retrieval).
+- `docs/svtpcfplugin/svtGetViewSaleRecordById.md` (sale details retrieval).
+- `docs/svtpcfplugin/svtManualTaskCreation.md` (manual task creation endpoint).
+- `docs/svtpcfplugin/svtGetUserContext.md` (user persona/roles context for Canvas apps).

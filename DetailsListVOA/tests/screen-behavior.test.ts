@@ -70,6 +70,20 @@ describe('screen behavior', () => {
     expect(shouldResetPrefiltersOnScreenChange('salesSearch', 'managerAssign', false)).toBe(true);
   });
 
+  test('retained prefilters do not reset when navigating back to prefilter screens', () => {
+    expect(shouldResetPrefiltersOnScreenChange('salesSearch', 'managerAssign', true)).toBe(false);
+    expect(shouldResetPrefiltersOnScreenChange('salesSearch', 'caseworkerView', true)).toBe(false);
+    expect(shouldResetPrefiltersOnScreenChange('salesSearch', 'qcAssign', true)).toBe(false);
+    expect(shouldResetPrefiltersOnScreenChange('salesSearch', 'qcView', true)).toBe(false);
+  });
+
+  test('prefilter screens reset only when returning without stored prefilters', () => {
+    expect(shouldResetPrefiltersOnScreenChange('salesSearch', 'managerAssign', false)).toBe(true);
+    expect(shouldResetPrefiltersOnScreenChange('salesSearch', 'caseworkerView', false)).toBe(true);
+    expect(shouldResetPrefiltersOnScreenChange('salesSearch', 'qcAssign', false)).toBe(true);
+    expect(shouldResetPrefiltersOnScreenChange('salesSearch', 'qcView', false)).toBe(true);
+  });
+
   test('shouldResetPrefiltersOnScreenChange ignores non-prefilter screens', () => {
     expect(shouldResetPrefiltersOnScreenChange('managerAssign', 'salesSearch', false)).toBe(false);
     expect(shouldResetPrefiltersOnScreenChange('salesSearch', 'unknown', false)).toBe(false);

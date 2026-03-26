@@ -144,6 +144,13 @@ export class DetailsListRuntimeController {
     this._notifyOutputChanged?.();
   }
 
+  public closeDetailsAfterSubmit(): void {
+    this.activeViewSaleRequestId = undefined;
+    this.showPcfSaleDetails = false;
+    this.viewSalePending = false;
+    this._notifyOutputChanged?.();
+  }
+
   public get canCreateManualTask(): boolean {
     return this.hasManagerAccess && this.hasCaseworkerAccess;
   }
@@ -218,6 +225,15 @@ export class DetailsListRuntimeController {
     }
     const contextParams = this._context.parameters as unknown as Record<string, { raw?: string }>;
     return normalizeTextValue(contextParams.fxEnvironmentUrl?.raw);
+  }
+
+  public getMdaAppId(): string {
+    const contextParams = this._context.parameters as unknown as Record<string, { raw?: string }>;
+    const fromInput = normalizeTextValue(contextParams.mdaAppId?.raw);
+    if (fromInput) {
+      return fromInput;
+    }
+    return normalizeTextValue(CONTROL_CONFIG.mdaAppId);
   }
 
   public getVmsBaseUrl(): string {
@@ -498,14 +514,7 @@ export class DetailsListRuntimeController {
     this.selectedTaskId = resolveCurrentTaskIdFromDetails(nextSaleDetails, this.selectedTaskId);
     this.updateSaleDetailsAccessState();
 
-    // Auto-navigate back to grid with success notification
-    this.showPcfSaleDetails = false;
-    this.activeViewSaleRequestId = undefined;
-    this.viewSalePending = false;
-    this.submitSuccessNotification = type === 'completeSalesVerificationTask'
-      ? 'Sales verification task completed successfully.'
-      : 'Sales verification task submitted for QC successfully.';
-
+    this.submitSuccessNotification = undefined;
     this.emitAction(type);
   }
 
@@ -574,12 +583,7 @@ export class DetailsListRuntimeController {
     this.selectedTaskId = normalizeTextValue(taskId) || this.selectedTaskId;
     this.updateSaleDetailsAccessState();
 
-    // Auto-navigate back to grid with success notification (same as caseworker submission)
-    this.showPcfSaleDetails = false;
-    this.activeViewSaleRequestId = undefined;
-    this.viewSalePending = false;
-    this.submitSuccessNotification = 'QC outcome submitted successfully.';
-
+    this.submitSuccessNotification = undefined;
     this.emitAction('submitQcOutcome');
   }
 

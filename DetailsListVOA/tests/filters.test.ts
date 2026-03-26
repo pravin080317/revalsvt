@@ -65,6 +65,7 @@ describe('Filters', () => {
       ratio: { mode: 'between' },
       outlierRatio: { mode: '<=', max: 2 },
       assignedDate: { from: '2026-02-01', to: '' },
+      taskCompletedDate: { from: ' 2026-02-04 ', to: ' ' },
       qcAssignedDate: { from: '', to: '' },
       qcCompletedDate: { from: '2026-02-02' },
     }));
@@ -75,6 +76,7 @@ describe('Filters', () => {
     expect(sanitized.ratio).toBeUndefined();
     expect(sanitized.outlierRatio).toEqual({ mode: '<=', min: undefined, max: 2 });
     expect(sanitized.assignedDate).toEqual({ from: '2026-02-01', to: '' });
+    expect(sanitized.taskCompletedDate).toEqual({ from: '2026-02-04', to: '' });
     expect(sanitized.qcAssignedDate).toBeUndefined();
     expect(sanitized.qcCompletedDate).toEqual({ from: '2026-02-02', to: undefined });
   });

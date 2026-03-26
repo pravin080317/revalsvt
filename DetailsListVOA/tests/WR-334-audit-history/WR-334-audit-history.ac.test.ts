@@ -59,7 +59,8 @@ describe('WR-334 Audit History AC', () => {
     expect(viewModelSource).toContain("additionalnotes: 'Additional Notes'");
     expect(viewModelSource).toContain("assignedat: 'Assigned Date'");
     expect(viewModelSource).toContain("qcassignedat: 'QC Assigned Date'");
-    expect(viewModelSource).toContain("fieldName: formatValue(toAuditFieldLabel(getValue(change, 'fieldName'))),");
+    expect(viewModelSource).toContain('const rawFieldName = getValue(change, \'fieldName\');');
+    expect(viewModelSource).toContain('fieldName: formatValue(toAuditFieldLabel(rawFieldName)),');
   });
   test('AC6: plugin validates audit type and calls endpoint with taskId + auditType query values', () => {
     expect(pluginSource).toContain('private static string NormalizeAuditType(string value)');

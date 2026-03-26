@@ -2,10 +2,9 @@ import * as React from 'react';
 import {
   ComboBox,
   DefaultButton,
-  Dropdown,
+  IComboBox,
   IComboBoxOption,
   Icon,
-  IDropdownOption,
   MessageBar,
   MessageBarType,
   Spinner,
@@ -131,7 +130,7 @@ const parseUserContext = (payload: unknown): ParsedUserContext => {
   };
 };
 
-const buildCountryOptions = (currentValue: string): IDropdownOption[] => {
+const buildCountryOptions = (currentValue: string): IComboBoxOption[] => {
   const values = [...HOME_JOURNEY_COUNTRY_BASE_VALUES];
   if (currentValue && !values.some((value) => value.toLowerCase() === currentValue.toLowerCase())) {
     values.push(currentValue);
@@ -148,6 +147,19 @@ const buildListYearOptions = (currentValue: string): IComboBoxOption[] => {
   return Array.from(yearValues)
     .sort((a, b) => Number(b) - Number(a))
     .map((value) => ({ key: value, text: value }));
+};
+
+const findComboBoxOption = (options: IComboBoxOption[], value: unknown): IComboBoxOption | undefined => {
+  const normalizedValue = normalizeText(value).toLowerCase();
+  if (!normalizedValue) {
+    return undefined;
+  }
+
+  return options.find((option) => {
+    const normalizedKey = normalizeText(option.key).toLowerCase();
+    const normalizedText = normalizeText(option.text).toLowerCase();
+    return normalizedKey === normalizedValue || normalizedText === normalizedValue;
+  });
 };
 
 const getVisibleTilesForPersona = (persona: SvtPersona): HomeJourneyTileDefinition[] => {
@@ -173,12 +185,19 @@ export const ManagerJourneyShell: React.FC<ManagerJourneyShellProps> = ({
   const initialCountryValue = React.useMemo(() => normalizeText(initialCountry), [initialCountry]);
   const initialListYearValue = React.useMemo(() => normalizeText(initialListYear), [initialListYear]);
   const [country, setCountry] = React.useState<string>(initialCountryValue);
+  const [countryInput, setCountryInput] = React.useState<string>(initialCountryValue);
+  const [countryEditing, setCountryEditing] = React.useState<boolean>(false);
   const [listYear, setListYear] = React.useState<string>(initialListYearValue);
+  const [listYearInput, setListYearInput] = React.useState<string>(initialListYearValue);
+  const [listYearEditing, setListYearEditing] = React.useState<boolean>(false);
   const [step, setStep] = React.useState<JourneyStep>('tiles');
   const [selectedTileKey, setSelectedTileKey] = React.useState<HomeJourneyTileKey | undefined>(undefined);
   const [contextValidationMessage, setContextValidationMessage] = React.useState<string | undefined>(undefined);
   const [userContextLoading, setUserContextLoading] = React.useState<boolean>(true);
   const [userContextError, setUserContextError] = React.useState<string | undefined>(undefined);
+  const [dismissedUserContextError, setDismissedUserContextError] = React.useState(false);
+  const [dismissedContextValidationMessage, setDismissedContextValidationMessage] = React.useState(false);
+  const [dismissedNoTilesMessage, setDismissedNoTilesMessage] = React.useState(false);
   const [userContext, setUserContext] = React.useState<ParsedUserContext>({
     persona: 'unknown',
     resolutionSource: '',
@@ -194,12 +213,16 @@ export const ManagerJourneyShell: React.FC<ManagerJourneyShellProps> = ({
   React.useEffect(() => {
     if (initialCountryValue && !country) {
       setCountry(initialCountryValue);
+      setCountryInput(initialCountryValue);
+      setCountryEditing(false);
     }
   }, [country, initialCountryValue]);
 
   React.useEffect(() => {
     if (initialListYearValue && !listYear) {
       setListYear(initialListYearValue);
+      setListYearInput(initialListYearValue);
+      setListYearEditing(false);
     }
   }, [initialListYearValue, listYear]);
 
@@ -208,6 +231,14 @@ export const ManagerJourneyShell: React.FC<ManagerJourneyShellProps> = ({
       onContextChange?.({ country, listYear });
     }
   }, [country, listYear, onContextChange]);
+
+  React.useEffect(() => {
+    setDismissedUserContextError(false);
+  }, [userContextError]);
+
+  React.useEffect(() => {
+    setDismissedContextValidationMessage(false);
+  }, [contextValidationMessage]);
 
   const userContextApiName = React.useMemo(() => {
     const raw = (context.parameters as unknown as Record<string, { raw?: string }>).userContextApiName?.raw;
@@ -281,7 +312,94 @@ export const ManagerJourneyShell: React.FC<ManagerJourneyShellProps> = ({
 
   const countryOptions = React.useMemo(() => buildCountryOptions(country), [country]);
   const listYearOptions = React.useMemo(() => buildListYearOptions(listYear), [listYear]);
+  const resolveHomeContextSelection = React.useCallback((
+    value: string,
+    options: IComboBoxOption[],
+    setSelected: React.Dispatch<React.SetStateAction<string>>,
+    setInput: React.Dispatch<React.SetStateAction<string>>,
+    setEditing: React.Dispatch<React.SetStateAction<boolean>>,
+  ): void => {
+    const normalizedValue = normalizeText(value);
+    const matchedOption = findComboBoxOption(options, normalizedValue);
+
+    if (!normalizedValue) {
+      setSelected('');
+      setInput('');
+      setEditing(false);
+      return;
+    }
+
+    if (matchedOption) {
+      const matchedValue = normalizeText(matchedOption.key);
+      setSelected(matchedValue);
+      setInput(normalizeText(matchedOption.text) || matchedValue);
+      setEditing(false);
+      return;
+    }
+
+    setSelected('');
+    setInput(normalizedValue);
+    setEditing(true);
+  }, []);
+
+  const handleCountryChange = React.useCallback((
+    _event: React.FormEvent<IComboBox>,
+    option?: IComboBoxOption,
+    _index?: number,
+    value?: string,
+  ): void => {
+    resolveHomeContextSelection(
+      normalizeText(option?.key ?? value),
+      countryOptions,
+      setCountry,
+      setCountryInput,
+      setCountryEditing,
+    );
+    setContextValidationMessage(undefined);
+  }, [countryOptions, resolveHomeContextSelection]);
+
+  const handleCountryInputValueChange = React.useCallback((value?: string): void => {
+    resolveHomeContextSelection(
+      normalizeText(value),
+      countryOptions,
+      setCountry,
+      setCountryInput,
+      setCountryEditing,
+    );
+    setContextValidationMessage(undefined);
+  }, [countryOptions, resolveHomeContextSelection]);
+
+  const handleListYearChange = React.useCallback((
+    _event: React.FormEvent<IComboBox>,
+    option?: IComboBoxOption,
+    _index?: number,
+    value?: string,
+  ): void => {
+    resolveHomeContextSelection(
+      normalizeText(option?.key ?? value),
+      listYearOptions,
+      setListYear,
+      setListYearInput,
+      setListYearEditing,
+    );
+    setContextValidationMessage(undefined);
+  }, [listYearOptions, resolveHomeContextSelection]);
+
+  const handleListYearInputValueChange = React.useCallback((value?: string): void => {
+    resolveHomeContextSelection(
+      normalizeText(value),
+      listYearOptions,
+      setListYear,
+      setListYearInput,
+      setListYearEditing,
+    );
+    setContextValidationMessage(undefined);
+  }, [listYearOptions, resolveHomeContextSelection]);
   const visibleTiles = React.useMemo(() => getVisibleTilesForPersona(userContext.persona), [userContext.persona]);
+  React.useEffect(() => {
+    setDismissedNoTilesMessage(false);
+  }, [visibleTiles.length]);
+
   const selectedTile = React.useMemo(
     () => HOME_JOURNEY_TILE_DEFINITIONS.find((tile) => tile.key === selectedTileKey),
     [selectedTileKey],
@@ -333,8 +451,12 @@ export const ManagerJourneyShell: React.FC<ManagerJourneyShellProps> = ({
         </header>
       )}
 
-      {userContextError && !isTableStep && (
-        <MessageBar messageBarType={MessageBarType.warning}>
+      {userContextError && !dismissedUserContextError && !isTableStep && (
+        <MessageBar
+          messageBarType={MessageBarType.warning}
+          onDismiss={() => setDismissedUserContextError(true)}
+          dismissButtonAriaLabel="Close"
+        >
           {userContextError}
         </MessageBar>
       )}
@@ -375,17 +497,23 @@ export const ManagerJourneyShell: React.FC<ManagerJourneyShellProps> = ({
                 </div>
                 <div className="voa-home-context-grid">
                   <div className="voa-home-context-field" data-testid={HOME_JOURNEY_AUTOMATION_IDS.contextCountryField}>
-                    <Dropdown
+                    <ComboBox
                       id={HOME_JOURNEY_AUTOMATION_IDS.contextCountryInput}
                       label={HOME_JOURNEY_COPY.countryLabel}
                       required
-                      selectedKey={country || undefined}
+                      selectedKey={countryEditing ? null : country || undefined}
                       options={countryOptions}
                       placeholder={HOME_JOURNEY_COPY.countryPlaceholder}
                       ariaLabel={HOME_JOURNEY_COPY.countryLabel}
-                      onChange={(_, option) => {
-                        setCountry(normalizeText(option?.key));
-                        setContextValidationMessage(undefined);
+                      allowFreeform={false}
+                      allowFreeInput
+                      autoComplete="off"
+                      useComboBoxAsMenuWidth
+                      text={countryEditing ? countryInput : undefined}
+                      onChange={handleCountryChange}
+                      onInputValueChange={handleCountryInputValueChange}
+                      styles={{
+                        root: { width: '100%' },
                       }}
                     />
                   </div>
@@ -394,18 +522,17 @@ export const ManagerJourneyShell: React.FC<ManagerJourneyShellProps> = ({
                       id={HOME_JOURNEY_AUTOMATION_IDS.contextListYearInput}
                       label={HOME_JOURNEY_COPY.listYearLabel}
                       required
-                      selectedKey={listYear || undefined}
+                      selectedKey={listYearEditing ? null : listYear || undefined}
                       options={listYearOptions}
                       placeholder={HOME_JOURNEY_COPY.listYearPlaceholder}
                       ariaLabel={HOME_JOURNEY_COPY.listYearLabel}
                       allowFreeform={false}
-                      allowFreeInput={false}
-                      autoComplete="on"
+                      allowFreeInput
+                      autoComplete="off"
                       useComboBoxAsMenuWidth
-                      onChange={(_, option, _index, value) => {
-                        setListYear(normalizeText(option?.key ?? value));
-                        setContextValidationMessage(undefined);
-                      }}
+                      text={listYearEditing ? listYearInput : undefined}
+                      onChange={handleListYearChange}
+                      onInputValueChange={handleListYearInputValueChange}
                       styles={{
                         root: { width: '100%' },
                       }}
@@ -424,14 +551,22 @@ export const ManagerJourneyShell: React.FC<ManagerJourneyShellProps> = ({
                 </Text>
               </div>
 
-              {contextValidationMessage && (
-                <MessageBar messageBarType={MessageBarType.error}>
+              {contextValidationMessage && !dismissedContextValidationMessage && (
+                <MessageBar
+                  messageBarType={MessageBarType.error}
+                  onDismiss={() => setDismissedContextValidationMessage(true)}
+                  dismissButtonAriaLabel="Close"
+                >
                   {contextValidationMessage}
                 </MessageBar>
               )}
 
-              {visibleTiles.length === 0 ? (
-                <MessageBar messageBarType={MessageBarType.severeWarning}>
+              {visibleTiles.length === 0 && !dismissedNoTilesMessage ? (
+                <MessageBar
+                  messageBarType={MessageBarType.severeWarning}
+                  onDismiss={() => setDismissedNoTilesMessage(true)}
+                  dismissButtonAriaLabel="Close"
+                >
                   {HOME_JOURNEY_COPY.noTilesMessage}
                 </MessageBar>
               ) : (

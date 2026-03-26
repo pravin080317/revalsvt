@@ -32,6 +32,8 @@ function readRepoFile(relativePath: string): string {
   return fs.readFileSync(path.join(repoRoot, relativePath), 'utf8');
 }
 
+const sectionSource = readRepoFile('DetailsListVOA/components/SaleDetailsShell/sections/SalesVerificationSection.tsx');
+
 /* ------------------------------------------------------------------ */
 /*  Fixtures: real API payloads from the user                         */
 /* ------------------------------------------------------------------ */
@@ -257,25 +259,26 @@ describe('SvtSubmitSalesVerification model', () => {
 
     test('plugin reads saleSubmitRemarks and injects into salesVerificationDetails', () => {
       expect(pluginSource).toContain('GetInput(context, "saleSubmitRemarks")');
-      expect(pluginSource).toContain('details["remarks"] = remarksOverride');
+      expect(pluginSource).toContain('normalized["remarks"] = remarksOverride');
     });
 
-    test('plugin fallback builds salesVerificationTaskDetails with wltId and lrpddId', () => {
-      expect(pluginSource).toContain('["wltId"]');
-      expect(pluginSource).toContain('["lrpddId"]');
+    test('plugin normalizes canonical wlttId/lrppdId and requestedBy in task details', () => {
+      expect(pluginSource).toContain('["wlttId"]');
+      expect(pluginSource).toContain('["lrppdId"]');
+      expect(pluginSource).toContain('["requestedBy"]');
+      expect(pluginSource).toContain('NormalizeOptionalGuidString');
+    });
+
+    test('plugin validates taskStatus against stored procedure contract', () => {
+      expect(pluginSource).toContain('AllowedTaskStatuses');
+      expect(pluginSource).toContain('Complete');
+      expect(pluginSource).toContain('QC Requested');
+      expect(pluginSource).toContain('Reassigned To QC');
+      expect(pluginSource).toContain('taskStatus must be one of: Complete, QC Requested, Reassigned To QC.');
     });
 
     test('plugin fallback builds salesParticularDetails with particularNotes (singular)', () => {
       expect(pluginSource).toContain('["particularNotes"]');
-    });
-
-    test('plugin fallback does NOT include requestedBy in task details', () => {
-      // The BuildSalesVerificationTaskDetails method has specific keys
-      const taskDetailsMethod = pluginSource.substring(
-        pluginSource.indexOf('BuildSalesVerificationTaskDetails'),
-        pluginSource.indexOf('BuildSalesParticularDetails'),
-      );
-      expect(taskDetailsMethod).not.toContain('requestedBy');
     });
 
     test('plugin sends PUT to /sales/{saleId}', () => {
@@ -809,13 +812,15 @@ describe('SvtSubmitSalesVerification model', () => {
       expect(controllerSource).toContain('this.submitSuccessNotification = undefined;');
     });
 
-    test('controller navigates back after successful complete submit', () => {
-      expect(controllerSource).toContain("'Sales verification task completed successfully.'");
+    test('controller exposes closeDetailsAfterSubmit for delayed post-submit return', () => {
+      expect(controllerSource).toContain('public closeDetailsAfterSubmit(): void');
       expect(controllerSource).toContain('this.showPcfSaleDetails = false;');
     });
 
-    test('controller navigates back after successful QC submit', () => {
-      expect(controllerSource).toContain("'Sales verification task submitted for QC successfully.'");
+    test('section owns post-submit success messaging and delayed return', () => {
+      expect(sectionSource).toContain('completeDialogSuccessMessage');
+      expect(sectionSource).toContain('submitForQcDialogSuccessMessage');
+      expect(sectionSource).toContain('onReturnToTableAfterSubmit?.();');
     });
 
     test('index passes submitSuccessMessage and onDismissSubmitSuccess to ControlShell', () => {

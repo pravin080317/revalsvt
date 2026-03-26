@@ -93,6 +93,7 @@ export const StatutorySpatialUnitBrowser: React.FC = () => {
   const [items, setItems] = React.useState<StatutorySpatialUnitLabel[]>([]);
   const [isLoading, setIsLoading] = React.useState(false);
   const [error, setError] = React.useState<string | undefined>();
+  const [dismissedError, setDismissedError] = React.useState(false);
   const [hasSearched, setHasSearched] = React.useState(false);
   const [moreResultsAvailable, setMoreResultsAvailable] = React.useState(false);
   const lastHeaderFiltersRef = React.useRef<Record<string, string | string[]>>({});
@@ -284,6 +285,12 @@ export const StatutorySpatialUnitBrowser: React.FC = () => {
     })();
   }, [buildQueryString, fetchResults, filters, moreResultsAvailable]);
 
+  React.useEffect(() => {
+    if (error) {
+      setDismissedError(false);
+    }
+  }, [error]);
+
   return (
     <Stack tokens={stackTokens} styles={{ root: { marginTop: 24 } }}>
       <Text as="h1" variant="xLarge">Statutory Spatial Unit Lookup</Text>
@@ -317,8 +324,13 @@ export const StatutorySpatialUnitBrowser: React.FC = () => {
         <PrimaryButton text="Search" onClick={() => void fetchResults()} disabled={isLoading} />
         <DefaultButton text="Reset" onClick={resetFilters} disabled={isLoading} />
       </Stack>
-      {error && (
-        <MessageBar messageBarType={MessageBarType.error} isMultiline>
+      {error && !dismissedError && (
+        <MessageBar
+          messageBarType={MessageBarType.error}
+          isMultiline
+          onDismiss={() => setDismissedError(true)}
+          dismissButtonAriaLabel="Close"
+        >
           {error}
         </MessageBar>
       )}

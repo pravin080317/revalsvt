@@ -42,6 +42,7 @@ interface DetailsListControlShellProps {
   onBackToCanvas: () => void;
   onContextChange: (args: { country: string; listYear: string }) => void;
   onDetailsBack: () => void;
+  onReturnToTableAfterSubmit: () => void;
   onDetailsRefresh: () => Promise<void>;
   onCreateManualTask: (saleId: string) => Promise<void>;
   onModifySvtTask: () => Promise<void>;
@@ -81,6 +82,7 @@ export const DetailsListControlShell: React.FC<DetailsListControlShellProps> = (
   onBackToCanvas,
   onContextChange,
   onDetailsBack,
+  onReturnToTableAfterSubmit,
   onDetailsRefresh,
   onCreateManualTask,
   onModifySvtTask,
@@ -165,6 +167,7 @@ export const DetailsListControlShell: React.FC<DetailsListControlShellProps> = (
         loading={loading}
         userLookup={userDisplayNameMap}
         onBack={onDetailsBack}
+        onReturnToTableAfterSubmit={onReturnToTableAfterSubmit}
         onRefresh={onDetailsRefresh}
         onCreateManualTask={onCreateManualTask}
         onModifySvtTask={onModifySvtTask}
@@ -181,6 +184,7 @@ export const DetailsListControlShell: React.FC<DetailsListControlShellProps> = (
       onCreateManualTask,
       onModifySvtTask,
       onDetailsBack,
+      onReturnToTableAfterSubmit,
       onDetailsRefresh,
       onOpenAuditHistory,
       onOpenQcLog,
@@ -218,14 +222,16 @@ export const DetailsListControlShell: React.FC<DetailsListControlShellProps> = (
       <>
         <div style={{ display: showPcfDetails ? 'none' : 'block', height: '100%' }}>
           {submitSuccessMessage && (
-            <MessageBar
-              messageBarType={MessageBarType.success}
-              onDismiss={onDismissSubmitSuccess}
-              dismissButtonAriaLabel="Dismiss"
-              style={{ marginBottom: 8 }}
-            >
-              {submitSuccessMessage}
-            </MessageBar>
+            <div className="voa-submit-success-banner" role="status" aria-live="polite">
+              <MessageBar
+                messageBarType={MessageBarType.success}
+                onDismiss={onDismissSubmitSuccess}
+                dismissButtonAriaLabel="Dismiss"
+                style={{ marginBottom: 8 }}
+              >
+                {submitSuccessMessage}
+              </MessageBar>
+            </div>
           )}
           {gridElement}
         </div>

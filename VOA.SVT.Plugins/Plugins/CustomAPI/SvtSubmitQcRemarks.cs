@@ -49,7 +49,7 @@ namespace VOA.SVT.Plugins.CustomAPI
             var taskIds = ParseTaskIds(GetInput(context, "taskId"));
             var qcOutcome = NormalizeOptionalStringValue(GetInput(context, "qcOutcome"));
             var qcRemark = NormalizeOptionalStringValue(GetInput(context, "qcRemark"));
-            var qcReviewedBy = NormalizeOptionalStringValue(GetInput(context, "qcReviewedBy"));
+            var qcReviewedBy = NormalizeGuidOrEmpty(GetInput(context, "qcReviewedBy"));
             // var country = NormalizeOptionalStringValue(GetInput(context, "country"));
             // var listYear = NormalizeOptionalStringValue(GetInput(context, "listYear"));
             if (taskIds.Count == 0)
@@ -67,6 +67,12 @@ namespace VOA.SVT.Plugins.CustomAPI
                 qcReviewedBy = !string.IsNullOrWhiteSpace(userContext.EntraObjectId)
                     ? userContext.EntraObjectId
                     : context.InitiatingUserId.ToString();
+                qcReviewedBy = NormalizeGuidOrEmpty(qcReviewedBy);
+            }
+
+            if (string.IsNullOrWhiteSpace(qcReviewedBy))
+            {
+                throw new InvalidPluginExecutionException("qcReviewedBy must be a valid GUID.");
             }
 
             // 1) Read secrets/config from credential provider action
@@ -248,6 +254,15 @@ namespace VOA.SVT.Plugins.CustomAPI
 
         private static string NormalizeOptionalStringValue(string value)
             => string.IsNullOrWhiteSpace(value) ? null : value.Trim();
+
+        private static string NormalizeGuidOrEmpty(string value)
+        {
+            if (string.IsNullOrWhiteSpace(value)) return string.Empty;
+            var trimmed = value.Trim().Trim('{', '}');
+            return Guid.TryParse(trimmed, out var parsed)
+                ? parsed.ToString("D").ToLowerInvariant()
+                : string.Empty;
+        }
 
         private static string Truncate(string s, int maxLen)
             => string.IsNullOrEmpty(s) ? s : (s.Length > maxLen ? s.Substring(0, maxLen) : s);

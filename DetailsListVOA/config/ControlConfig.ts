@@ -1,4 +1,13 @@
+import { MDA_APP_ID_BY_ENVIRONMENT } from './MdaAppIdConfig';
+
 export const CONTROL_CONFIG = {
+  // Environment-specific MDA app id for building main.aspx links.
+  // Keep empty by default and provide via per-environment configuration.
+  // Fallback parsing is attempted from host URLs when available.
+  mdaAppId: '',
+  // Per-environment fallback map when mdaAppId input/env var is unavailable.
+  // Keys are Dataverse hosts (or full URLs) and values are MDA app ids.
+  mdaAppIdByEnvironment: { ...MDA_APP_ID_BY_ENVIRONMENT } as Record<string, string>,
   apiBaseUrl: '',
   customApiName: 'voa_GetAllSalesRecord',
   customApiType: 'function',

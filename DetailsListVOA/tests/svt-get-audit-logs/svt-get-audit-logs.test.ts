@@ -1588,8 +1588,8 @@ describe('PCF ↔ Plugin alignment', () => {
 /* ================================================================== */
 
 describe('Docs alignment', () => {
-  const pluginGuideSource = readRepoFile('docs/plugin-calling-guide.md');
-  const pcfPropertiesSource = readRepoFile('docs/pcfinputoutputproperties.md');
+  const pluginGuideSource = readRepoFile('docs/svtpcfplugin/plugin-calling-guide.md');
+  const pcfPropertiesSource = readRepoFile('docs/svtpcfplugin/pcfinputoutputproperties.md');
 
   test('plugin-calling-guide lists voa_SvtGetAuditLogs', () => {
     expect(pluginGuideSource).toContain('voa_SvtGetAuditLogs');

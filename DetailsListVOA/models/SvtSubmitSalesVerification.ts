@@ -140,21 +140,23 @@ export type SalesVerificationActionType =
  * When `saleSubmitPayload` is NOT provided, the C# plugin reads
  * individual input parameters to build the three sections.
  *
- * Known differences from the canonical field names:
- * - Plugin reads `wltId`  (not `wlttId`)
- * - Plugin reads `lrpddId` (not `lrppdId`)
- * - Plugin does NOT read `requestedBy`
+ * Fallback supports canonical names and legacy aliases:
+ * - Canonical: `wlttId`, `lrppdId`, `requestedBy`
+ * - Legacy aliases: `wltId`, `lrpddId`
  *
- * This interface documents those parameter names for reference.
+ * This interface documents all accepted parameter names.
  */
 export interface PluginFallbackParameters {
   saleId?: string;
   taskId?: string;
   taskStatus?: string;
   salesSource?: string;
-  /** @note Plugin uses `wltId` not `wlttId` */
+  wlttId?: string;
+  lrppdId?: string;
+  requestedBy?: string;
+  /** @deprecated legacy alias of wlttId */
   wltId?: string;
-  /** @note Plugin uses `lrpddId` not `lrppdId` */
+  /** @deprecated legacy alias of lrppdId */
   lrpddId?: string;
 
   /* salesParticularDetails fields */

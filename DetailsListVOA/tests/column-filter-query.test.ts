@@ -43,6 +43,13 @@ describe('column filter query', () => {
     expect(query).toBe('columnFilter=assignedDate~between~01%2F02%2F2026~03%2F02%2F2026');
   });
 
+  test('maps task completed date filter field names for date ranges', () => {
+    const query = buildColumnFilterQuery('sales', {
+      taskcompleteddate: { from: '2026-02-06', to: '2026-02-10' },
+    });
+    expect(query).toBe('columnFilter=taskCompletedDate~between~06%2F02%2F2026~10%2F02%2F2026');
+  });
+
   test('handles numeric between with only min or max', () => {
     const minOnly = buildColumnFilterQuery('sales', { salePrice: { mode: 'between', min: 100 } });
     const maxOnly = buildColumnFilterQuery('sales', { salePrice: { mode: 'between', max: 200 } });
@@ -50,11 +57,18 @@ describe('column filter query', () => {
     expect(maxOnly).toBe('columnFilter=salesPrice~LTE~200');
   });
 
-  test('handles date range with only one side', () => {
+  test('handles date range with only from date as open-ended lower bound', () => {
     const query = buildColumnFilterQuery('sales', {
       assignedDate: { from: '2026-02-01' },
     });
-    expect(query).toBe('columnFilter=assignedDate~between~01%2F02%2F2026~01%2F02%2F2026');
+    expect(query).toBe('columnFilter=assignedDate~GTE~01%2F02%2F2026');
+  });
+
+  test('handles date range with only to date as open-ended upper bound', () => {
+    const query = buildColumnFilterQuery('sales', {
+      qcCompletedDate: { to: '2026-02-06' },
+    });
+    expect(query).toBe('columnFilter=qcCompletedDate~LTE~06%2F02%2F2026');
   });
 
   test('drops empty array filters', () => {

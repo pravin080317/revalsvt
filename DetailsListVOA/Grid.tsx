@@ -721,6 +721,7 @@ const SEARCH_FIELD_CONFIGS: Record<SearchByOption, SearchFieldConfig> = {
     optionFields: ['assignedto'],
   },
   assignedDate: { key: 'assignedDate', label: 'Assigned date', control: 'dateRange', stateKey: 'assignedDate' },
+  taskCompletedDate: { key: 'taskCompletedDate', label: 'Task completed date', control: 'dateRange', stateKey: 'taskCompletedDate' },
   qcAssignedTo: {
     key: 'qcAssignedTo',
     label: 'QC Assigned to',
@@ -908,6 +909,7 @@ export const Grid = React.memo((props: GridProps) => {
   const [dismissedErrorMessage, setDismissedErrorMessage] = React.useState(false);
   const [dismissedAssignUsersInfo, setDismissedAssignUsersInfo] = React.useState(false);
   const [dismissedAssignUsersError, setDismissedAssignUsersError] = React.useState(false);
+  const [dismissedCreateTaskInfo, setDismissedCreateTaskInfo] = React.useState(false);
   const [createTaskModalOpen, setCreateTaskModalOpen] = React.useState(false);
   const [searchResetNotice, setSearchResetNotice] = React.useState<string | undefined>();
   const [salesSearchTouched, setSalesSearchTouched] = React.useState<Partial<Record<SalesSearchFieldKey, boolean>>>({});
@@ -1078,6 +1080,12 @@ export const Grid = React.memo((props: GridProps) => {
     setDismissedAssignUsersError(false);
   }, [assignUsersError]);
 
+  React.useEffect(() => {
+    if (createTaskModalOpen) {
+      setDismissedCreateTaskInfo(false);
+    }
+  }, [createTaskModalOpen]);
+
   const dismissResultMessages = React.useCallback(() => {
     if (statusMessage) {
       onStatusMessageDismiss?.();
@@ -1231,6 +1239,7 @@ export const Grid = React.memo((props: GridProps) => {
   );
   const prefilterAutoAppliedRef = React.useRef<string>('');
   const prefilterAutoApplyDebugRef = React.useRef<string>('');
+  const prefilterHydratedKeyRef = React.useRef<string>('');
   const prefilterManualApplyRef = React.useRef(false);
   const prefilterDirtyRef = React.useRef(false);
   const prefilterClearedRef = React.useRef(false);
@@ -1285,6 +1294,7 @@ export const Grid = React.memo((props: GridProps) => {
   React.useEffect(() => {
     prefilterAutoAppliedRef.current = '';
     prefilterAutoApplyDebugRef.current = '';
+    prefilterHydratedKeyRef.current = '';
     prefilterDirtyRef.current = false;
     prefilterClearedRef.current = false;
     prefilterHydratingRef.current = false;
@@ -1369,6 +1379,7 @@ export const Grid = React.memo((props: GridProps) => {
   React.useEffect(() => {
     if (!useAssignmentLayout) return;
     if (prefilterDirtyRef.current) return;
+    if (prefilterApplied) return;
     if (shouldSkipPrefilterAutoApply(prefilterManualApplyRef.current, !!prefilterApplied)) {
       console.debug('[Prefilter] auto-apply skipped (manual apply pending)', {
         screen: derivedScreenKind,
@@ -1394,9 +1405,12 @@ export const Grid = React.memo((props: GridProps) => {
         completedTo: typeof parsed.completedTo === 'string' ? parsed.completedTo : undefined,
       };
       const normalizedNext = getPrefiltersForStorage(next);
-      markPrefilterHydrating();
-      setPrefilters(normalizedNext);
-
+      const hydrationKey = `${prefilterStorageKey}|${derivedScreenKind}`;
+      if (prefilterHydratedKeyRef.current !== hydrationKey) {
+        prefilterHydratedKeyRef.current = hydrationKey;
+        markPrefilterHydrating();
+        setPrefilters(normalizedNext);
+      }
       const storedApplied = typeof parsed.applied === 'boolean' ? parsed.applied : undefined;
       const needsCompleted = (isQcAssign || isQcView)
         ? isQcCompletedWorkThat(normalizedNext.workThat)
@@ -1423,10 +1437,9 @@ export const Grid = React.memo((props: GridProps) => {
       });
       const canAutoApply = hasOwner && hasWorkThat && hasFromDate && userResolutionReady;
       const shouldAutoApply = storedApplied === false ? false : canAutoApply;
-      const autoKey = `${prefilterStorageKey}|${derivedScreenKind}`;
+      const autoKey = hydrationKey;
       if (prefilterAutoApplyDebugRef.current !== autoKey) {
         prefilterAutoApplyDebugRef.current = autoKey;
-        // Debugging aid for auto-apply behavior.
         console.debug('[Prefilter] auto-apply check', {
           screen: derivedScreenKind,
           storedApplied,
@@ -1485,6 +1498,7 @@ export const Grid = React.memo((props: GridProps) => {
     qcUserOptionsError,
     qcUserOptionsLoading,
     markPrefilterHydrating,
+    getPrefiltersForStorage,
     useAssignmentLayout,
   ]);
 
@@ -2411,8 +2425,10 @@ export const Grid = React.memo((props: GridProps) => {
   const isNumericFilterKey = (key: SearchByOption): key is NumericFilterKey =>
     key === 'salePrice' || key === 'ratio' || key === 'outlierRatio';
 
+  type DateFilterKey = 'transactionDate' | 'assignedDate' | 'taskCompletedDate' | 'qcAssignedDate' | 'qcCompletedDate';
+
   const updateDateRange = React.useCallback(
-    (key: 'transactionDate' | 'assignedDate' | 'qcAssignedDate' | 'qcCompletedDate', part: 'from' | 'to', value?: Date | null) => {
+    (key: DateFilterKey, part: 'from' | 'to', value?: Date | null) => {
       setFilters((prev) => {
         const existing = prev[key] ?? {};
         return { ...prev, [key]: { ...existing, [part]: toISODateString(value) } };
@@ -3558,7 +3574,7 @@ export const Grid = React.memo((props: GridProps) => {
               allowTextInput
               parseDateFromString={parseDateInput}
               title={fromTitle}
-              onSelectDate={(d) => updateDateRange(cfg.stateKey as 'transactionDate', 'from', d)}
+              onSelectDate={(d) => updateDateRange(cfg.stateKey as DateFilterKey, 'from', d)}
             />
           </Stack.Item>
           <Stack.Item styles={{ root: { minWidth: 160 } }}>
@@ -3571,7 +3587,7 @@ export const Grid = React.memo((props: GridProps) => {
               allowTextInput
               parseDateFromString={parseDateInput}
               title={toTitle}
-              onSelectDate={(d) => updateDateRange(cfg.stateKey as 'transactionDate', 'to', d)}
+              onSelectDate={(d) => updateDateRange(cfg.stateKey as DateFilterKey, 'to', d)}
             />
           </Stack.Item>
         </Stack>
@@ -4553,6 +4569,9 @@ export const Grid = React.memo((props: GridProps) => {
   const markPassedQcUnavailableReason = markPassedQcLoading
     ? 'Mark Passed QC is currently in progress. Please wait.'
     : markPassedQcButtonState.tooltip;
+  const markPassedQcActionText = markPassedQcLoading
+    ? 'Marking as Passed QC...'
+    : markPassedQcText.buttonText;
   const previousPageUnavailableReason = canPrev ? undefined : 'You are already on the first page.';
   const nextPageUnavailableReason = canNext ? undefined : 'You are already on the last page.';
   const assignSearchUnavailableReason = assignLoading
@@ -4824,6 +4843,9 @@ export const Grid = React.memo((props: GridProps) => {
       }
       return false;
     })();
+    const isDateRangeMissingEndDate = cfg?.control === 'dateRange'
+      && !!(dateVal.from && dateVal.from.trim().length > 0)
+      && !(dateVal.to && dateVal.to.trim().length > 0);
 
     const isApplyDisabled = () => {
       if (!cfg) {
@@ -4859,6 +4881,7 @@ export const Grid = React.memo((props: GridProps) => {
         }
         case 'dateRange': {
           const v = (menuFilterValue as DateRangeFilter) ?? {};
+          if (isDateRangeMissingEndDate) return true;
           return !(v.from ?? v.to) && !hasExistingFilter;
         }
         default:
@@ -5281,6 +5304,9 @@ export const Grid = React.memo((props: GridProps) => {
     };
 
     const columnName = menuState.column.name ?? 'column';
+    const applyUnavailableReason = isDateRangeMissingEndDate
+      ? `Select an end date for ${columnName} to apply this filter.`
+      : 'Enter or select a filter value before applying.';
     return [
       {
         key: 'sortAsc',
@@ -5300,13 +5326,18 @@ export const Grid = React.memo((props: GridProps) => {
         onRender: () => (
           <div style={{ padding: '0 12px 12px', width: 280 }}>
             {renderControl()}
+            {isDateRangeMissingEndDate && (
+              <Text variant="small" styles={{ root: { marginTop: 8 } }}>
+                {`Select an end date for ${columnName} to apply this filter.`}
+              </Text>
+            )}
             <Stack horizontal tokens={{ childrenGap: 8 }} style={{ marginTop: 8 }}>
               <FocusableActionButton
                 buttonType="primary"
                 text={commonText.columnMenu.apply}
                 onClick={applyFilter}
                 unavailable={applyDisabled}
-                unavailableReason="Enter or select a filter value before applying."
+                unavailableReason={applyUnavailableReason}
                 unavailableReasonId="voa-column-filter-apply-unavailable"
                 ariaLabel={`Apply filter for ${columnName}`}
               />
@@ -6319,15 +6350,21 @@ export const Grid = React.memo((props: GridProps) => {
                 {showMarkPassedQcButton && (
                   <TooltipHost content={markPassedQcButtonState.tooltip}>
                     <FocusableActionButton
-                      text={markPassedQcText.buttonText}
+                      text={markPassedQcActionText}
                       iconProps={{ iconName: 'CompletedSolid' }}
                       onClick={() => { void handleMarkPassedQcClick(); }}
                       unavailable={markPassedQcButtonState.disabled || markPassedQcLoading}
                       unavailableReason={markPassedQcUnavailableReason}
                       unavailableReasonId="voa-mark-passed-qc-unavailable"
-                      ariaLabel={markPassedQcText.buttonText}
+                      ariaLabel={markPassedQcActionText}
                     />
                   </TooltipHost>
+                )}
+                {markPassedQcLoading && (
+                  <div role="status" aria-live="polite" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <Spinner size={SpinnerSize.small} aria-hidden />
+                    <Text variant="small">Marking as Passed QC...</Text>
+                  </div>
                 )}
               </div>
             </div>
@@ -6631,9 +6668,16 @@ export const Grid = React.memo((props: GridProps) => {
           maxWidth={720}
         >
           <Stack tokens={{ childrenGap: 12 }}>
-            <MessageBar messageBarType={MessageBarType.info} isMultiline={false}>
-              {selectedCreateTaskSaleIds.length} sale{selectedCreateTaskSaleIds.length === 1 ? '' : 's'} selected for task creation.
-            </MessageBar>
+            {!dismissedCreateTaskInfo && (
+              <MessageBar
+                messageBarType={MessageBarType.info}
+                isMultiline={false}
+                onDismiss={() => setDismissedCreateTaskInfo(true)}
+                dismissButtonAriaLabel={commonText.buttons.close}
+              >
+                {selectedCreateTaskSaleIds.length} sale{selectedCreateTaskSaleIds.length === 1 ? '' : 's'} selected for task creation.
+              </MessageBar>
+            )}
             <Text variant="mediumPlus" styles={{ root: { fontWeight: 600 } }}>
               Selected Sale IDs
             </Text>

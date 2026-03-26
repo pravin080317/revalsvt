@@ -157,11 +157,14 @@ export const resolveAssignmentStatusValidation = (
   ).map((s) => s.toLowerCase());
 
   const normalizedStatuses: string[] = [];
+  const rawStatuses: string[] = [];
   for (const rec of records) {
     const statusRaw = (rec.taskstatus ?? rec.taskStatus ?? '') as string;
-    const normalized = String(statusRaw ?? '').trim().toLowerCase();
+    const trimmed = String(statusRaw ?? '').trim();
+    const normalized = trimmed.toLowerCase();
     if (normalized) {
       normalizedStatuses.push(normalized);
+      rawStatuses.push(trimmed);
     }
     if (allowedStatuses.length > 0 && normalized && !allowedStatuses.includes(normalized)) {
       return { error: invalidStatusMessage };
@@ -175,7 +178,9 @@ export const resolveAssignmentStatusValidation = (
     if (hasNew && hasNonNew) {
       return { error: invalidStatusMessage };
     }
-    assignmentTaskStatus = hasNew ? 'New' : 'NULL';
+    assignmentTaskStatus = hasNew
+      ? 'New'
+      : rawStatuses.find((status) => status.toLowerCase() !== 'new');
   }
   if (screenKind === 'qcAssign') {
     const hasQcRequested = normalizedStatuses.includes('qc requested');
@@ -183,7 +188,9 @@ export const resolveAssignmentStatusValidation = (
     if (hasQcRequested && hasNonQcRequested) {
       return { error: invalidStatusMessage };
     }
-    assignmentTaskStatus = hasQcRequested ? 'QC Requested' : 'NULL';
+    assignmentTaskStatus = hasQcRequested
+      ? 'QC Requested'
+      : rawStatuses.find((status) => status.toLowerCase() !== 'qc requested');
   }
 
   return { assignmentTaskStatus };

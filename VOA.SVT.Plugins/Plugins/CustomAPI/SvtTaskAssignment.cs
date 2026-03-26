@@ -60,11 +60,15 @@ namespace VOA.SVT.Plugins.CustomAPI
             var listYear = GetInput(context, "listYear");
             var taskIds = ParseTaskIds(taskId);
 
+            assignedToUserId = NormalizeGuidOrEmpty(assignedToUserId);
+            assignedByUserId = NormalizeGuidOrEmpty(assignedByUserId);
+
             if (string.IsNullOrWhiteSpace(assignedByUserId))
             {
                 assignedByUserId = !string.IsNullOrWhiteSpace(userContext.EntraObjectId)
                     ? userContext.EntraObjectId
                     : context.InitiatingUserId.ToString();
+                assignedByUserId = NormalizeGuidOrEmpty(assignedByUserId);
             }
 
             if (string.IsNullOrWhiteSpace(assignedToUserId) || taskIds.Count == 0)
@@ -290,6 +294,15 @@ namespace VOA.SVT.Plugins.CustomAPI
 
         private static string Truncate(string s, int maxLen)
             => string.IsNullOrEmpty(s) ? s : (s.Length > maxLen ? s.Substring(0, maxLen) : s);
+
+        private static string NormalizeGuidOrEmpty(string value)
+        {
+            if (string.IsNullOrWhiteSpace(value)) return string.Empty;
+            var trimmed = value.Trim().Trim('{', '}');
+            return Guid.TryParse(trimmed, out var parsed)
+                ? parsed.ToString("D").ToLowerInvariant()
+                : string.Empty;
+        }
     }
 }
 

@@ -19,6 +19,14 @@ namespace VOA.SVT.Plugins.CustomAPI
         /// </summary>
         private const string CONFIGURATION_NAME = "SVTGetSalesRecord";
 
+        private static readonly HashSet<string> AllowedTaskStatuses =
+            new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+            {
+                "Complete",
+                "QC Requested",
+                "Reassigned To QC"
+            };
+
         public SvtSubmitSalesVerification(string unsecureConfiguration, string secureConfiguration)
             : base(typeof(SvtSubmitSalesVerification))
         {
@@ -165,48 +173,56 @@ namespace VOA.SVT.Plugins.CustomAPI
             if (!string.IsNullOrWhiteSpace(payloadOverride))
             {
                 var trimmed = payloadOverride.Trim();
-                if (string.IsNullOrWhiteSpace(remarksOverride))
-                {
-                    return trimmed;
-                }
-
                 try
                 {
                     var root = JsonSerializer.Deserialize<Dictionary<string, object>>(trimmed);
                     if (root == null)
                     {
-                        return trimmed;
+                        throw new InvalidPluginExecutionException("saleSubmitPayload is invalid JSON.");
                     }
-                    var details = EnsureObject(root, "salesVerificationDetails");
-                    details["remarks"] = remarksOverride;
-                    root["salesVerificationDetails"] = details;
-                    return JsonSerializer.Serialize(root);
+
+                    var payload = new Dictionary<string, object>
+                    {
+                        ["salesVerificationTaskDetails"] = BuildSalesVerificationTaskDetailsFromPayload(root),
+                        ["salesParticularDetails"] = BuildSalesParticularDetailsFromPayload(root),
+                        ["salesVerificationDetails"] = BuildSalesVerificationDetailsFromPayload(root, remarksOverride)
+                    };
+
+                    return JsonSerializer.Serialize(payload);
                 }
-                catch
+                catch (JsonException)
                 {
-                    return trimmed;
+                    throw new InvalidPluginExecutionException("saleSubmitPayload is invalid JSON.");
                 }
             }
 
-            var payload = new Dictionary<string, object>
+            var fallbackPayload = new Dictionary<string, object>
             {
                 ["salesVerificationTaskDetails"] = BuildSalesVerificationTaskDetails(context),
                 ["salesParticularDetails"] = BuildSalesParticularDetails(context),
                 ["salesVerificationDetails"] = BuildSalesVerificationDetails(context, remarksOverride)
             };
 
-            return JsonSerializer.Serialize(payload);
+            return JsonSerializer.Serialize(fallbackPayload);
         }
 
         private static Dictionary<string, object> BuildSalesVerificationTaskDetails(IPluginExecutionContext context)
         {
+            var taskStatus = NormalizeTaskStatus(NormalizeOptionalStringValue(GetInput(context, "taskStatus")));
+            var requestedBy = NormalizeOptionalGuidString(GetInput(context, "requestedBy"), "requestedBy");
+            var wlttId = NormalizeOptionalStringValue(GetInput(context, "wlttId"))
+                ?? NormalizeOptionalStringValue(GetInput(context, "wltId"));
+            var lrppdId = NormalizeOptionalStringValue(GetInput(context, "lrppdId"))
+                ?? NormalizeOptionalStringValue(GetInput(context, "lrpddId"));
+
             return new Dictionary<string, object>
             {
                 ["taskId"] = NormalizeOptionalString(GetInput(context, "taskId")),
-                ["taskStatus"] = NormalizeOptionalString(GetInput(context, "taskStatus")),
+                ["taskStatus"] = taskStatus,
                 ["salesSource"] = NormalizeOptionalString(GetInput(context, "salesSource")),
-                ["wltId"] = NormalizeOptionalString(GetInput(context, "wltId")),
-                ["lrpddId"] = NormalizeOptionalString(GetInput(context, "lrpddId"))
+                ["wlttId"] = NormalizeOptionalString(wlttId),
+                ["lrppdId"] = NormalizeOptionalString(lrppdId),
+                ["requestedBy"] = NormalizeOptionalString(requestedBy)
             };
         }
 
@@ -241,6 +257,167 @@ namespace VOA.SVT.Plugins.CustomAPI
                 ["additionalNotes"] = NormalizeOptionalString(GetInput(context, "additionalNotes")),
                 ["remarks"] = remarks
             };
+        }
+
+        private static Dictionary<string, object> BuildSalesVerificationTaskDetailsFromPayload(Dictionary<string, object> root)
+        {
+            var task = EnsureObject(root, "salesVerificationTaskDetails");
+            if (task.Count == 0)
+            {
+                task = EnsureObject(root, "taskDetails");
+            }
+
+            var normalized = new Dictionary<string, object>
+            {
+                ["taskId"] = NormalizeOptionalStringValue(GetObjectAsString(task, "taskId")),
+                ["taskStatus"] = NormalizeTaskStatus(NormalizeOptionalStringValue(GetObjectAsString(task, "taskStatus"))),
+                ["salesSource"] = NormalizeOptionalStringValue(GetObjectAsString(task, "salesSource")),
+                ["wlttId"] = NormalizeOptionalStringValue(GetObjectAsString(task, "wlttId"))
+                    ?? NormalizeOptionalStringValue(GetObjectAsString(task, "wltId")),
+                ["lrppdId"] = NormalizeOptionalStringValue(GetObjectAsString(task, "lrppdId"))
+                    ?? NormalizeOptionalStringValue(GetObjectAsString(task, "lrpddId")),
+                ["requestedBy"] = NormalizeOptionalGuidString(GetObjectAsString(task, "requestedBy"), "requestedBy")
+            };
+
+            return normalized;
+        }
+
+        private static Dictionary<string, object> BuildSalesParticularDetailsFromPayload(Dictionary<string, object> root)
+        {
+            var particulars = EnsureObject(root, "salesParticularDetails");
+            if (particulars.Count == 0)
+            {
+                particulars = EnsureObject(root, "salesParticularInfo");
+            }
+
+            return PickFields(particulars, new[]
+            {
+                "salesParticular", "linkParticulars",
+                "kitchenAge", "kitchenSpecification", "bathroomAge", "bathroomSpecification",
+                "glazing", "heating", "decorativeFinishes",
+                "conditionScore", "conditionCategory", "particularNotes", "padConfirmation"
+            });
+        }
+
+        private static Dictionary<string, object> BuildSalesVerificationDetailsFromPayload(
+            Dictionary<string, object> root,
+            string remarksOverride)
+        {
+            var details = EnsureObject(root, "salesVerificationDetails");
+            if (details.Count == 0)
+            {
+                details = EnsureObject(root, "salesVerificationInfo");
+            }
+
+            var normalized = PickFields(details, new[] { "isSaleUseful", "whyNotUseful", "additionalNotes", "remarks" });
+            if (!string.IsNullOrWhiteSpace(remarksOverride))
+            {
+                normalized["remarks"] = remarksOverride;
+            }
+            else if (!normalized.ContainsKey("remarks"))
+            {
+                normalized["remarks"] = null;
+            }
+
+            return normalized;
+        }
+
+        private static Dictionary<string, object> PickFields(Dictionary<string, object> source, string[] keys)
+        {
+            var result = new Dictionary<string, object>();
+            if (source == null)
+            {
+                return result;
+            }
+
+            foreach (var key in keys)
+            {
+                if (!source.TryGetValue(key, out var value))
+                {
+                    continue;
+                }
+
+                result[key] = UnwrapJsonValue(value);
+            }
+
+            return result;
+        }
+
+        private static object UnwrapJsonValue(object value)
+        {
+            if (value is JsonElement element)
+            {
+                switch (element.ValueKind)
+                {
+                    case JsonValueKind.Null:
+                    case JsonValueKind.Undefined:
+                        return null;
+                    case JsonValueKind.String:
+                        return element.GetString();
+                    case JsonValueKind.Number:
+                        return element.GetRawText();
+                    case JsonValueKind.True:
+                    case JsonValueKind.False:
+                        return element.GetBoolean();
+                    default:
+                        return element.GetRawText();
+                }
+            }
+
+            return value;
+        }
+
+        private static string GetObjectAsString(Dictionary<string, object> source, string key)
+        {
+            if (source == null || !source.TryGetValue(key, out var value) || value == null)
+            {
+                return null;
+            }
+
+            if (value is string str)
+            {
+                return str;
+            }
+
+            if (value is JsonElement element)
+            {
+                return element.ValueKind == JsonValueKind.String ? element.GetString() : element.GetRawText();
+            }
+
+            return value.ToString();
+        }
+
+        private static string NormalizeTaskStatus(string taskStatus)
+        {
+            var normalized = NormalizeOptionalStringValue(taskStatus);
+            if (string.IsNullOrWhiteSpace(normalized))
+            {
+                return null;
+            }
+
+            if (!AllowedTaskStatuses.Contains(normalized))
+            {
+                throw new InvalidPluginExecutionException(
+                    "taskStatus must be one of: Complete, QC Requested, Reassigned To QC.");
+            }
+
+            return normalized;
+        }
+
+        private static string NormalizeOptionalGuidString(string value, string parameterName)
+        {
+            var normalized = NormalizeOptionalStringValue(value);
+            if (string.IsNullOrWhiteSpace(normalized))
+            {
+                return null;
+            }
+
+            if (!Guid.TryParse(normalized, out var parsedGuid))
+            {
+                throw new InvalidPluginExecutionException($"Invalid {parameterName}. Expected a GUID value.");
+            }
+
+            return parsedGuid.ToString("D").ToLowerInvariant();
         }
 
         private static object NormalizeOptionalString(string value)

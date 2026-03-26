@@ -49,6 +49,6 @@ Set(gblIsManager, gblSvtUserContext.svtPersona = "Manager");
 ---
 
 ## Related docs
-- `docs/svtTaskAssignment.md` (assignment API authorization uses the same persona mapping).
+- `docs/svtpcfplugin/svtTaskAssignment.md` (assignment API authorization uses the same persona mapping).
 - `docs/security-review-readme.md` (security review process, PCF checks, and current repo status snapshot).
 - `DetailsListVOA/tests/security-review-gate.test.ts` (automated security contract tests).

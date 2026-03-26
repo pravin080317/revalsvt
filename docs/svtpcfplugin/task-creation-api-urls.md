@@ -84,7 +84,7 @@ The Custom API returns a JSON string in the `Result` output parameter:
 
 ## Source code used
 - Plugin: `VOA.SVT.Plugins/Plugins/CustomAPI/SvtManualTaskCreation.cs`
-- Related contract doc: `docs/svtManualTaskCreation.md`
+- Related contract doc: `docs/svtpcfplugin/svtManualTaskCreation.md`
 
 ## Bulk task creation requirement
 Bulk task creation should be implemented as a new unbound Custom API that loops the existing single-sale APIM endpoint.

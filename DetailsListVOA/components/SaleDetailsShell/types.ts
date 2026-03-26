@@ -107,6 +107,7 @@ export interface SaleDetailsShellProps {
   onSubmitQcOutcome?: (payload: QcOutcomeActionPayload) => void | Promise<void>;
   onOpenQcLog?: () => void | Promise<void>;
   onOpenAuditHistory?: () => void | Promise<void>;
+  onReturnToTableAfterSubmit?: () => void;
 }
 
 export interface ExternalLinkItem {
