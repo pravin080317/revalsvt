@@ -442,7 +442,7 @@ function getAddressLinkCell(
     const cellText = getCellValue<string>(column.fieldName, item)[0];
     const isBlank = !cellText || cellText === '';
     const newTabText = SCREEN_TEXT.common.links.opensInNewTab;
-    const label = `${column.name ?? column.fieldName ?? 'Address'} ${cellText} ${newTabText}`.trim();
+    const label = `Address ${cellText} ${newTabText}`.trim();
     const cellContents = !isBlank ? (
         <Link
             href={addressUrl}
@@ -455,7 +455,7 @@ function getAddressLinkCell(
                 ev.stopPropagation();
             }}
         >
-            {cellText} {newTabText}
+            {cellText}
         </Link>
     ) : (
         <></>

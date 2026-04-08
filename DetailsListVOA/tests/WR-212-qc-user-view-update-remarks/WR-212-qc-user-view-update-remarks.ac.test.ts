@@ -26,9 +26,9 @@ describe('WR-212 QC user can view sale record and update QC remarks AC', () => {
   test('AC2: QC section shows undertaken-by, outcome pass/fail, and remarks with character counter', () => {
     expect(sectionSource).toContain('Quality Control');
     expect(sectionSource).toContain('QC undertaken by');
-    expect(sectionSource).toContain("renderRequiredLabel('QC outcome', true)");
+    expect(sectionSource).toContain("renderRequiredLabel('QC outcome:', true)");
     expect(sectionSource).toContain('QC remarks');
-    expect(sectionSource).toContain("renderRequiredLabel('QC remarks', qcOutcomeIsFail)");
+    expect(sectionSource).toContain("renderRequiredLabel('QC remarks:', qcOutcomeIsFail)");
     expect(sectionSource).toContain("{ key: 'pass', text: 'Pass' }");
     expect(sectionSource).toContain("{ key: 'fail', text: 'Fail' }");
     expect(sectionSource).toContain('const qcRemarksMaxLength = 2000;');

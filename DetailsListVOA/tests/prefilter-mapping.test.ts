@@ -210,7 +210,7 @@ describe('Prefilter mapping', () => {
           completedTo?: string;
         };
         expected: {
-          searchBy: 'QC' | 'CW' | 'Tk';
+          searchBy: 'QC' | 'CW' | 'TK';
           preFilter?: string;
           taskStatus: string;
           fromDate?: string;
@@ -259,7 +259,7 @@ describe('Prefilter mapping', () => {
         {
           name: 'task | completed with QC requested',
           prefilters: { searchBy: 'task', caseworkers: ['cw-3'], workThat: 'taskCompletedQcRequested' },
-          expected: { searchBy: 'Tk', preFilter: undefined, taskStatus: 'QC Requested' },
+          expected: { searchBy: 'TK', preFilter: undefined, taskStatus: 'QC Requested' },
         },
         {
           name: 'task | completed with dates',
@@ -270,7 +270,7 @@ describe('Prefilter mapping', () => {
             completedFrom: '2026-02-01',
             completedTo: '2026-02-15',
           },
-          expected: { searchBy: 'Tk', preFilter: undefined, taskStatus: 'Complete', fromDate: '01/02/2026', toDate: '15/02/2026' },
+          expected: { searchBy: 'TK', preFilter: undefined, taskStatus: 'Complete', fromDate: '01/02/2026', toDate: '15/02/2026' },
         },
       ];
 

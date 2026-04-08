@@ -1,0 +1,17 @@
+
+> pcf-project@1.0.0 test
+> jest --testPathPattern=WRT-366 --runInBand
+
+PASS DetailsListVOA/tests/WRT-366-view-sales-record-through-quality-control-assignment/WRT-366-view-sales-record-through-quality-control-assignment.ac.test.ts
+  WRT-366 View Sales Record through Quality Control Assignment AC
+    ΓêÜ AC1: quality control assignment resolves to QA assignment table and keeps view-sales action available (2 ms)
+    ΓêÜ AC2: sale-id link and View Sales Record button route through the same navigate handler (1 ms)
+    ΓêÜ AC3: row invoke sends qc-assignment context and runtime stores it before loading details
+    ΓêÜ AC4: qc-assignment view-sales details remain read-only for non-caseworker ownership contexts
+    ΓêÜ AC5: sale record shows full sections in read-only mode including Create Data Enhancement Job
+
+Test Suites: 1 passed, 1 total
+Tests:       5 passed, 5 total
+Snapshots:   0 total
+Time:        0.383 s, estimated 1 s
+Ran all test suites matching /WRT-366/i.

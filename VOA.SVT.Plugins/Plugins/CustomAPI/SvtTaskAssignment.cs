@@ -52,12 +52,10 @@ namespace VOA.SVT.Plugins.CustomAPI
 
             var assignedToUserId = GetInput(context, "assignedToUserId");
             var taskStatus = GetInput(context, "taskStatus");
-            var saleId = GetInput(context, "saleId");
+            // var saleId = GetInput(context, "saleId");
             var taskId = GetInput(context, "taskId");
             var assignedByUserId = GetInput(context, "assignedByUserId");
-            var date = GetInput(context, "date");
-            var country = GetInput(context, "country");
-            var listYear = GetInput(context, "listYear");
+            // var date = GetInput(context, "date");
             var taskIds = ParseTaskIds(taskId);
 
             assignedToUserId = NormalizeGuidOrEmpty(assignedToUserId);
@@ -115,11 +113,9 @@ namespace VOA.SVT.Plugins.CustomAPI
                 ["taskList"] = taskIds,
                 ["requestedBy"] = assignedByUserId ?? string.Empty,
                 ["taskStatus"] = taskStatus ?? string.Empty,
-                ["saleId"] = saleId ?? string.Empty,
-                ["date"] = date ?? string.Empty
+                // ["saleId"] = saleId ?? string.Empty,
+                // ["date"] = date ?? string.Empty
             };
-            if (!string.IsNullOrWhiteSpace(country)) payload["country"] = country.Trim();
-            if (!string.IsNullOrWhiteSpace(listYear)) payload["listYear"] = listYear.Trim();
 
             var jsonBody = JsonSerializer.Serialize(payload);
 

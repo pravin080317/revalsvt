@@ -111,6 +111,8 @@ export const SalesParticularReferenceModal: React.FC<SalesParticularReferenceMod
         />
       </div>
 
+      <span id="voa-reference-modal-new-tab-hint" className="voa-visually-hidden">Opens in a new browser tab.</span>
+
       {scopedReferences.length === 0 ? (
         <div className="voa-reference-modal__empty" role="status" aria-live="polite">
           No reference images found for this attribute.
@@ -135,7 +137,14 @@ export const SalesParticularReferenceModal: React.FC<SalesParticularReferenceMod
                   <Text className="voa-reference-card__category">{item.category}</Text>
                   <Text className="voa-reference-card__title">{item.title}</Text>
                   {item.sourceUrl && (
-                    <Link href={item.sourceUrl} target="_blank" rel="noreferrer" className="voa-reference-card__link">
+                    <Link
+                      href={item.sourceUrl}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="voa-reference-card__link"
+                      aria-label={`Open source link in new tab: ${item.sourceUrl}`}
+                      aria-describedby="voa-reference-modal-new-tab-hint"
+                    >
                       {item.sourceUrl}
                     </Link>
                   )}
@@ -172,7 +181,14 @@ export const SalesParticularReferenceModal: React.FC<SalesParticularReferenceMod
                   <Text className="voa-reference-card__category">{item.category}</Text>
                   <Text className="voa-reference-card__title">{item.title}</Text>
                   {item.sourceUrl && (
-                    <Link href={item.sourceUrl} target="_blank" rel="noreferrer" className="voa-reference-card__link">
+                    <Link
+                      href={item.sourceUrl}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="voa-reference-card__link"
+                      aria-label={`Open source link in new tab: ${item.sourceUrl}`}
+                      aria-describedby="voa-reference-modal-new-tab-hint"
+                    >
                       {item.sourceUrl}
                     </Link>
                   )}

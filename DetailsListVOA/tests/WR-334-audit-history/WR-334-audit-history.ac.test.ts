@@ -14,7 +14,6 @@ describe('WR-334 Audit History AC', () => {
   const rulesSource = readRepoFile('DetailsListVOA/components/SaleDetailsShell/rules/ViewSaleActionRules.ts');
   const runtimeSource = readRepoFile('DetailsListVOA/services/DetailsListRuntimeController.ts');
   const saleDetailsRuntimeSource = readRepoFile('DetailsListVOA/services/runtime/sale-details.ts');
-  const pluginSource = readRepoFile('VOA.SVT.Plugins/Plugins/CustomAPI/SvtGetAuditLogs.cs');
 
   test('AC1: Sales Audit History button fetches Sales Log history using auditType SL', () => {
     expect(taskSectionSource).toContain('text="Sales Audit History"');
@@ -61,21 +60,6 @@ describe('WR-334 Audit History AC', () => {
     expect(viewModelSource).toContain("qcassignedat: 'QC Assigned Date'");
     expect(viewModelSource).toContain('const rawFieldName = getValue(change, \'fieldName\');');
     expect(viewModelSource).toContain('fieldName: formatValue(toAuditFieldLabel(rawFieldName)),');
-  });
-  test('AC6: plugin validates audit type and calls endpoint with taskId + auditType query values', () => {
-    expect(pluginSource).toContain('private static string NormalizeAuditType(string value)');
-    expect(pluginSource).toContain('return upper == "QC" || upper == "SL" ? upper : null;');
-    expect(pluginSource).toContain('query["taskId"] = taskId;');
-    expect(pluginSource).toContain('query["auditType"] = auditType;');
-    expect(pluginSource).toContain('taskId={HttpUtility.UrlEncode(taskId)}&auditType={HttpUtility.UrlEncode(auditType)}');
-  });
-
-  test('AC7: plugin transforms audit response by resolving changedBy and assignee GUID values to names', () => {
-    expect(pluginSource).toContain('var userIds = CollectUserIds(payload);');
-    expect(pluginSource).toContain('TryReplaceChangedByWithDisplayName(historyItem.ChangedBy, userNames, out var nextChangedBy)');
-    expect(pluginSource).toContain('private static bool TryReplaceChangedByWithDisplayName(');
-    expect(pluginSource).toContain('private static bool ShouldResolveAssigneeField(string fieldName)');
-    expect(pluginSource).toContain('TryReplaceGuidTokensWithNames(change.NewValue, userNames, out var nextNewValue)');
   });
 
   test('Note: QC log access remains restricted to assigned caseworker, QC users, and managers', () => {

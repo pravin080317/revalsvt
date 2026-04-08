@@ -31,6 +31,27 @@ describe('column filter query', () => {
     expect(query).toBe('columnFilter=taskStatus~in~Assigned%2CComplete');
   });
 
+  test('serializes summary flag contains filters with semicolon-separated values', () => {
+    const query = buildColumnFilterQuery('sales', {
+      summaryFlag: { operator: 'contains', values: ['Potential', 'Review'] },
+    });
+    expect(query).toBe('columnFilter=summaryFlags~like~Potential%3BReview');
+  });
+
+  test('serializes summary flag exact filters as eq with a single value and trailing semicolon', () => {
+    const query = buildColumnFilterQuery('sales', {
+      summaryFlag: { operator: 'eq', values: ['Potential'] },
+    });
+    expect(query).toBe('columnFilter=summaryFlags~EQ~Potential%3B');
+  });
+
+  test('serializes summary flag not-contains filters with the NTL operator and semicolons', () => {
+    const query = buildColumnFilterQuery('sales', {
+      summaryFlag: { operator: 'notContains', values: ['Potential', 'Review'] },
+    });
+    expect(query).toBe('columnFilter=summaryFlags~NTL~Potential%3BReview');
+  });
+
   test('builds numeric comparisons', () => {
     const query = buildColumnFilterQuery('sales', { salePrice: { mode: '>=', min: 250000 } });
     expect(query).toBe('columnFilter=salesPrice~GTE~250000');

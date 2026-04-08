@@ -14,6 +14,8 @@ export interface LoadResult {
   serverDriven: boolean;
   filters?: Record<string, string | string[]>;
   errorMessage?: string;
+  userLookup?: Record<string, string>;
+  userFilterOptions?: Record<string, Array<{ key: string; text: string }>>;
 }
 
 const TECHNICAL_ERROR_MESSAGE = 'Technical error. Please try again in some time.';
@@ -122,6 +124,8 @@ export async function loadGridData(
       serverDriven,
       filters: responseFilters,
       errorMessage: normalizeErrorMessage(firstPayload.errorMessage),
+      userLookup: firstPayload.userLookup,
+      userFilterOptions: firstPayload.userFilterOptions,
     };
   } catch (err) {
     // On error, log and fall back to showing local sample data (from SampleData)

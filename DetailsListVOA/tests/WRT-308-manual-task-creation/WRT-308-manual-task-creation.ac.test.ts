@@ -19,7 +19,7 @@ describe('WRT-308 Manual Task Creation AC', () => {
   test('AC1: clicking Create Task from Sales Record details routes to manual task creation and auto-assignment context', () => {
     expect(shellSource).toContain('onCreateTask={onCreateManualTask');
     expect(shellSource).toContain('canCreateTask={canCreateManualTask}');
-    expect(indexSource).toContain('onCreateManualTask: (saleId) => this.runtime.createManualTask(saleId)');
+    expect(indexSource).toContain('onCreateManualTask: (saleId) => this.runtime.createManualTask([saleId])');
     expect(runtimeSource).toContain("sourceType: 'M'");
     expect(runtimeSource).toContain('createdBy: this.entraObjectId');
     expect(runtimeSource).toContain('assignedTo: resolveCurrentUserDisplayName(this._context)');

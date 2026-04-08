@@ -209,6 +209,24 @@
       default-value="function"
     />
     <property
+      name="hereditamentRelatedRequestsApiName"
+      display-name-key="Hereditament Related Requests API Name"
+      description-key="Name of the Dataverse Custom API used to fetch active requests for a hereditament after view sale details load (e.g., voa_GetHereditamentRelatedRequests)."
+      of-type="SingleLine.Text"
+      usage="input"
+      required="false"
+      default-value="voa_GetHereditamentRelatedRequests"
+    />
+    <property
+      name="hereditamentRelatedRequestsApiType"
+      display-name-key="Hereditament Related Requests API Type"
+      description-key="Custom API operation type for hereditament related requests: function (GET) or action (POST)."
+      of-type="SingleLine.Text"
+      usage="input"
+      required="false"
+      default-value="action"
+    />
+    <property
       name="auditLogsApiName"
       display-name-key="Audit Logs API Name"
       description-key="Name of the Dataverse Custom API used to fetch audit history (e.g., voa_SvtGetAuditLogs)."
@@ -287,7 +305,7 @@
       of-type="TwoOptions"
       usage="input"
       required="false"
-      default-value="false"
+      default-value="true"
     />
     <!-- Number of records shown per page -->
     <property name="pageSize" display-name-key="PageSize" description-key="PageSize description" of-type="Whole.None" usage="input" required="false" default-value="500" />

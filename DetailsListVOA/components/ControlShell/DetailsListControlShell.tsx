@@ -45,6 +45,7 @@ interface DetailsListControlShellProps {
   onReturnToTableAfterSubmit: () => void;
   onDetailsRefresh: () => Promise<void>;
   onCreateManualTask: (saleId: string) => Promise<void>;
+  onBulkCreateTask: (saleIds: string[]) => Promise<void>;
   onModifySvtTask: () => Promise<void>;
   onCompleteSalesVerificationTask: (payload: SalesVerificationActionPayload) => void | Promise<void>;
   onSubmitSalesVerificationTaskForQc: (payload: SalesVerificationActionPayload) => void | Promise<void>;
@@ -85,6 +86,7 @@ export const DetailsListControlShell: React.FC<DetailsListControlShellProps> = (
   onReturnToTableAfterSubmit,
   onDetailsRefresh,
   onCreateManualTask,
+  onBulkCreateTask,
   onModifySvtTask,
   onCompleteSalesVerificationTask,
   onSubmitSalesVerificationTaskForQc,
@@ -130,6 +132,7 @@ export const DetailsListControlShell: React.FC<DetailsListControlShellProps> = (
             onContextChange={onContextChange}
             refreshNonce={refreshNonce}
             entraObjectId={entraObjectId}
+            onBulkCreateTask={onBulkCreateTask}
           />
         ) : (
           <DetailsListHost
@@ -140,6 +143,7 @@ export const DetailsListControlShell: React.FC<DetailsListControlShellProps> = (
             onUserDisplayNameMapChange={handleUserDisplayNameMapChange}
             refreshNonce={refreshNonce}
             entraObjectId={entraObjectId}
+            onBulkCreateTask={onBulkCreateTask}
           />
         )
     ),

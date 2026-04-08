@@ -14,6 +14,7 @@ interface PadSectionProps {
   attributeGroups: AttributeChip[][];
   vscCodes: string[];
   sourceCodes: string[];
+  sourceCodeDescriptions?: string[];
   padConfirmationKey?: string;
   onPadConfirmationChange: (nextKey?: string) => void;
   padConfirmationError?: string;
@@ -33,6 +34,7 @@ export const PadSection: React.FC<PadSectionProps> = ({
   attributeGroups,
   vscCodes,
   sourceCodes,
+  sourceCodeDescriptions,
   padConfirmationKey,
   onPadConfirmationChange,
   padConfirmationError,
@@ -54,7 +56,7 @@ export const PadSection: React.FC<PadSectionProps> = ({
             Property Attribute Details
           </Text>
           <div className="voa-pad-top-tags">
-            {padStatusDisplay !== '-' && (
+            {padStatusLabel && (
               <span className="voa-pad-top-tag voa-pad-top-tag--synced">{padStatusLabel}</span>
             )}
             {isActiveRequestPresent && (
@@ -69,7 +71,7 @@ export const PadSection: React.FC<PadSectionProps> = ({
           <TooltipHost content={!canCreateDataEnhancement ? 'Create Data Enhancement Job is not available for this task status or role.' : !dataEnhancementUrl ? 'Data enhancement URL is not configured for this record.' : undefined}>
             <DefaultButton
               text="Create Data Enhancement Job"
-              ariaLabel="Create Data Enhancement Job"
+              ariaLabel="Create Data Enhancement Job (opens in new tab)"
               className="voa-pad-action-btn voa-pad-action-btn--green"
               disabled={!canCreateDataEnhancement || !dataEnhancementUrl}
               onClick={() => { if (dataEnhancementUrl) { window.open(dataEnhancementUrl, '_blank', 'noopener,noreferrer'); } }}
@@ -78,7 +80,7 @@ export const PadSection: React.FC<PadSectionProps> = ({
           <TooltipHost content={!hereditamentUrl ? 'Hereditament URL is not available for this record.' : undefined}>
             <DefaultButton
               text="View Hereditament"
-              ariaLabel="View Hereditament"
+              ariaLabel="View Hereditament (opens in new tab)"
               className="voa-pad-action-btn voa-pad-action-btn--blue"
               disabled={!hereditamentUrl}
               onClick={() => { if (hereditamentUrl) { window.open(hereditamentUrl, '_blank', 'noopener,noreferrer'); } }}
@@ -148,7 +150,11 @@ export const PadSection: React.FC<PadSectionProps> = ({
                 <div className="voa-pad-code-list">
                   {sourceCodes.length > 0
                     ? sourceCodes.map((code, idx) => (
-                      <span key={`source-${idx}`} className="voa-pad-code-chip voa-pad-code-chip--source">{code}</span>
+                      <span
+                        key={`source-${idx}`}
+                        className="voa-pad-code-chip voa-pad-code-chip--source"
+                        title={sourceCodeDescriptions?.[idx] || undefined}
+                      >{code}</span>
                     ))
                     : <span className="voa-pad-code-chip voa-pad-code-chip--empty">-</span>}
                 </div>
@@ -160,7 +166,7 @@ export const PadSection: React.FC<PadSectionProps> = ({
       </div>
 
       <div className="voa-pad-confirmation">
-        <label htmlFor="voa-pad-confirmation" className="voa-pad-confirmation__label">PAD Confirmation</label>
+        <label htmlFor="voa-pad-confirmation" className="voa-pad-confirmation__label">PAD Confirmation:</label>
         <div className="voa-pad-confirmation__control">
           <Dropdown
             id="voa-pad-confirmation"

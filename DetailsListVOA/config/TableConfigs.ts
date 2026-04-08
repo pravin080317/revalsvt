@@ -193,7 +193,15 @@ const buildSalesParams = (
     }
   }
   if (filters.overallFlag?.length) params.overallFlag = filters.overallFlag.join(',');
-  if (filters.summaryFlag) params.summaryFlag = filters.summaryFlag;
+  if (filters.summaryFlag) {
+    if (typeof filters.summaryFlag === 'object' && filters.summaryFlag.values?.length) {
+      params.summaryFlag = filters.summaryFlag.values.join(',');
+      const operatorMap: Record<string, string> = { contains: 'LIKE', notContains: 'NTL', eq: 'EQ' };
+      params.summaryFlagOperator = operatorMap[filters.summaryFlag.operator] ?? 'LIKE';
+    } else if (typeof filters.summaryFlag === 'string' && filters.summaryFlag.trim()) {
+      params.summaryFlag = filters.summaryFlag;
+    }
+  }
   if (filters.taskStatus?.length) params.taskStatus = filters.taskStatus.join(',');
   if (filters.assignedTo) params.assignedTo = filters.assignedTo;
   if (filters.assignedDate) {

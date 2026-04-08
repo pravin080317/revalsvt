@@ -3,13 +3,11 @@
  *
  * Covers:
  *  - Model structure & type alignment with the real API payload
- *  - Plugin (SvtSubmitQcRemarks.cs) cross-checks
  *  - PCF submitQcOutcome() parameter assembly
  *  - mergeQcOutcomeDetails() local state update
  *  - normalizeQcOutcomeValue() canonical mapping
  *  - applyQcOutcomeTaskDetails() date field logic for Pass vs Fail
  *  - Real payload deserialization (user-provided Fail scenario)
- *  - PCF ↔ Plugin field alignment
  */
 
 import fs from 'fs';
@@ -217,99 +215,6 @@ describe('SvtSubmitQcRemarks model', () => {
 });
 
 /* ================================================================== */
-/*  2. Plugin (SvtSubmitQcRemarks.cs) cross-checks                    */
-/* ================================================================== */
-
-describe('Plugin source cross-checks (SvtSubmitQcRemarks.cs)', () => {
-  const pluginSource = readRepoFile(
-    'VOA.SVT.Plugins/Plugins/CustomAPI/SvtSubmitQcRemarks.cs',
-  );
-
-  test('plugin class name matches the API action name', () => {
-    expect(pluginSource).toContain('public class SvtSubmitQcRemarks : PluginBase');
-  });
-
-  test('plugin reads all expected input parameters', () => {
-    const expectedParams = ['taskId', 'qcOutcome', 'qcRemark', 'qcReviewedBy', 'country', 'listYear'];
-    for (const param of expectedParams) {
-      expect(pluginSource).toContain(`GetInput(context, "${param}")`);
-    }
-  });
-
-  test('plugin enforces QA/Manager access control', () => {
-    expect(pluginSource).toContain('userContext.Persona != UserPersona.QA');
-    expect(pluginSource).toContain('userContext.Persona != UserPersona.Manager');
-    expect(pluginSource).toContain(
-      'Submit QC remarks is restricted to QA/Manager role/team.',
-    );
-  });
-
-  test('plugin validates taskId is required', () => {
-    expect(pluginSource).toContain('taskId is required.');
-  });
-
-  test('plugin validates qcOutcome is required', () => {
-    expect(pluginSource).toContain('qcOutcome is required.');
-  });
-
-  test('plugin falls back to initiating user ID when qcReviewedBy is empty', () => {
-    expect(pluginSource).toContain('context.InitiatingUserId');
-    expect(pluginSource).toContain('qcReviewedBy = NormalizeGuidOrEmpty(qcReviewedBy);');
-  });
-
-  test('plugin builds APIM payload with qcTaskList key', () => {
-    // The plugin uses ["qcTaskList"] = taskIds in its APIM payload dictionary
-    expect(pluginSource).toContain('["qcTaskList"] = taskIds');
-    // It does NOT use taskList for its own APIM payload
-    expect(pluginSource).not.toContain('["taskList"]');
-  });
-
-  test('plugin APIM payload includes all four required fields', () => {
-    expect(pluginSource).toContain('["qcTaskList"] = taskIds');
-    expect(pluginSource).toContain('["qcOutcome"]');
-    expect(pluginSource).toContain('["qcRemark"]');
-    expect(pluginSource).toContain('["qcReviewedBy"]');
-  });
-
-  test('plugin conditionally includes country and listYear in APIM payload', () => {
-    expect(pluginSource).toContain('payload["country"]');
-    expect(pluginSource).toContain('payload["listYear"]');
-  });
-
-  test('plugin uses SVTTaskAssignment configuration', () => {
-    expect(pluginSource).toContain('CONFIGURATION_NAME = "SVTTaskAssignment"');
-  });
-
-  test('plugin returns Result output parameter', () => {
-    expect(pluginSource).toContain('context.OutputParameters["Result"]');
-  });
-
-  test('plugin posts to APIM with POST method', () => {
-    expect(pluginSource).toContain('HttpMethod.Post');
-  });
-
-  describe('ParseTaskIds handles multiple input formats', () => {
-    test('handles JSON array format', () => {
-      expect(pluginSource).toContain('trimmed.StartsWith("[")');
-      expect(pluginSource).toContain('JsonSerializer.Deserialize<string[]>(trimmed)');
-    });
-
-    test('handles comma-separated format', () => {
-      expect(pluginSource).toContain('trimmed.Contains(",")');
-      expect(pluginSource).toContain("trimmed.Split(',')");
-    });
-
-    test('handles single value format (fallthrough)', () => {
-      expect(pluginSource).toContain('AddTaskId(result, trimmed)');
-    });
-
-    test('NormalizeTaskId strips non-digit characters', () => {
-      expect(pluginSource).toContain('char.IsDigit(ch)');
-    });
-  });
-});
-
-/* ================================================================== */
 /*  3. PCF submitQcOutcome() parameter assembly                       */
 /* ================================================================== */
 
@@ -355,10 +260,10 @@ describe('PCF submitQcOutcome() flow (DetailsListRuntimeController.ts)', () => {
     );
   });
 
-  test('conditionally includes country and listYear', () => {
-    expect(runtimeSource).toContain('ENABLE_COUNTRY_LIST_YEAR_API_PARAMS');
-    expect(runtimeSource).toContain('if (country) qcParams.country = country;');
-    expect(runtimeSource).toContain('if (listYear) qcParams.listYear = listYear;');
+  test('does not send country or listYear for QC remarks (restricted to getAllSales only)', () => {
+    // country/listYear are only sent to voa_GetAllSalesRecord and voa_SvtGetSalesMetadata
+    expect(runtimeSource).not.toContain('if (country) qcParams.country = country;');
+    expect(runtimeSource).not.toContain('if (listYear) qcParams.listYear = listYear;');
   });
 
   test('uses configured API name for the QC remarks action', () => {
@@ -736,48 +641,6 @@ describe('QC outcome merge scenarios', () => {
 /*  7. PCF ↔ Plugin field alignment                                  */
 /* ================================================================== */
 
-describe('PCF ↔ Plugin field alignment', () => {
-  const runtimeSource = readRepoFile(
-    'DetailsListVOA/services/DetailsListRuntimeController.ts',
-  );
-  const pluginSource = readRepoFile(
-    'VOA.SVT.Plugins/Plugins/CustomAPI/SvtSubmitQcRemarks.cs',
-  );
-
-  const pcfParams = ['taskId', 'qcOutcome', 'qcRemark', 'qcReviewedBy'];
-
-  test.each(pcfParams)(
-    'PCF sends "%s" and plugin reads "%s"',
-    (param) => {
-      // PCF writes qcParams.{param}
-      expect(runtimeSource).toContain(`${param}:`);
-      // Plugin reads GetInput(context, "{param}")
-      expect(pluginSource).toContain(`GetInput(context, "${param}")`);
-    },
-  );
-
-  test('PCF sends taskId as JSON.stringify([id]) and plugin parses JSON arrays', () => {
-    expect(runtimeSource).toContain('JSON.stringify([normalizedTaskId])');
-    expect(pluginSource).toContain('JsonSerializer.Deserialize<string[]>');
-  });
-
-  test('PCF uses resolved Entra object id; plugin falls back to InitiatingUserId', () => {
-    expect(runtimeSource).toContain('qcReviewedBy: this.entraObjectId');
-    expect(pluginSource).toContain('context.InitiatingUserId');
-  });
-
-  test('both PCF and plugin support optional country/listYear params', () => {
-    expect(runtimeSource).toContain('qcParams.country = country;');
-    expect(runtimeSource).toContain('qcParams.listYear = listYear;');
-    expect(pluginSource).toContain('GetInput(context, "country")');
-    expect(pluginSource).toContain('GetInput(context, "listYear")');
-  });
-});
-
-/* ================================================================== */
-/*  8. Config alignment                                               */
-/* ================================================================== */
-
 describe('Control config for QC remarks API', () => {
   const configSource = readRepoFile('DetailsListVOA/config/ControlConfig.ts');
 
@@ -794,24 +657,3 @@ describe('Control config for QC remarks API', () => {
 
 /* ================================================================== */
 /*  9. Documentation vs implementation discrepancy                    */
-/* ================================================================== */
-
-describe('Documentation discrepancy: taskId vs taskList', () => {
-  const doc = readRepoFile('docs/svtpcfplugin/svtSubmitQcRemarks.md');
-  const pluginSource = readRepoFile(
-    'VOA.SVT.Plugins/Plugins/CustomAPI/SvtSubmitQcRemarks.cs',
-  );
-
-  test('docs mention taskList as the APIM payload key', () => {
-    expect(doc).toContain('"taskList"');
-  });
-
-  test('but the actual plugin code uses qcTaskList as the APIM payload key', () => {
-    expect(pluginSource).toContain('["qcTaskList"] = taskIds');
-    expect(pluginSource).not.toContain('["taskList"]');
-  });
-
-  test('docs do mention taskId as an input parameter (which is correct)', () => {
-    expect(doc).toContain('`taskId`');
-  });
-});

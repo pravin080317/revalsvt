@@ -1,0 +1,27 @@
+
+> pcf-project@1.0.0 build
+> pcf-scripts build
+
+[4:26:07 PM] [build] Initializing...
+[4:26:07 PM] [build] Validating manifest...
+[4:26:07 PM] [build] Validating control...
+[4:26:08 PM] [build] Generating manifest types...
+[4:26:08 PM] [build] Generating design types...
+[4:26:08 PM] [build] Running ESLint...
+[31m[4:26:16 PM] [build] Failed:[0m
+[31m[pcf-1065] [Error] ESLint validation error: 
+C:\learning\pcf\SVTList\DetailsListVOA\Grid.tsx
+  4004:21  error  Unsafe assignment of an `any` value               @typescript-eslint/no-unsafe-assignment
+  4004:46  error  Unexpected any. Specify a different type          @typescript-eslint/no-explicit-any
+  4005:15  error  Unsafe assignment of an `any` value               @typescript-eslint/no-unsafe-assignment
+  4005:55  error  Unsafe member access .values on an `any` value    @typescript-eslint/no-unsafe-member-access
+  4005:76  error  Unsafe member access .values on an `any` value    @typescript-eslint/no-unsafe-member-access
+  4040:15  error  Unsafe assignment of an `any` value               @typescript-eslint/no-unsafe-assignment
+  4040:40  error  Unexpected any. Specify a different type          @typescript-eslint/no-explicit-any
+  4041:24  error  Unsafe member access .operator on an `any` value  @typescript-eslint/no-unsafe-member-access
+  4041:65  error  Unsafe member access .operator on an `any` value  @typescript-eslint/no-unsafe-member-access
+  4042:11  error  Unsafe assignment of an `any` value               @typescript-eslint/no-unsafe-assignment
+  4042:33  error  Unsafe member access .operator on an `any` value  @typescript-eslint/no-unsafe-member-access
+
+Γ£û 11 problems (11 errors, 0 warnings)
+[0m

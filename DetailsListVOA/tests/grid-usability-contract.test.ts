@@ -106,7 +106,6 @@ describe('grid usability contract', () => {
     expect(gridSource).toContain("markSalesSearchFieldTouched('uprn')");
     expect(gridSource).toContain('renderSalesSearchLabel');
     expect(gridSource).toContain('salesSearchText.accessibility.requiredFieldKey');
-    expect(gridSource).toContain('className="voa-search-panel__meta"');
     expect(gridSource).toContain('className="voa-search-required-key"');
     expect(gridSource).toContain('className="voa-search-unavailable-note"');
     expect(gridSource).toContain('focusSalesSearchFieldById(fieldId)');
@@ -175,11 +174,12 @@ describe('grid usability contract', () => {
     expect(cssSource).toContain('.voa-mda-link-button {');
   });
 
-  test('shows a visible new-tab cue on Dataverse record links that open in a new tab', () => {
+  test('shows a header-level new-tab cue on Address and keeps link-level aria context', () => {
     expect(cellSource).toContain('const newTabText = SCREEN_TEXT.common.links.opensInNewTab;');
-    expect(cellSource).toContain('{cellText} {newTabText}');
+    expect(cellSource).toContain('const label = `Address ${cellText} ${newTabText}`.trim();');
     expect(cellSource).toContain('target="_blank"');
     expect(cellSource).toContain('aria-label={label}');
+    expect(gridSource).toContain("lowerName === 'address' && !hasNewTabCue");
   });
 
   test('gives tag cells visible overflow and a small vertical buffer so pill borders do not clip at the row edge', () => {
@@ -232,5 +232,12 @@ describe('grid usability contract', () => {
     expect(cssSource).toContain('.ms-DetailsRow.is-selected');
     expect(cssSource).toContain('box-shadow: inset 4px 0 0 #005ea5;');
     expect(cssSource).toContain('--voa-selected-row-bg');
+  });
+
+  test('restores summary-flag eq filter as a string so the single-select ComboBox shows the previously chosen value', () => {
+    // The 'eq' operator uses a single-select ComboBox (selectedKey expects a string).
+    // Re-opening an existing eq filter must set menuFilterValue to the first element string,
+    // not the whole values array, otherwise selectedKey resolves to '' and the field shows blank.
+    expect(gridSource).toContain("existingOperator === 'eq' ? (valuesArray[0] ?? '') : valuesArray");
   });
 });

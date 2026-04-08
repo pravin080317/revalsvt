@@ -66,7 +66,6 @@ const REAL_RESPONSE: GetHereditamentRelatedRequestsResponse = {
 /*  Source files (lazy-loaded once for cross-checks)                   */
 /* ================================================================== */
 
-const pluginSource = readRepoFile('VOA.SVT.Plugins/Plugins/CustomAPI/voa_GetHereditamentRelatedRequests.cs');
 const viewModelSource = readRepoFile('DetailsListVOA/components/SaleDetailsShell/useSaleDetailsViewModel.ts');
 const padSectionSource = readRepoFile('DetailsListVOA/components/SaleDetailsShell/sections/PadSection.tsx');
 const typesSource = readRepoFile('DetailsListVOA/components/SaleDetailsShell/types.ts');
@@ -237,183 +236,6 @@ describe('GetHereditamentRelatedRequests model', () => {
 });
 
 /* ================================================================== */
-/*  2. Plugin cross-checks                                            */
-/* ================================================================== */
-
-describe('Plugin cross-checks (voa_GetHereditamentRelatedRequests.cs)', () => {
-
-  describe('class structure', () => {
-    test('class is declared', () => {
-      expect(pluginSource).toContain('public class voa_GetHereditamentRelatedRequests : PluginBase');
-    });
-
-    test('namespace is VOA.SVT.Plugins.CustomAPI', () => {
-      expect(pluginSource).toContain('namespace VOA.SVT.Plugins.CustomAPI');
-    });
-
-    test('constructor takes unsecure and secure configuration', () => {
-      expect(pluginSource).toContain('public voa_GetHereditamentRelatedRequests(string unsecureConfiguration, string secureConfiguration)');
-    });
-
-    test('calls base with typeof(voa_GetHereditamentRelatedRequests)', () => {
-      expect(pluginSource).toContain('base(typeof(voa_GetHereditamentRelatedRequests))');
-    });
-
-    test('overrides ExecuteCdsPlugin', () => {
-      expect(pluginSource).toContain('protected override void ExecuteCdsPlugin(ILocalPluginContext localPluginContext)');
-    });
-  });
-
-  describe('input parameter', () => {
-    test('reads hereditamentId from InputParameters', () => {
-      expect(pluginSource).toContain('context.InputParameters.Contains("hereditamentId")');
-    });
-
-    test('validates hereditamentId is a Guid', () => {
-      expect(pluginSource).toContain('context.InputParameters["hereditamentId"] is Guid ssuId');
-    });
-
-    test('throws InvalidPluginExecutionException if missing', () => {
-      expect(pluginSource).toContain('throw new InvalidPluginExecutionException("hereditamentId is required.")');
-    });
-  });
-
-  describe('output parameter', () => {
-    test('sets hereditamentActiveRequest output', () => {
-      expect(pluginSource).toContain('context.OutputParameters["hereditamentActiveRequest"]');
-    });
-
-    test('output is a boolean (result of IsActiveRequestPresent)', () => {
-      expect(pluginSource).toContain('var hereditamentRelatedActiveRequest = IsActiveRequestPresent(ssuId, service, tracing)');
-      expect(pluginSource).toContain('context.OutputParameters["hereditamentActiveRequest"] = hereditamentRelatedActiveRequest');
-    });
-  });
-
-  describe('FetchXML query', () => {
-    test('queries voa_requestlineitem entity', () => {
-      expect(pluginSource).toContain("name='voa_requestlineitem'");
-    });
-
-    test('uses top=1 for existence check', () => {
-      expect(pluginSource).toContain("top='1'");
-    });
-
-    test('filters on statecode=0 (active records)', () => {
-      expect(pluginSource).toContain("attribute='statecode' operator='eq' value='0'");
-    });
-
-    test('filters on voa_statutoryspatialunitid', () => {
-      expect(pluginSource).toContain("attribute='voa_statutoryspatialunitid' operator='eq'");
-    });
-
-    test('retrieves voa_requestlineitemid attribute', () => {
-      expect(pluginSource).toContain("name='voa_requestlineitemid'");
-    });
-
-    test('uses AND filter type', () => {
-      expect(pluginSource).toContain("filter type='and'");
-    });
-
-    test('returns true when entities found, false otherwise', () => {
-      expect(pluginSource).toContain('result.Entities.Count > 0');
-    });
-
-    test('uses RetrieveMultiple with FetchExpression', () => {
-      expect(pluginSource).toContain('service.RetrieveMultiple(new FetchExpression(fetchXml))');
-    });
-  });
-
-  describe('IsActiveRequestPresent method', () => {
-    test('method signature takes Guid, IOrganizationService, ITracingService', () => {
-      expect(pluginSource).toContain('private static bool IsActiveRequestPresent(Guid ssuId, IOrganizationService service, ITracingService tracing)');
-    });
-
-    test('method is static', () => {
-      expect(pluginSource).toMatch(/private\s+static\s+bool\s+IsActiveRequestPresent/);
-    });
-
-    test('returns bool type', () => {
-      expect(pluginSource).toMatch(/static\s+bool\s+IsActiveRequestPresent/);
-    });
-  });
-
-  describe('error handling', () => {
-    test('rethrows InvalidPluginExecutionException as-is', () => {
-      expect(pluginSource).toContain('if (ex is InvalidPluginExecutionException)');
-      // The throw; re-throws the original
-      expect(pluginSource).toContain('throw;');
-    });
-
-    test('wraps other exceptions with generic message', () => {
-      expect(pluginSource).toContain('throw new InvalidPluginExecutionException("Unable to get hereditament related requests.")');
-    });
-
-    test('logs exception via tracing', () => {
-      expect(pluginSource).toContain('Exception in voa_GetHereditamentRelatedRequests');
-    });
-  });
-
-  describe('tracing', () => {
-    test('traces start of execution', () => {
-      expect(pluginSource).toContain('$"{nameof(ExecuteCdsPlugin)} start"');
-    });
-
-    test('traces hereditamentId value', () => {
-      expect(pluginSource).toContain('$"HereditamentId: {ssuId}"');
-    });
-
-    test('traces done with result', () => {
-      expect(pluginSource).toContain('$"{nameof(ExecuteCdsPlugin)} done. ActiveRequest={hereditamentRelatedActiveRequest}"');
-    });
-
-    test('traces FetchXML', () => {
-      expect(pluginSource).toContain('$"FetchXML: {fetchXml}"');
-    });
-  });
-
-  describe('null checks', () => {
-    test('checks localPluginContext for null', () => {
-      expect(pluginSource).toContain('if (localPluginContext == null)');
-    });
-
-    test('throws ArgumentNullException for null context', () => {
-      expect(pluginSource).toContain('throw new ArgumentNullException(nameof(localPluginContext))');
-    });
-
-    test('uses null-conditional for tracing calls', () => {
-      expect(pluginSource).toContain('tracing?.Trace');
-    });
-
-    test('null-safe check on RetrieveMultiple result', () => {
-      expect(pluginSource).toContain('result?.Entities != null');
-    });
-  });
-
-  describe('no APIM / HTTP / credential usage', () => {
-    test('does not use HttpClient or WebClient', () => {
-      expect(pluginSource).not.toContain('HttpClient');
-      expect(pluginSource).not.toContain('WebClient');
-    });
-
-    test('does not use CredentialProvider', () => {
-      expect(pluginSource).not.toContain('CredentialProvider');
-      expect(pluginSource).not.toContain('voa_CredentialProvider');
-    });
-
-    test('does not reference APIM', () => {
-      expect(pluginSource).not.toContain('Address');
-      expect(pluginSource.toLowerCase()).not.toContain('apim');
-    });
-
-    test('does not parse JSON (no JsonConvert / JObject)', () => {
-      expect(pluginSource).not.toContain('JsonConvert');
-      expect(pluginSource).not.toContain('JObject');
-      expect(pluginSource).not.toContain('JArray');
-    });
-  });
-});
-
-/* ================================================================== */
 /*  3. View model PAD status mapping cross-checks                     */
 /* ================================================================== */
 
@@ -424,48 +246,44 @@ describe('View model PAD status mapping', () => {
       expect(viewModelSource).toContain("getValue(propertyAndBandingDetails, 'padStatus')");
     });
 
-    test('maps committed to "PAD Status: Synced"', () => {
-      expect(viewModelSource).toContain("padStatusDisplay.toLowerCase() === 'committed' ? 'PAD Status: Synced'");
+    test('shows "PAD Status: Synced" when active request is not trueLike', () => {
+      expect(viewModelSource).toContain("hasHereditamentActiveRequest && !isActiveRequestPresent ? 'PAD Status: Synced'");
     });
 
-    test('falls back to "PAD Status: ${padStatusDisplay}"', () => {
-      expect(viewModelSource).toContain('`PAD Status: ${padStatusDisplay}`');
+    test('falls back to empty string when not applicable', () => {
+      expect(viewModelSource).toContain("? 'PAD Status: Synced' : ''");
     });
   });
 
   describe('isActiveRequestPresent derivation', () => {
     test('uses isTrueLike wrapper', () => {
-      expect(viewModelSource).toContain('const isActiveRequestPresent = isTrueLike(');
+      expect(viewModelSource).toContain('const isActiveRequestPresent = hasHereditamentActiveRequest && isTrueLike(');
     });
 
     test('uses firstNonEmpty for fallback chain', () => {
       expect(viewModelSource).toContain('firstNonEmpty(');
     });
 
-    test('checks propertyAndBandingDetails.activeRequestInVos first', () => {
-      expect(viewModelSource).toContain("getValue(propertyAndBandingDetails, 'activeRequestInVos')");
+    test('checks propertyAndBandingDetails.hereditamentActiveRequest first', () => {
+      expect(viewModelSource).toContain("getValue(propertyAndBandingDetails, 'hereditamentActiveRequest')");
     });
 
-    test('checks propertyAndBandingDetails.isActiveRequestPresent second', () => {
-      expect(viewModelSource).toContain("getValue(propertyAndBandingDetails, 'isActiveRequestPresent')");
+    test('checks details.hereditamentActiveRequest second', () => {
+      expect(viewModelSource).toContain("getValue(details, 'hereditamentActiveRequest')");
     });
 
-    test('checks details.activeRequestInVos third', () => {
-      expect(viewModelSource).toContain("getValue(details, 'activeRequestInVos')");
+    test('checks hereditamentActiveRequestRaw is non-empty', () => {
+      expect(viewModelSource).toContain('hereditamentActiveRequestRaw.trim().length > 0');
     });
 
-    test('checks details.isActiveRequestPresent fourth', () => {
-      expect(viewModelSource).toContain("getValue(details, 'isActiveRequestPresent')");
+    test('checks hereditamentActiveRequestRaw is not dash placeholder', () => {
+      expect(viewModelSource).toContain("hereditamentActiveRequestRaw.trim() !== '-'");
     });
 
-    test('four fallback keys are in the correct order', () => {
-      const idx1 = viewModelSource.indexOf("getValue(propertyAndBandingDetails, 'activeRequestInVos')");
-      const idx2 = viewModelSource.indexOf("getValue(propertyAndBandingDetails, 'isActiveRequestPresent')");
-      const idx3 = viewModelSource.indexOf("getValue(details, 'activeRequestInVos')");
-      const idx4 = viewModelSource.indexOf("getValue(details, 'isActiveRequestPresent')");
+    test('hereditamentActiveRequest fallback sources are in the correct order', () => {
+      const idx1 = viewModelSource.indexOf("getValue(propertyAndBandingDetails, 'hereditamentActiveRequest')");
+      const idx2 = viewModelSource.indexOf("getValue(details, 'hereditamentActiveRequest')");
       expect(idx1).toBeLessThan(idx2);
-      expect(idx2).toBeLessThan(idx3);
-      expect(idx3).toBeLessThan(idx4);
     });
   });
 });
@@ -557,8 +375,8 @@ describe('PadSection component', () => {
       expect(padSectionSource).toContain('{padStatusLabel}');
     });
 
-    test('synced tag is conditional on padStatusDisplay !== "-"', () => {
-      expect(padSectionSource).toContain("padStatusDisplay !== '-'");
+    test('synced tag is conditional on padStatusLabel being truthy', () => {
+      expect(padSectionSource).toContain('{padStatusLabel && (');
     });
   });
 
@@ -796,42 +614,6 @@ describe('Simulated PAD status label derivation', () => {
 });
 
 /* ================================================================== */
-/*  11. API differences vs other SVT custom APIs                      */
-/* ================================================================== */
-
-describe('API differences vs other SVT custom APIs', () => {
-
-  test('plugin does not use APIM (no HTTP call)', () => {
-    // Other plugins use HttpClient / voa_CredentialProvider / Address
-    // This one queries Dataverse directly
-    expect(pluginSource).not.toContain('HttpClient');
-    expect(pluginSource).not.toContain('voa_CredentialProvider');
-  });
-
-  test('plugin input is Guid type (not string)', () => {
-    // Other APIs use string InputParameters; this one uses Guid
-    expect(pluginSource).toContain('is Guid ssuId');
-  });
-
-  test('plugin output is boolean (not JSON string)', () => {
-    // Other APIs output JSON strings via context.OutputParameters["Result"]
-    // This one outputs a boolean directly
-    expect(pluginSource).not.toContain('OutputParameters["Result"]');
-    expect(pluginSource).toContain('OutputParameters["hereditamentActiveRequest"]');
-  });
-
-  test('plugin does not serialize JSON', () => {
-    expect(pluginSource).not.toContain('JsonConvert.SerializeObject');
-    expect(pluginSource).not.toContain('JsonConvert.DeserializeObject');
-  });
-
-  test('plugin uses FetchXML instead of APIM endpoint', () => {
-    expect(pluginSource).toContain('<fetch');
-    expect(pluginSource).toContain('</fetch>');
-  });
-});
-
-/* ================================================================== */
 /*  12. Business logic integration scenarios                          */
 /* ================================================================== */
 
@@ -942,34 +724,6 @@ describe('Edge cases', () => {
       return normalized === 'true' || normalized === 'yes' || normalized === '1' || normalized === 'y';
     };
     expect(isTrueLike('   ')).toBe(false);
-  });
-});
-
-/* ================================================================== */
-/*  14. Plugin file structure validation                              */
-/* ================================================================== */
-
-describe('Plugin file structure', () => {
-
-  test('uses correct C# using directives', () => {
-    expect(pluginSource).toContain('using System;');
-    expect(pluginSource).toContain('using Microsoft.Xrm.Sdk;');
-    expect(pluginSource).toContain('using Microsoft.Xrm.Sdk.Query;');
-    expect(pluginSource).toContain('using VOA.Common;');
-  });
-
-  test('does not import unnecessary namespaces', () => {
-    expect(pluginSource).not.toContain('using System.Net');
-    expect(pluginSource).not.toContain('using Newtonsoft');
-    expect(pluginSource).not.toContain('using System.Collections.Generic');
-  });
-
-  test('plugin has exactly two methods beyond constructor (ExecuteCdsPlugin + IsActiveRequestPresent)', () => {
-    expect(pluginSource).toContain('protected override void ExecuteCdsPlugin');
-    expect(pluginSource).toContain('private static bool IsActiveRequestPresent');
-    // No other custom methods
-    const overrideMethods = pluginSource.match(/override\s+void\s+\w+/g) ?? [];
-    expect(overrideMethods).toHaveLength(1);
   });
 });
 

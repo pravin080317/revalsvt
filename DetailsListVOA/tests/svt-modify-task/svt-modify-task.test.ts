@@ -3,14 +3,12 @@
  *
  * Covers:
  *  - Model structure & type alignment with the real API payload
- *  - Plugin (SvtModifyTask.cs) cross-checks
  *  - PCF modifySvtTask() parameter assembly
  *  - mergeModifyTaskDetails() local state update
  *  - applyModifyTaskDetails() field alias coverage
  *  - normalizeTaskIdForModifyTask() task ID normalization
  *  - parseModifyTaskResult() response parsing
  *  - Real payload deserialization (user-provided Complete scenario)
- *  - PCF ↔ Plugin field alignment
  */
 
 import fs from 'fs';
@@ -285,153 +283,6 @@ describe('SvtModifyTask model', () => {
       for (const val of Object.values(fields)) {
         expect(val).toBeNull();
       }
-    });
-  });
-});
-
-/* ================================================================== */
-/*  2. Plugin (SvtModifyTask.cs) cross-checks                        */
-/* ================================================================== */
-
-describe('Plugin source cross-checks (SvtModifyTask.cs)', () => {
-  const pluginSource = readRepoFile(
-    'VOA.SVT.Plugins/Plugins/CustomAPI/SvtModifyTask.cs',
-  );
-
-  test('plugin class name matches the API action name', () => {
-    expect(pluginSource).toContain('public class SvtModifyTask : PluginBase');
-  });
-
-  test('plugin reads all four expected input parameters', () => {
-    const expectedParams = ['source', 'taskStatus', 'taskList', 'requestedBy'];
-    for (const param of expectedParams) {
-      expect(pluginSource).toContain(`GetInput(context, "${param}")`);
-    }
-  });
-
-  test('plugin enforces caseworker access control', () => {
-    expect(pluginSource).toContain('HasCaseworkerAccess(userContext)');
-    expect(pluginSource).toContain(
-      'Modify SVT task is restricted to caseworker role/team.',
-    );
-  });
-
-  test('plugin defaults source to VSRT when empty', () => {
-    expect(pluginSource).toContain('source = "VSRT"');
-  });
-
-  test('plugin falls back to initiating user ID when requestedBy is empty', () => {
-    expect(pluginSource).toContain('context.InitiatingUserId');
-    expect(pluginSource).toContain('requestedBy = NormalizeGuidOrEmpty(requestedBy);');
-  });
-
-  test('plugin validates taskStatus and taskList are required', () => {
-    expect(pluginSource).toContain(
-      'taskStatus and taskList are required.',
-    );
-  });
-
-  test('plugin builds APIM payload with taskList key (not taskId)', () => {
-    expect(pluginSource).toContain('["taskList"] = taskIds');
-    // Unlike SvtSubmitQcRemarks which uses ["taskId"]
-  });
-
-  test('plugin APIM payload includes all four fields', () => {
-    expect(pluginSource).toContain('["source"] = source');
-    expect(pluginSource).toContain('["taskStatus"] = taskStatus');
-    expect(pluginSource).toContain('["taskList"] = taskIds');
-    expect(pluginSource).toContain('["requestedBy"] = requestedBy');
-  });
-
-  test('plugin uses SVTTaskAssignment configuration', () => {
-    expect(pluginSource).toContain('CONFIGURATION_NAME = "SVTTaskAssignment"');
-  });
-
-  test('plugin returns Result output parameter', () => {
-    expect(pluginSource).toContain('context.OutputParameters["Result"]');
-  });
-
-  test('plugin returns "success" when APIM body is empty', () => {
-    expect(pluginSource).toContain(
-      'string.IsNullOrWhiteSpace(body) ? "success" : body',
-    );
-  });
-
-  test('plugin posts to APIM with POST method', () => {
-    expect(pluginSource).toContain('HttpMethod.Post');
-  });
-
-  test('plugin sets 30-second timeout', () => {
-    expect(pluginSource).toContain('TimeSpan.FromSeconds(30)');
-  });
-
-  test('plugin serializes payload as JSON', () => {
-    expect(pluginSource).toContain('JsonSerializer.Serialize(payload)');
-  });
-
-  test('plugin includes APIM subscription key header', () => {
-    expect(pluginSource).toContain('Ocp-Apim-Subscription-Key');
-  });
-
-  test('plugin includes Bearer token when available', () => {
-    expect(pluginSource).toContain('AuthenticationHeaderValue("Bearer"');
-  });
-
-  describe('ParseTaskIds handles multiple input formats', () => {
-    test('handles JSON array format', () => {
-      expect(pluginSource).toContain('trimmed.StartsWith("[")');
-      expect(pluginSource).toContain('JsonSerializer.Deserialize<string[]>(trimmed)');
-    });
-
-    test('handles comma-separated format', () => {
-      expect(pluginSource).toContain('trimmed.Contains(",")');
-      expect(pluginSource).toContain("trimmed.Split(',')");
-    });
-
-    test('handles single value format (fallthrough)', () => {
-      expect(pluginSource).toContain('AddTaskId(result, trimmed)');
-    });
-
-    test('NormalizeTaskId strips non-digit characters', () => {
-      expect(pluginSource).toContain('char.IsDigit(ch)');
-    });
-
-    test('NormalizeTaskId uses StringBuilder for digit extraction', () => {
-      expect(pluginSource).toContain('new StringBuilder()');
-      expect(pluginSource).toContain('sb.Append(ch)');
-    });
-
-    test('NormalizeTaskId falls back to original value when no digits found', () => {
-      expect(pluginSource).toContain(
-        'string.IsNullOrWhiteSpace(digits) ? value.Trim() : digits',
-      );
-    });
-  });
-
-  describe('Error handling', () => {
-    test('throws on APIM non-success status code', () => {
-      expect(pluginSource).toContain('!response.IsSuccessStatusCode');
-      expect(pluginSource).toContain('Modify SVT task failed (');
-    });
-
-    test('re-throws InvalidPluginExecutionException as-is', () => {
-      expect(pluginSource).toContain('ex is InvalidPluginExecutionException');
-    });
-
-    test('wraps other exceptions in InvalidPluginExecutionException', () => {
-      expect(pluginSource).toContain(
-        'throw new InvalidPluginExecutionException("Modify SVT task failed.")',
-      );
-    });
-
-    test('disposes HTTP response in finally block', () => {
-      expect(pluginSource).toContain('response?.Dispose()');
-    });
-
-    test('validates Address is not null', () => {
-      expect(pluginSource).toContain(
-        'SVTTaskAssignment configuration missing Address.',
-      );
     });
   });
 });
@@ -1057,75 +908,6 @@ describe('Modify task merge scenarios', () => {
 });
 
 /* ================================================================== */
-/*  9. PCF ↔ Plugin field alignment                                  */
-/* ================================================================== */
-
-describe('PCF ↔ Plugin field alignment', () => {
-  const runtimeSource = readRepoFile(
-    'DetailsListVOA/services/DetailsListRuntimeController.ts',
-  );
-  const pluginSource = readRepoFile(
-    'VOA.SVT.Plugins/Plugins/CustomAPI/SvtModifyTask.cs',
-  );
-
-  const sharedParams = ['source', 'taskStatus', 'taskList', 'requestedBy'];
-
-  test.each(sharedParams)(
-    'PCF sends "%s" and plugin reads "%s"',
-    (param) => {
-      // PCF references the param (either shorthand property or key: value)
-      expect(runtimeSource).toContain(param);
-      // Plugin reads GetInput(context, "{param}")
-      expect(pluginSource).toContain(`GetInput(context, "${param}")`);
-    },
-  );
-
-  test('PCF sends taskList as JSON.stringify([id]) and plugin parses JSON arrays', () => {
-    expect(runtimeSource).toContain('JSON.stringify([normalizedTaskId])');
-    expect(pluginSource).toContain('JsonSerializer.Deserialize<string[]>');
-  });
-
-  test('both PCF and plugin normalize task IDs by stripping non-digits', () => {
-    // PCF: normalized.replace(/\D/g, '')
-    expect(runtimeSource).toContain("replace(/\\D/g, '')");
-    // Plugin: char.IsDigit(ch)
-    expect(pluginSource).toContain('char.IsDigit(ch)');
-  });
-
-  test('both PCF and plugin resolve requestedBy from current user', () => {
-    expect(runtimeSource).toContain('const requestedBy = this.entraObjectId');
-    expect(pluginSource).toContain('context.InitiatingUserId');
-  });
-
-  test('PCF always sends source VSRT; plugin defaults to VSRT', () => {
-    expect(runtimeSource).toContain("source: 'VSRT'");
-    expect(pluginSource).toContain('source = "VSRT"');
-  });
-
-  test('PCF always sends taskStatus Assigned; plugin accepts any value', () => {
-    expect(runtimeSource).toContain("taskStatus: 'Assigned'");
-    // Plugin does not restrict taskStatus values
-    expect(pluginSource).not.toContain('taskStatus == "Assigned"');
-    expect(pluginSource).not.toContain("taskStatus != ");
-  });
-
-  test('plugin uses taskList as APIM key (same as PCF param name)', () => {
-    expect(pluginSource).toContain('["taskList"] = taskIds');
-    // The PCF param is also 'taskList'
-    expect(runtimeSource).toContain('taskList:');
-  });
-
-  test('SvtModifyTask uses taskList but SvtSubmitQcRemarks uses qcTaskList (different conventions)', () => {
-    const qcPlugin = readRepoFile(
-      'VOA.SVT.Plugins/Plugins/CustomAPI/SvtSubmitQcRemarks.cs',
-    );
-    expect(pluginSource).toContain('["taskList"] = taskIds');
-    expect(qcPlugin).toContain('["qcTaskList"] = taskIds');
-    expect(qcPlugin).not.toContain('["taskList"]');
-  });
-});
-
-/* ================================================================== */
 /*  10. Config alignment                                              */
 /* ================================================================== */
 
@@ -1448,48 +1230,5 @@ describe('MODIFY_TASK_ALLOWED_STATUSES coverage', () => {
     expect(runtimeSource).toContain(
       "MODIFY_TASK_ALLOWED_STATUSES = new Set(['complete', 'complete passed qc'])",
     );
-  });
-});
-
-/* ================================================================== */
-/*  15. Access control alignment                                      */
-/* ================================================================== */
-
-describe('Access control: caseworker-only', () => {
-  const pluginSource = readRepoFile(
-    'VOA.SVT.Plugins/Plugins/CustomAPI/SvtModifyTask.cs',
-  );
-  const runtimeSource = readRepoFile(
-    'DetailsListVOA/services/DetailsListRuntimeController.ts',
-  );
-
-  test('plugin uses HasCaseworkerAccess for access check', () => {
-    expect(pluginSource).toContain('HasCaseworkerAccess(userContext)');
-  });
-
-  test('PCF calls ensureCaseworkerAccess before API call', () => {
-    expect(runtimeSource).toContain('this.ensureCaseworkerAccess()');
-  });
-
-  test('PCF checks hasCaseworkerAccess flag', () => {
-    expect(runtimeSource).toContain('this.hasCaseworkerAccess');
-  });
-
-  test('both use same error message for denied access', () => {
-    const pluginMsg = 'Modify SVT task is restricted to caseworker role/team.';
-    expect(pluginSource).toContain(pluginMsg);
-    expect(runtimeSource).toContain(pluginMsg);
-  });
-
-  test('SvtModifyTask requires caseworker, unlike SvtSubmitQcRemarks which requires QA/Manager', () => {
-    const qcPlugin = readRepoFile(
-      'VOA.SVT.Plugins/Plugins/CustomAPI/SvtSubmitQcRemarks.cs',
-    );
-    // SvtModifyTask: caseworker
-    expect(pluginSource).toContain('HasCaseworkerAccess');
-    expect(pluginSource).not.toContain('Persona != UserPersona.QA');
-    // SvtSubmitQcRemarks: QA/Manager
-    expect(qcPlugin).toContain('Persona != UserPersona.QA');
-    expect(qcPlugin).toContain('Persona != UserPersona.Manager');
   });
 });

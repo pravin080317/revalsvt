@@ -256,6 +256,7 @@ export interface SaleDetailsViewModel {
   attributeGroups: AttributeChip[][];
   vscCodes: string[];
   sourceCodes: string[];
+  sourceCodeDescriptions: string[];
   initialPadConfirmationKey?: string;
   masterSale: MasterSaleViewModel;
   wlttRecords: WlttRecordViewModel[];

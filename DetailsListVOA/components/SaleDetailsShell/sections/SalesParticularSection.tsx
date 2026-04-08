@@ -124,8 +124,8 @@ const buildScoringLookup = (rows: SalesParticularScoringModelRow[]): Map<string,
 };
 
 const toScoreText = (score: number): string => {
-  const rounded = Math.round((score + Number.EPSILON) * 10000) / 10000;
-  return rounded.toString();
+  const rounded = Math.round((score + Number.EPSILON) * 100) / 100;
+  return rounded.toFixed(2);
 };
 
 const normalizeOverallScore = (score: number): number => Math.min(1, Math.max(0, score));
@@ -359,7 +359,7 @@ export const SalesParticularSection: React.FC<SalesParticularSectionProps> = ({
       <div className="voa-sales-particular-layout">
         <div className="voa-sales-particular-form">
           <div className={`voa-sales-particular-review${effectiveValidationErrors.reviewStatus ? ' voa-sales-particular-review--error' : ''}`}>
-            <label id={reviewStatusLabelId} className="voa-sales-particular-review__label">{renderRequiredLabel('Review Status', true)}</label>
+            <label id={reviewStatusLabelId} className="voa-sales-particular-review__label">{renderRequiredLabel('Review Status:', true)}</label>
             <ChoiceGroup
               ariaLabelledBy={reviewStatusLabelId}
               selectedKey={reviewStatusKey}

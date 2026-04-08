@@ -1,7 +1,12 @@
 import { type NumericFilter, type DateRangeFilter } from '../Filters';
 import { getColumnFilterConfigFor } from '../config/TableConfigs';
 
-export type ColumnFilterValue = string | string[] | NumericFilter | DateRangeFilter;
+export interface SummaryFlagFilter {
+  operator: 'contains' | 'notContains' | 'eq';
+  values: string[];
+}
+
+export type ColumnFilterValue = string | string[] | NumericFilter | DateRangeFilter | SummaryFlagFilter;
 
 const MONTH_MAP: Record<string, number> = {
   jan: 1,
@@ -94,6 +99,9 @@ const isActiveFilterValue = (value: ColumnFilterValue): boolean => {
   if ((value as DateRangeFilter).from !== undefined || (value as DateRangeFilter).to !== undefined) {
     return true;
   }
+  if (typeof value === 'object' && value !== null && 'values' in value && 'operator' in value) {
+    return Array.isArray(value.values) && value.values.length > 0;
+  }
   return false;
 };
 
@@ -139,17 +147,40 @@ export const filterItemsByColumnFilters = <T>(
               ? textVal.toLowerCase() === filterValue.trim().toLowerCase()
               : true;
           case 'multiSelect': {
-            const needles = Array.isArray(filterValue)
-              ? filterValue.map((v) => String(v).trim().toLowerCase())
-              : [];
-            if (needles.length === 0) return true;
+            const isSummaryFlagField = fieldName.toLowerCase() === 'summaryflags' || fieldName.toLowerCase() === 'summaryflag';
+            const isSummaryFlagObj = isSummaryFlagField
+              && typeof filterValue === 'object'
+              && filterValue !== null
+              && !Array.isArray(filterValue)
+              && 'values' in filterValue
+              && 'operator' in filterValue;
+            
+            const filterObj = isSummaryFlagObj ? filterValue : null;
+            const values = filterObj ? filterObj.values : Array.isArray(filterValue) ? filterValue : [];
+            const operator = filterObj ? filterObj.operator : 'contains';
+            
+            if (values.length === 0) return true;
+            
+            const needles = values.map((v) => String(v).trim().toLowerCase());
+            const rawText = textVal.toLowerCase();
+            
+            if (operator === 'eq') {
+              return needles.some((n) => rawText === n);
+            }
+            if (operator === 'notContains') {
+              return !needles.some((n) => rawText.includes(n));
+            }
             if (Array.isArray(raw)) {
               const hay = raw
                 .map((v) => (typeof v === 'string' || typeof v === 'number' || typeof v === 'boolean' ? String(v).trim().toLowerCase() : ''))
                 .filter((s) => s !== '');
-              return needles.some((n) => hay.includes(n));
+              return operator === 'contains' 
+                ? needles.some((n) => hay.includes(n))
+                : !needles.some((n) => hay.includes(n));
             }
-            return needles.some((n) => textVal.toLowerCase() === n);
+            return operator === 'contains'
+              ? needles.some((n) => rawText.includes(n))
+              : !needles.some((n) => rawText.includes(n));
           }
           case 'numeric': {
             const numFilter = filterValue as NumericFilter;

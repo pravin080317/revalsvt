@@ -46,7 +46,7 @@ describe('WRT-310 View Sales Record via Manager Assignment AC', () => {
   });
 
   test('AC4: sale details shell shows the hint only when runtime supplies a read-only reason and passes persona permissions', () => {
-    expect(shellSource).toContain('{readOnly && readOnlyReason && (');
+    expect(shellSource).toContain('{readOnly && readOnlyReason && !dismissedReadOnlyBanner && (');
     expect(shellSource).toContain('{readOnlyReason}');
     expect(shellSource).toContain('canCreateTask={canCreateManualTask}');
     expect(shellSource).toContain('canModifyTask={canModifyTask}');

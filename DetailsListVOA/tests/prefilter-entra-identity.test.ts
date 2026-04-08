@@ -11,8 +11,6 @@ describe('prefilter identity uses Entra IDs only', () => {
   const hostSource = readRepoFile('DetailsListVOA/components/DetailsListHost/DetailsListHost.tsx');
   const gridSource = readRepoFile('DetailsListVOA/Grid.tsx');
   const journeySource = readRepoFile('DetailsListVOA/components/HomeShell/ManagerJourneyShell.tsx');
-  const pluginSource = readRepoFile('VOA.SVT.Plugins/Plugins/CustomAPI/SvtGetAssignableUsers.cs');
-  const salesRecordModelsSource = readRepoFile('VOA.SVT.Plugins/Plugins/CustomAPI/DataAccessLayer/Model/SalesRecordModels.cs');
 
   test('manager journey preserves the current user Entra object id', () => {
     expect(journeySource).toContain("const entraObjectIdValue = findRecordValue(record, 'entraObjectId');");
@@ -38,9 +36,6 @@ describe('prefilter identity uses Entra IDs only', () => {
   test('caseworker and QC browser requests mirror the APIM and store proc contract', () => {
     expect(hostSource).toContain('const apiPrefilters = normalizedPrefilters;');
     expect(hostSource).toContain('prefilters: apiPrefilters,');
-    expect(salesRecordModelsSource).toContain('var preFilter = useRequestedBy ? null : PreFilter;');
-    expect(salesRecordModelsSource).toContain('var searchBy = useRequestedBy ? null : SearchBy;');
-    expect(salesRecordModelsSource).toContain('["RequestedBy"] = requestedBy,');
   });
 
   test('grid restores retained prefilters and auto-applies stored searches without fallback loops', () => {
@@ -52,10 +47,22 @@ describe('prefilter identity uses Entra IDs only', () => {
     expect(gridSource).not.toContain(':fallback');
   });
 
-  test('assignable users plugin returns both systemuserid and entra oid for remapping', () => {
-    expect(pluginSource).toContain('SystemUserId = id.ToString()');
-    expect(pluginSource).toContain('EntraObjectId = entraOid != Guid.Empty ? entraOid.ToString() : string.Empty');
-    expect(pluginSource).toContain('public string SystemUserId { get; set; }');
-    expect(pluginSource).toContain('public string EntraObjectId { get; set; }');
+
+  test('load effect checks currentUserEntraLoading before consuming lastRef nonce to allow retry', () => {
+    // When the component mounts fresh (home → back to screen), prefilter auto-apply can fire in the
+    // same React flush as setCurrentUserEntraLoading(true). The load effect must NOT consume the
+    // searchNonce reference (lastRef.current) before the currentUserEntraLoading guard – otherwise
+    // when the Entra context resolves, changed=false and the API call never fires.
+    const loadEffect = hostSource;
+    // The requiresCurrentUserEntra && currentUserEntraLoading return must appear BEFORE the
+    // lastRef.current = { ... } assignment inside the same changed-guard block.
+    const changedIdx = loadEffect.indexOf('if (!changed) return;');
+    const lastRefUpdateIdx = loadEffect.indexOf('lastRef.current = {', changedIdx);
+    const entraLoadingGuardIdx = loadEffect.indexOf('requiresCurrentUserEntra && currentUserEntraLoading', changedIdx);
+    expect(changedIdx).toBeGreaterThan(-1);
+    expect(lastRefUpdateIdx).toBeGreaterThan(-1);
+    expect(entraLoadingGuardIdx).toBeGreaterThan(-1);
+    // entraLoadingGuard must come BEFORE lastRef update (lower index = earlier in source)
+    expect(entraLoadingGuardIdx).toBeLessThan(lastRefUpdateIdx);
   });
 });

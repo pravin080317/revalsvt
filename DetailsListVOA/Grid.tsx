@@ -157,7 +157,7 @@ export interface GridProps {
   qcUserOptionsError?: string;
   errorMessage?: string;
   showResults?: boolean;
-  onLoadFilterOptions?: (field: string, query: string) => Promise<string[]>;
+  onLoadFilterOptions?: (field: string, query: string) => Promise<Array<string | { key: string; text: string }>>;
   onColumnFiltersChange?: (filters: Record<string, ColumnFilterValue | string | string[]>) => void;
   allowColumnReorder?: boolean;
   columnFilters?: Record<string, ColumnFilterValue>;
@@ -184,6 +184,7 @@ export interface GridProps {
   assignUsersInfo?: string;
   onAssignPanelToggle?: (isOpen: boolean) => boolean | void;
   currentUserId?: string;
+  onBulkCreateTask?: (saleIds: string[]) => Promise<void>;
 }
 
 const defaultTheme = createTheme({
@@ -811,6 +812,7 @@ export const Grid = React.memo((props: GridProps) => {
     onAssignPanelToggle,
     currentUserId,
     onMarkPassedQc,
+    onBulkCreateTask,
   } = props;
 
   const theme = useTheme(themeJSON);
@@ -865,8 +867,8 @@ export const Grid = React.memo((props: GridProps) => {
   const [menuFilterText, setMenuFilterText] = React.useState('');
   const [menuFilterError, setMenuFilterError] = React.useState<string | undefined>();
   const [menuFilterSearch, setMenuFilterSearch] = React.useState('');
-  const [menuSummaryOperator, setMenuSummaryOperator] = React.useState<'contains' | 'notContains'>('contains');
-  const [menuExtraOptions, setMenuExtraOptions] = React.useState<string[]>([]);
+  const [menuSummaryOperator, setMenuSummaryOperator] = React.useState<'contains' | 'notContains' | 'eq'>('contains');
+  const [menuExtraOptions, setMenuExtraOptions] = React.useState<Array<string | { key: string; text: string }>>([]); 
   const menuOptionsFieldRef = React.useRef<string>('');
   const liveFilterTimer = React.useRef<number | undefined>(undefined);
   const [filters, setFilters] = React.useState<GridFilterState>(searchFilters);
@@ -2088,7 +2090,7 @@ export const Grid = React.memo((props: GridProps) => {
           : undefined;
       const address = (fs.address ?? '').trim();
       const postcode = normalizeUkPostcode(fs.postcode ?? '');
-      const summary = (fs.summaryFlag ?? '').trim();
+      const summary = typeof fs.summaryFlag === 'string' ? fs.summaryFlag.trim() : '';
       const postcodeError = fs.searchBy === 'postcode' && postcode.length > 0
         ? postcode.length < 2
           ? 'Enter at least 2 characters'
@@ -2431,10 +2433,31 @@ export const Grid = React.memo((props: GridProps) => {
     (key: DateFilterKey, part: 'from' | 'to', value?: Date | null) => {
       setFilters((prev) => {
         const existing = prev[key] ?? {};
-        return { ...prev, [key]: { ...existing, [part]: toISODateString(value) } };
+        const existingFrom = parseISODate(existing.from);
+        const existingTo = parseISODate(existing.to);
+
+        if (part === 'from') {
+          const nextFrom = value ?? undefined;
+          const nextFromIso = toISODateString(nextFrom);
+
+          // Keep range valid: if start moves after current end, clear end.
+          const nextToIso = nextFrom && existingTo && existingTo < nextFrom
+            ? undefined
+            : existing.to;
+
+          return { ...prev, [key]: { ...existing, from: nextFromIso, to: nextToIso } };
+        }
+
+        const nextTo = value ?? undefined;
+        if (nextTo && existingFrom && nextTo < existingFrom) {
+          // Reject invalid end date (earlier than start).
+          return prev;
+        }
+
+        return { ...prev, [key]: { ...existing, to: toISODateString(nextTo) } };
       });
     },
-    [toISODateString],
+    [parseISODate, toISODateString],
   );
 
   const updateMultiSelect = React.useCallback(
@@ -2798,9 +2821,15 @@ export const Grid = React.memo((props: GridProps) => {
         if (lowerName === 'reviewflags' || lowerName === 'overallflag' || lowerName === 'summaryflags' || lowerName === 'taskstatus') {
           columnClassNames.push('voa-col-tag-dense');
         }
+        const baseColumnName = cfg.ColDisplayName ?? c.displayName;
+        const newTabCue = SCREEN_TEXT.common.links.opensInNewTab;
+        const hasNewTabCue = String(baseColumnName ?? '').toLowerCase().includes(String(newTabCue).toLowerCase());
+        const resolvedColumnName = lowerName === 'address' && !hasNewTabCue
+          ? `${String(baseColumnName ?? '')} ${newTabCue}`.trim()
+          : baseColumnName;
         const col: IGridColumn = {
           key: c.name,
-          name: cfg.ColDisplayName ?? c.displayName,
+          name: resolvedColumnName,
           fieldName: c.name,
           className: columnClassNames.length > 0 ? columnClassNames.join(' ') : undefined,
           headerClassName,
@@ -3560,6 +3589,7 @@ export const Grid = React.memo((props: GridProps) => {
       const dateVal = getFilterField<{ from?: string; to?: string }>(filters, cfg.stateKey);
       const from = parseISODate(dateVal?.from);
       const to = parseISODate(dateVal?.to);
+      const isDateRangeInvalidOrder = Boolean(from && to && to < from);
       const fromTitle = buildValueTooltip(from ? formatDisplayDate(from) : '', `${cfg.label} start`);
       const toTitle = buildValueTooltip(to ? formatDisplayDate(to) : '', `${cfg.label} end`);
       return (
@@ -3586,9 +3616,15 @@ export const Grid = React.memo((props: GridProps) => {
               formatDate={formatDisplayDate}
               allowTextInput
               parseDateFromString={parseDateInput}
+              minDate={from}
               title={toTitle}
               onSelectDate={(d) => updateDateRange(cfg.stateKey as DateFilterKey, 'to', d)}
             />
+            {isDateRangeInvalidOrder && (
+              <Text variant="small" styles={{ root: { marginTop: 6, color: '#d4351c' } }} role="alert">
+                End date must be on or after start date.
+              </Text>
+            )}
           </Stack.Item>
         </Stack>
       );
@@ -3914,10 +3950,14 @@ export const Grid = React.memo((props: GridProps) => {
       });
       if (cfg?.optionFields) {
         if (menuExtraOptions.length > 0) {
-          menuExtraOptions
-            .map((o) => String(o).trim())
-            .filter((o) => o !== '')
-            .forEach((o) => push(o, o));
+          menuExtraOptions.forEach((o) => {
+            if (o && typeof o === 'object') {
+              push(String(o.key ?? ''), o.text);
+            } else {
+              const s = String(o).trim();
+              if (s) push(s, s);
+            }
+          });
         } else {
           getDistinctOptions(cfg.optionFields).forEach((o) => push(String(o.key), o.text));
         }
@@ -3965,11 +4005,22 @@ export const Grid = React.memo((props: GridProps) => {
             initialValue = typeof existing === 'string' ? existing : '';
             break;
           case 'multiSelect':
-            initialValue = Array.isArray(existing)
-              ? existing
-              : isSummaryFlagField && typeof existing === 'string' && existing.trim().length > 0
-                ? [existing]
-                : [];
+            if (isSummaryFlagField && typeof existing === 'object' && existing !== null && !Array.isArray(existing) && 'values' in existing) {
+              // New object format with operator and values
+              const rawValues = (existing as { values?: unknown }).values;
+              const valuesArray = Array.isArray(rawValues) ? (rawValues as string[]) : [];
+              // 'eq' uses a single-select ComboBox that expects a string; other operators use the multi-select which expects an array
+              const existingOperator = (existing as { operator?: unknown }).operator;
+              initialValue = existingOperator === 'eq' ? (valuesArray[0] ?? '') : valuesArray;
+            } else if (Array.isArray(existing)) {
+              // Legacy array format
+              initialValue = existing;
+            } else if (isSummaryFlagField && typeof existing === 'string' && existing.trim().length > 0) {
+              // Legacy string format
+              initialValue = [existing];
+            } else {
+              initialValue = [];
+            }
             break;
           case 'numeric':
             initialValue = (existing as NumericFilter) ?? { mode: '>=' };
@@ -3992,7 +4043,15 @@ export const Grid = React.memo((props: GridProps) => {
       delete comboExpectedSelectionRef.current[menuFilterKey];
       setMenuFilterError(undefined);
       setMenuExtraOptions([]);
-      setMenuSummaryOperator('contains');
+      // Preserve existing operator for summary flags, default to 'contains' for new filters
+      let operator: 'contains' | 'notContains' | 'eq' = 'contains';
+      if (isSummaryFlagField && typeof existing === 'object' && existing !== null && !Array.isArray(existing) && 'operator' in existing) {
+        const opValue = (existing as { operator?: unknown }).operator;
+        if (opValue === 'notContains' || opValue === 'eq') {
+          operator = opValue;
+        }
+      }
+      setMenuSummaryOperator(operator);
       setMenuState({ target, column: gridCol });
       if (onLoadFilterOptions && !isSummaryFlagField && (cfg?.control === 'singleSelect' || cfg?.control === 'multiSelect')) {
         void onLoadFilterOptions(fieldName ?? '', '')
@@ -4094,16 +4153,29 @@ export const Grid = React.memo((props: GridProps) => {
           break;
         }
         case 'multiSelect': {
+          const isSummaryFlagField = normalizedField === 'summaryflags' || normalizedField === 'summaryflag';
           const vals = Array.isArray(menuFilterValue)
             ? menuFilterValue.map((v) => String(v).trim()).filter((v) => v !== '')
+            : isSummaryFlagField && menuSummaryOperator === 'eq' && typeof menuFilterValue === 'string'
+              ? [menuFilterValue.trim()].filter((v) => v !== '')
+            : typeof menuFilterValue === 'string' && menuFilterValue.trim() !== ''
+              ? [menuFilterValue.trim()]
             : [];
           const isSingleAll = cfg.selectAllValues
             && cfg.selectAllValues.length === 1
             && String(cfg.selectAllValues[0] ?? '').toUpperCase() === 'ALL';
           const allKey = isSingleAll ? String(cfg.selectAllValues?.[0] ?? 'ALL') : '';
           const normalizedVals = allKey && vals.includes(allKey) ? [allKey] : vals;
-          if (normalizedVals.length === 0) delete updated[fieldName];
-          else updated[fieldName] = normalizedVals;
+          if (normalizedVals.length === 0) {
+            delete updated[fieldName];
+          } else if (isSummaryFlagField) {
+            updated[fieldName] = {
+              operator: menuSummaryOperator,
+              values: normalizedVals,
+            };
+          } else {
+            updated[fieldName] = normalizedVals;
+          }
           break;
         }
         case 'numeric': {
@@ -4843,9 +4915,16 @@ export const Grid = React.memo((props: GridProps) => {
       }
       return false;
     })();
+    const hasDateRangeStart = !!(dateVal.from && dateVal.from.trim().length > 0);
+    const hasDateRangeEnd = !!(dateVal.to && dateVal.to.trim().length > 0);
+    const dateRangeStart = parseISODate(dateVal.from);
+    const dateRangeEnd = parseISODate(dateVal.to);
+    const isDateRangeInvalidOrder = cfg?.control === 'dateRange'
+      && Boolean(dateRangeStart && dateRangeEnd && dateRangeEnd < dateRangeStart);
+    const isDateRangeIncomplete = cfg?.control === 'dateRange'
+      && (!hasDateRangeStart || !hasDateRangeEnd);
     const isDateRangeMissingEndDate = cfg?.control === 'dateRange'
-      && !!(dateVal.from && dateVal.from.trim().length > 0)
-      && !(dateVal.to && dateVal.to.trim().length > 0);
+      && hasDateRangeStart && !hasDateRangeEnd;
 
     const isApplyDisabled = () => {
       if (!cfg) {
@@ -4870,7 +4949,9 @@ export const Grid = React.memo((props: GridProps) => {
         case 'multiSelect': {
           const vals = Array.isArray(menuFilterValue)
             ? menuFilterValue.map((v) => String(v).trim()).filter((v) => v !== '')
-            : [];
+            : isSummaryFlagField && menuSummaryOperator === 'eq' && typeof menuFilterValue === 'string'
+              ? [menuFilterValue.trim()].filter((v) => v !== '')
+              : [];
           return vals.length < minLen && !hasExistingFilter;
         }
         case 'numeric': {
@@ -4880,15 +4961,16 @@ export const Grid = React.memo((props: GridProps) => {
           return v.min === undefined && !hasExistingFilter;
         }
         case 'dateRange': {
-          const v = (menuFilterValue as DateRangeFilter) ?? {};
-          if (isDateRangeMissingEndDate) return true;
-          return !(v.from ?? v.to) && !hasExistingFilter;
+          if (isDateRangeIncomplete || isDateRangeInvalidOrder) return true;
+          return false;
         }
         default:
           return false;
       }
     };
     const applyDisabled = isApplyDisabled();
+
+    const isSummaryFlagMultiSelect = !isSummaryFlagField || menuSummaryOperator !== 'eq';
 
     const renderControl = () => {
       if (!cfg) {
@@ -5050,6 +5132,11 @@ export const Grid = React.memo((props: GridProps) => {
             return (
               (() => {
                 const selectAllValues = cfg.selectAllValues ?? [];
+                const vals = Array.isArray(menuFilterValue)
+                  ? menuFilterValue.map((v) => String(v).trim()).filter((v) => v !== '')
+                  : isSummaryFlagField && menuSummaryOperator === 'eq' && typeof menuFilterValue === 'string'
+                    ? [menuFilterValue.trim()].filter((v) => v !== '')
+                    : [];
                 const hasAll = hasAllOption(options);
                 const hasOther = hasOtherOption(options);
                 const isSingleAll = selectAllValues.length === 1
@@ -5134,13 +5221,16 @@ export const Grid = React.memo((props: GridProps) => {
                         options={[
                           { key: 'contains', text: 'Contains' },
                           { key: 'notContains', text: 'Does not contain' },
+                          { key: 'eq', text: 'Equal' },
                         ]}
                         selectedKey={menuSummaryOperator}
                         allowFreeform={false}
                         autoComplete="off"
                         onChange={(_, opt) => {
                           const key = String(opt?.key ?? 'contains');
-                          setMenuSummaryOperator(key === 'notContains' ? 'notContains' : 'contains');
+                          setMenuSummaryOperator(key === 'notContains' ? 'notContains' : key === 'eq' ? 'eq' : 'contains');
+                          setMenuFilterValue('');
+                          setMenuFilterSearch('');
                         }}
                         styles={{
                           root: { width: '100%', marginBottom: 8 },
@@ -5149,50 +5239,87 @@ export const Grid = React.memo((props: GridProps) => {
                         }}
                       />
                     )}
-                    <ComboBox
-                      label={`Filter ${menuState.column.name}`}
-                      placeholder={`Select ${menuState.column.name}`}
-                      aria-describedby={buildAriaDescribedBy(menuHint ? menuHintId : undefined)}
-                      options={exactMatchOptions}
-                      multiSelect
-                      allowFreeform={false}
-                      allowFreeInput
-                      autoComplete="off"
-                      text={normalizedSearch.trim() ? normalizedSearch : undefined}
-                      persistMenu
-                      selectedKey={selectedKeys}
-                      calloutProps={{ directionalHint: DirectionalHint.bottomLeftEdge, directionalHintFixed: true }}
-                      onChange={(_, opt) => handleMenuFilterMultiChange(opt)}
-                      onInputValueChange={(value) => {
-                        if (consumeComboIgnoreNextInput(menuFilterKey)) {
-                          return;
-                        }
-                        const next = normalizeMultiSelectSearchText(
-                          value,
-                          options,
-                          selectedKeys,
-                        );
-                        setMenuFilterSearch(next);
-                      }}
-                      onKeyDown={(event) => {
-                        if (!normalizedSearch.trim()) return;
-                        commitPrefilterMultiSelect(
-                          event,
-                          normalizedSearch,
-                          filteredMultiOptions,
-                          selectedKeys,
-                          (_, opt) => handleMenuFilterMultiChange(opt),
-                          menuFilterKey,
-                          (value) => setMenuFilterSearch(value),
-                        );
-                      }}
-                      onMenuDismissed={() => setMenuFilterSearch('')}
-                      styles={{
-                        root: { width: '100%' },
-                        callout: { minWidth: 240 },
-                        optionsContainer: { minWidth: 200 },
-                      }}
-                    />
+                    {isSummaryFlagMultiSelect ? (
+                      <ComboBox
+                        label={`Filter ${menuState.column.name}`}
+                        placeholder={`Select ${menuState.column.name}`}
+                        aria-describedby={buildAriaDescribedBy(menuHint ? menuHintId : undefined)}
+                        options={exactMatchOptions}
+                        multiSelect
+                        allowFreeform={false}
+                        allowFreeInput
+                        autoComplete="off"
+                        text={normalizedSearch.trim() ? normalizedSearch : undefined}
+                        persistMenu
+                        selectedKey={selectedKeys}
+                        calloutProps={{ directionalHint: DirectionalHint.bottomLeftEdge, directionalHintFixed: true }}
+                        onChange={(_, opt) => handleMenuFilterMultiChange(opt)}
+                        onInputValueChange={(value) => {
+                          if (consumeComboIgnoreNextInput(menuFilterKey)) {
+                            return;
+                          }
+                          const next = normalizeMultiSelectSearchText(
+                            value,
+                            options,
+                            selectedKeys,
+                          );
+                          setMenuFilterSearch(next);
+                        }}
+                        onKeyDown={(event) => {
+                          if (!normalizedSearch.trim()) return;
+                          commitPrefilterMultiSelect(
+                            event,
+                            normalizedSearch,
+                            filteredMultiOptions,
+                            selectedKeys,
+                            (_, opt) => handleMenuFilterMultiChange(opt),
+                            menuFilterKey,
+                            (value) => setMenuFilterSearch(value),
+                          );
+                        }}
+                        onMenuDismissed={() => setMenuFilterSearch('')}
+                        styles={{
+                          root: { width: '100%' },
+                          callout: { minWidth: 240 },
+                          optionsContainer: { minWidth: 200 },
+                        }}
+                      />
+                    ) : (
+                      <ComboBox
+                        label={`Filter ${menuState.column.name}`}
+                        placeholder={`Select ${menuState.column.name}`}
+                        aria-describedby={buildAriaDescribedBy(menuHint ? menuHintId : undefined)}
+                        options={exactMatchOptions}
+                        allowFreeform={false}
+                        allowFreeInput
+                        autoComplete="off"
+                        text={menuFilterSearch.trim() ? menuFilterSearch : undefined}
+                        selectedKey={typeof menuFilterValue === 'string' ? menuFilterValue : ''}
+                        calloutProps={{ directionalHint: DirectionalHint.bottomLeftEdge, directionalHintFixed: true }}
+                        onChange={(_, opt) => {
+                          setMenuFilterValue(typeof opt?.key === 'number' ? String(opt.key) : (opt?.key ?? ''));
+                          setComboIgnoreNextChange(menuFilterKey);
+                        }}
+                        onInputValueChange={(value) => {
+                          if (consumeComboIgnoreNextInput(menuFilterKey)) {
+                            return;
+                          }
+                          const next = normalizeSingleSelectSearchText(
+                            value,
+                            options,
+                          );
+                          setMenuFilterSearch(next);
+                          const resolvedKey = next ? resolveComboOptionKey(options, next) : undefined;
+                          setMenuFilterValue(resolvedKey ? String(resolvedKey) : '');
+                        }}
+                        onMenuDismissed={() => setMenuFilterSearch('')}
+                        styles={{
+                          root: { width: '100%' },
+                          callout: { minWidth: 240 },
+                          optionsContainer: { minWidth: 200 },
+                        }}
+                      />
+                    )}
                     {menuHint && (
                       <Text id={menuHintId} variant="small" styles={{ root: { marginTop: 4 } }}>
                         {menuHint}
@@ -5200,7 +5327,7 @@ export const Grid = React.memo((props: GridProps) => {
                     )}
                     {isSummaryFlagField && (
                       <Text variant="small" styles={{ root: { marginTop: 4 } }}>
-                        Select one or more summary flags from the current page.
+                        {menuSummaryOperator === 'eq' ? 'Select one summary flag.' : 'Select one or more summary flags from the current page.'}
                       </Text>
                     )}
                   </>
@@ -5263,7 +5390,10 @@ export const Grid = React.memo((props: GridProps) => {
               )}
             </Stack>
           );
-        case 'dateRange':
+        case 'dateRange': {
+          const menuFromDate = parseISODate(dateVal.from);
+          const menuToDate = parseISODate(dateVal.to);
+          const menuDateRangeInvalidOrder = Boolean(menuFromDate && menuToDate && menuToDate < menuFromDate);
           return (
             <Stack tokens={{ childrenGap: 8 }}>
               <DatePicker
@@ -5277,7 +5407,12 @@ export const Grid = React.memo((props: GridProps) => {
                 onSelectDate={(d) =>
                   setMenuFilterValue((prev) => {
                     const current = (prev as DateRangeFilter) ?? {};
-                    return { ...current, from: toISODateString(d) };
+                    const nextFrom = toISODateString(d);
+                    // If start is cleared, force end to clear so the range remains valid.
+                    if (!nextFrom) {
+                      return { ...current, from: undefined, to: undefined };
+                    }
+                    return { ...current, from: nextFrom };
                   })
                 }
               />
@@ -5285,19 +5420,31 @@ export const Grid = React.memo((props: GridProps) => {
                 label={`${menuState.column.name} end`}
                 firstDayOfWeek={DayOfWeek.Monday}
                 strings={dateStrings}
-                value={parseISODate(dateVal.to)}
+                value={menuToDate}
                 formatDate={formatDisplayDate}
                 allowTextInput
                 parseDateFromString={parseDateInput}
+                minDate={menuFromDate}
+                disabled={!hasDateRangeStart}
                 onSelectDate={(d) =>
                   setMenuFilterValue((prev) => {
                     const current = (prev as DateRangeFilter) ?? {};
+                    const fromDate = parseISODate(current.from);
+                    if (d && fromDate && d < fromDate) {
+                      return current;
+                    }
                     return { ...current, to: toISODateString(d) };
                   })
                 }
               />
+              {menuDateRangeInvalidOrder && (
+                <Text variant="small" styles={{ root: { color: '#d4351c' } }} role="alert">
+                  End date must be on or after start date.
+                </Text>
+              )}
             </Stack>
           );
+        }
         default:
           return null;
       }
@@ -5306,7 +5453,11 @@ export const Grid = React.memo((props: GridProps) => {
     const columnName = menuState.column.name ?? 'column';
     const applyUnavailableReason = isDateRangeMissingEndDate
       ? `Select an end date for ${columnName} to apply this filter.`
-      : 'Enter or select a filter value before applying.';
+      : isDateRangeIncomplete
+        ? `Select a start date for ${columnName} to enable filtering.`
+        : isDateRangeInvalidOrder
+          ? `End date for ${columnName} must be on or after the start date.`
+          : 'Enter or select a filter value before applying.';
     return [
       {
         key: 'sortAsc',
@@ -5326,9 +5477,11 @@ export const Grid = React.memo((props: GridProps) => {
         onRender: () => (
           <div style={{ padding: '0 12px 12px', width: 280 }}>
             {renderControl()}
-            {isDateRangeMissingEndDate && (
+            {isDateRangeIncomplete && (
               <Text variant="small" styles={{ root: { marginTop: 8 } }}>
-                {`Select an end date for ${columnName} to apply this filter.`}
+                {!hasDateRangeStart
+                  ? `Select a start date for ${columnName} to enable the end date.`
+                  : `Select an end date for ${columnName} to apply this filter.`}
               </Text>
             )}
             <Stack horizontal tokens={{ childrenGap: 8 }} style={{ marginTop: 8 }}>
@@ -5462,11 +5615,7 @@ export const Grid = React.memo((props: GridProps) => {
                       {contextSubtitle}
                     </Text>
                   )}
-                  {!compactViewport && (
-                    <Text variant="small" className="voa-command-bar__meta" role="status" aria-live="polite">
-                      {selectionSummaryText}
-                    </Text>
-                  )}
+
                 </div>
               </div>
               <div className="voa-command-bar__actions">
@@ -6198,21 +6347,17 @@ export const Grid = React.memo((props: GridProps) => {
               />
             </Stack>
           </Stack.Item>
-          {(salesSearchShowsRequiredFields || showSalesSearchUnavailableNote) && (
-            <Stack.Item className="voa-search-panel__meta">
-              {salesSearchShowsRequiredFields && (
-                <div className="voa-search-required-key" role="note">
-                  {salesSearchText.accessibility.requiredFieldKey}
-                </div>
-              )}
-              {showSalesSearchUnavailableNote && (
-                <div className="voa-search-unavailable-note" role="status" aria-live="polite">
-                  {searchUnavailableReason}
-                </div>
-              )}
-            </Stack.Item>
-          )}
         </Stack>
+        {salesSearchShowsRequiredFields && !showResults && (
+          <div className="voa-search-required-key" role="note">
+            {salesSearchText.accessibility.requiredFieldKey}
+          </div>
+        )}
+        {showSalesSearchUnavailableNote && (
+          <div className="voa-search-unavailable-note" role="status" aria-live="polite">
+            {searchUnavailableReason}
+          </div>
+        )}
         </>
         )}
           {showGridToolbar && (
@@ -6308,6 +6453,9 @@ export const Grid = React.memo((props: GridProps) => {
                     ariaLabel={commonText.aria.clearColumnFilters}
                   />
                 )}
+                <Text variant="small" className="voa-grid-toolbar__selection-summary" role="status" aria-live="polite">
+                  {selectionSummaryText}
+                </Text>
               </div>
               <div className="voa-grid-toolbar__right">
                 {showViewSalesRecordButton && (
@@ -6661,7 +6809,7 @@ export const Grid = React.memo((props: GridProps) => {
           dialogContentProps={{
             type: DialogType.normal,
             title: createTaskActionText,
-            subText: 'Preview only. The create task API call is not wired in this build.',
+            subText: `Create tasks for ${selectedCreateTaskSaleIds.length} selected sale${selectedCreateTaskSaleIds.length === 1 ? '' : 's'}.`,
           }}
           modalProps={{ isBlocking: false }}
           minWidth={560}
@@ -6693,15 +6841,12 @@ export const Grid = React.memo((props: GridProps) => {
                 And {createTaskRemainingCount} more selected sale ID{createTaskRemainingCount === 1 ? '' : 's'}.
               </Text>
             )}
-            <Text variant="small">
-              Submission stays disabled until the bulk task creation API is wired.
-            </Text>
           </Stack>
           <DialogFooter>
             <PrimaryButton
               text={createTaskActionText}
-              disabled
-              title="Create task API is not wired in this build."
+              onClick={() => { void onBulkCreateTask?.(selectedCreateTaskSaleIds); closeCreateTaskModal(); }}
+              disabled={!onBulkCreateTask}
             />
             <DefaultButton
               text={commonText.buttons.close}

@@ -33,9 +33,11 @@ export interface SalesVerificationTaskDetails {
   saleId?: string;
   taskId?: string;
   taskStatus?: string;
-  assignedTo?: string;
+  assignedTo?: string | null;
   /** Display name resolved from assignedTo GUID by the plugin */
   assignedToName?: string | null;
+  /** Whether the assigned user account is active */
+  assignedToIsActive?: boolean | null;
   /** GUID — Welsh Land Transaction Tax record id */
   wlttId?: string | null;
   /** GUID — Land Registry PPD record id */
@@ -46,10 +48,14 @@ export interface SalesVerificationTaskDetails {
   requestedBy?: string | null;
   /** Display name resolved from requestedBy GUID by the plugin */
   requestedByName?: string | null;
+  /** Whether the requesting user account is active */
+  requestedByIsActive?: boolean | null;
   /** GUID — quality control assigned user */
   qcAssignedTo?: string | null;
   /** Display name resolved from qcAssignedTo GUID by the plugin */
   qcAssignedToName?: string | null;
+  /** Whether the QC assigned user account is active */
+  qcAssignedToIsActive?: boolean | null;
 }
 
 /* ------------------------------------------------------------------ */
@@ -233,8 +239,10 @@ export interface SalesVerificationDetails {
 export interface QualityControlOutcome {
   qcOutcome?: string | null;
   qcRemark?: string | null;
-  /** GUID or display name of the QC reviewer */
+  /** GUID of the QC reviewer */
   qcReviewedBy?: string | null;
   /** Display name resolved from qcReviewedBy GUID by the plugin */
   qcReviewedByName?: string | null;
+  /** Whether the QC reviewer user account is active */
+  qcReviewedByIsActive?: boolean | null;
 }

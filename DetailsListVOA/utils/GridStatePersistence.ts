@@ -2,7 +2,12 @@ import { type DateRangeFilter, type NumericFilter } from '../Filters';
 import { getColumnFilterConfigFor, isLookupFieldFor } from '../config/TableConfigs';
 import { type ClientSortState } from './GridDataParams';
 
-export type ColumnFilterValue = string | string[] | NumericFilter | DateRangeFilter;
+interface SummaryFlagFilterValue {
+  operator: 'contains' | 'notContains' | 'eq';
+  values: string[];
+}
+
+export type ColumnFilterValue = string | string[] | NumericFilter | DateRangeFilter | SummaryFlagFilterValue;
 
 type PersistedColumnFilters = Record<string, string[]>;
 
@@ -68,6 +73,21 @@ const restoreDateRangeFilter = (raw: string): DateRangeFilter | undefined => {
   return from || to ? { from, to } : undefined;
 };
 
+const isSummaryFlagKey = (normalizedKey: string): boolean =>
+  normalizedKey === 'summaryflag' || normalizedKey === 'summaryflags';
+
+const restoreSummaryFlagFilter = (raw: string): SummaryFlagFilterValue | undefined => {
+  const parsed = parseStoredJson(raw);
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return undefined;
+
+  const candidate = parsed as { operator?: unknown; values?: unknown };
+  const operator = candidate.operator;
+  const values = normalizeStoredStrings(candidate.values);
+  if (operator !== 'contains' && operator !== 'notContains' && operator !== 'eq') return undefined;
+  if (values.length === 0) return undefined;
+  return { operator, values };
+};
+
 export const serializeColumnFiltersForStorage = (
   filters: Record<string, ColumnFilterValue>,
 ): PersistedColumnFilters => {
@@ -112,6 +132,13 @@ export const deserializeColumnFiltersFromStorage = (
     const cfg = getColumnFilterConfigFor(tableKey, normalizedKey);
 
     if (cfg?.control === 'multiSelect') {
+      if (isSummaryFlagKey(normalizedKey) && storedValues.length === 1) {
+        const restoredSummaryFlag = restoreSummaryFlagFilter(storedValues[0]);
+        if (restoredSummaryFlag) {
+          out[normalizedKey] = restoredSummaryFlag;
+          return;
+        }
+      }
       if (storedValues.length > 0) out[normalizedKey] = storedValues;
       return;
     }

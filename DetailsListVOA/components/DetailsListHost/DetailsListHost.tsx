@@ -58,6 +58,8 @@ export interface DetailsListHostProps {
   refreshNonce?: number;
   // Azure Entra Object ID resolved from the user context plugin (preferred over systemuserid).
   entraObjectId?: string;
+  // Bulk create task handler - passed down to Grid.
+  onBulkCreateTask?: (saleIds: string[]) => Promise<void>;
 }
 
 type ColumnFilterValue = string | string[] | NumericFilter | DateRangeFilter;
@@ -322,6 +324,7 @@ export const DetailsListHost: React.FC<DetailsListHostProps> = ({
   onUserDisplayNameMapChange,
   refreshNonce,
   entraObjectId,
+  onBulkCreateTask,
 }) => {
   // Parse basic params
   const pageSize = (context.parameters as unknown as Record<string, { raw?: number }>).pageSize?.raw ?? 500;
@@ -475,6 +478,8 @@ export const DetailsListHost: React.FC<DetailsListHostProps> = ({
   }, [refreshNonce]);
 
   const [apiFilterOptions, setApiFilterOptions] = React.useState<FilterOptionsMap>({});
+  const [apiUserLookup, setApiUserLookup] = React.useState<Record<string, string>>({});
+  const [apiUserFilterOptions, setApiUserFilterOptions] = React.useState<Record<string, Array<{ key: string; text: string }>>>({});
   const [billingAuthorityOptions, setBillingAuthorityOptions] = React.useState<string[]>([]);
   const [billingAuthorityOptionsLoading, setBillingAuthorityOptionsLoading] = React.useState(false);
   const [billingAuthorityOptionsError, setBillingAuthorityOptionsError] = React.useState<string | undefined>(undefined);
@@ -505,6 +510,7 @@ export const DetailsListHost: React.FC<DetailsListHostProps> = ({
   const assignableUsersCacheContextsRef = React.useRef<Set<string>>(new Set());
   const metadataLoadKeyRef = React.useRef<string>('');
   const prefilterSkipLogKeyRef = React.useRef<string>('');
+  const inFlightGridLoadKeyRef = React.useRef<string>('');
   const handleAssignPanelToggle = React.useCallback((isOpen: boolean): boolean => {
     if (!isOpen) {
       setAssignPanelOpen(false);
@@ -542,6 +548,8 @@ export const DetailsListHost: React.FC<DetailsListHostProps> = ({
     setTotalCount((prev) => (prev !== 0 ? 0 : prev));
     setServerDriven((prev) => (prev ? false : prev));
     setApiFilterOptions((prev) => (Object.keys(prev).length > 0 ? {} : prev));
+    setApiUserLookup((prev) => (Object.keys(prev).length > 0 ? {} : prev));
+    setApiUserFilterOptions((prev) => (Object.keys(prev).length > 0 ? {} : prev));
     setLoadErrorMessage((prev) => (prev !== undefined ? undefined : prev));
   }, []);
   const allowColumnReorder = (context.parameters as unknown as Record<string, { raw?: string | boolean }>).allowColumnReorder?.raw === true ||
@@ -559,6 +567,23 @@ export const DetailsListHost: React.FC<DetailsListHostProps> = ({
   }, [canvasScreenName, screenKind]);
   const userMappingScreenName = QC_ASSIGNMENT_SCREEN_NAME;
   const requiresCurrentUserEntra = isCaseworkerView || isQcView;
+
+  // For prefilter screens (caseworkerView, qcView, etc.), when refreshNonce bumps (returning from details),
+  // automatically re-apply the prefilter state so the main load effect proceeds with the API call.
+  const lastRefreshNonceRef = React.useRef<number | undefined>(refreshNonce);
+  React.useEffect(() => {
+    if (!isPrefilterScreen || prefilterApplied || !prefilters) return;
+    if (refreshNonce !== undefined && refreshNonce !== lastRefreshNonceRef.current) {
+      lastRefreshNonceRef.current = refreshNonce;
+      console.debug('[Prefilter] auto-apply on refresh', {
+        screen: screenKind,
+        refreshNonce,
+        prefilters,
+      });
+      setPrefilterApplied(true);
+    }
+  }, [isPrefilterScreen, prefilterApplied, prefilters, refreshNonce, screenKind]);
+
   const [resolvedCurrentUserEntraId, setResolvedCurrentUserEntraId] = React.useState('');
   const [currentUserEntraLoading, setCurrentUserEntraLoading] = React.useState(false);
   const currentUserId = React.useMemo(
@@ -648,6 +673,8 @@ export const DetailsListHost: React.FC<DetailsListHostProps> = ({
       setTotalCount(0);
       setServerDriven(false);
       setApiFilterOptions({});
+      setApiUserLookup({});
+      setApiUserFilterOptions({});
       setLoadErrorMessage(undefined);
       return;
     }
@@ -925,6 +952,11 @@ export const DetailsListHost: React.FC<DetailsListHostProps> = ({
 
   const userDisplayNameMap = React.useMemo(() => {
     const map: Record<string, string> = {};
+    // Seed with API response user lookup as a gap-filler (lower priority than plugin cache).
+    Object.entries(apiUserLookup).forEach(([id, name]) => {
+      if (id && name) map[id] = name;
+    });
+    // Plugin cache takes priority — overwrite any API-sourced names.
     assignableUsersCache.forEach((user) => {
       const name = getUserDisplayName(user);
       if (!name) return;
@@ -945,7 +977,7 @@ export const DetailsListHost: React.FC<DetailsListHostProps> = ({
       }
     });
     return map;
-  }, [assignableUsersCache, getUserDisplayName]);
+  }, [apiUserLookup, assignableUsersCache, getUserDisplayName]);
   const hasUserDisplayNameMap = React.useMemo(() => Object.keys(userDisplayNameMap).length > 0, [userDisplayNameMap]);
   React.useEffect(() => {
     if (onUserDisplayNameMapChange && hasUserDisplayNameMap) {
@@ -976,6 +1008,40 @@ export const DetailsListHost: React.FC<DetailsListHostProps> = ({
     return mapped;
   }, [apiFilterOptions, hasUserDisplayNameMap, mapUserIdToDisplay]);
 
+  // Rich filter options: for user fields, emit {key: GUID, text: displayName} so the GUID
+  // is stored in column filter state and sent to the API, while only the name is shown in the UI.
+  const displayFilterOptionsRich = React.useMemo((): Record<string, Array<string | { key: string; text: string }>> => {
+    const base: Record<string, Array<string | { key: string; text: string }>> = { ...displayFilterOptions };
+    (['assignedto', 'qcassignedto'] as const).forEach((field) => {
+      // Prefer API-supplied objects (already have correct GUIDs as keys).
+      if (apiUserFilterOptions[field] && apiUserFilterOptions[field].length > 0) {
+        // If plugin cache is loaded, refresh display names from it for any matching GUIDs.
+        if (hasUserDisplayNameMap) {
+          base[field] = apiUserFilterOptions[field].map((o) => ({
+            key: o.key,
+            text: userDisplayNameMap[o.key] ?? o.text,
+          }));
+        } else {
+          base[field] = apiUserFilterOptions[field];
+        }
+        return;
+      }
+      // Fallback: rebuild {key, text} from raw GUIDs in apiFilterOptions via the display map.
+      const rawValues = apiFilterOptions[field];
+      if (!rawValues || rawValues.length === 0) return;
+      const seen = new Set<string>();
+      const items: Array<{ key: string; text: string }> = [];
+      rawValues.forEach((guid) => {
+        const normalizedGuid = guid.trim().toLowerCase();
+        if (!normalizedGuid || seen.has(normalizedGuid)) return;
+        seen.add(normalizedGuid);
+        items.push({ key: normalizedGuid, text: userDisplayNameMap[normalizedGuid] ?? guid });
+      });
+      if (items.length > 0) base[field] = items;
+    });
+    return base;
+  }, [apiFilterOptions, apiUserFilterOptions, displayFilterOptions, hasUserDisplayNameMap, userDisplayNameMap]);
+
   // Persist header filters per table for consistent UX across reloads
   const storageKey = React.useMemo(() => `voa-grid-filters:${tableKey}:${contextScopeKey}`, [contextScopeKey, tableKey]);
   const storageKeySort = React.useMemo(() => `voa-grid-sort:${tableKey}:${contextScopeKey}`, [contextScopeKey, tableKey]);
@@ -995,6 +1061,8 @@ export const DetailsListHost: React.FC<DetailsListHostProps> = ({
   const storageKeyNC = React.useMemo(() => storageKey.replace(':', ''), [storageKey]);
   const storageKeySortNC = React.useMemo(() => storageKeySort.replace(':', ''), [storageKeySort]);
   const storageKeyPageNC = React.useMemo(() => storageKeyPage.replace(':', ''), [storageKeyPage]);
+  const [restoredGridStateKey, setRestoredGridStateKey] = React.useState('');
+  const [restoredSalesSearchKey, setRestoredSalesSearchKey] = React.useState('');
 
   React.useEffect(() => {
     if (isManagerAssign || isQcAssign) {
@@ -1024,6 +1092,8 @@ export const DetailsListHost: React.FC<DetailsListHostProps> = ({
       }
     } catch {
       // ignore restore failures
+    } finally {
+      setRestoredSalesSearchKey(salesSearchStorageKey);
     }
   }, [isSalesSearch, salesSearchStorageKey]);
   // Hydrate from localStorage on table change (URL persistence disabled by policy)
@@ -1091,6 +1161,7 @@ export const DetailsListHost: React.FC<DetailsListHostProps> = ({
     }
     // Mark hydration complete so persistence can begin on subsequent changes
     setHydrated(true);
+    setRestoredGridStateKey(screenInstanceKey);
   }, [
     mapColumnFiltersForApi,
     onColumnFiltersApply,
@@ -1203,15 +1274,30 @@ export const DetailsListHost: React.FC<DetailsListHostProps> = ({
         r.getValue = ((columnName: string) => r[columnName] ?? '') as ComponentFramework.PropertyHelper.DataSetApi.EntityRecord['getValue'];
         r.getFormattedValue = ((columnName: string) => toText(r[columnName])) as ComponentFramework.PropertyHelper.DataSetApi.EntityRecord['getFormattedValue'];
         Object.keys(obj).forEach((k) => (r[k.toLowerCase()] = obj[k]));
-        const assignedDisplay = mapUserIdsToNames((r as Record<string, unknown>).assignedto ?? (r as Record<string, unknown>).assignedTo);
-        if (assignedDisplay) {
-          r.assignedto = assignedDisplay;
-          (r as Record<string, unknown>).assignedTo = assignedDisplay;
+
+        // Prefer DB-resolved names from the API response; fall back to plugin cache lookup.
+        const assignedToNameFromResponse = toText((r as Record<string, unknown>).assignedtoname ?? (r as Record<string, unknown>).assignedToName);
+        if (assignedToNameFromResponse) {
+          r.assignedto = [assignedToNameFromResponse];
+          (r as Record<string, unknown>).assignedTo = [assignedToNameFromResponse];
+        } else {
+          const assignedDisplay = mapUserIdsToNames((r as Record<string, unknown>).assignedto ?? (r as Record<string, unknown>).assignedTo);
+          if (assignedDisplay) {
+            r.assignedto = assignedDisplay;
+            (r as Record<string, unknown>).assignedTo = assignedDisplay;
+          }
         }
-        const qcAssignedDisplay = mapUserIdsToNames((r as Record<string, unknown>).qcassignedto ?? (r as Record<string, unknown>).qcAssignedTo);
-        if (qcAssignedDisplay) {
-          r.qcassignedto = qcAssignedDisplay;
-          (r as Record<string, unknown>).qcAssignedTo = qcAssignedDisplay;
+
+        const qcAssignedToNameFromResponse = toText((r as Record<string, unknown>).qcassignedtoname ?? (r as Record<string, unknown>).qcAssignedToName);
+        if (qcAssignedToNameFromResponse) {
+          r.qcassignedto = [qcAssignedToNameFromResponse];
+          (r as Record<string, unknown>).qcAssignedTo = [qcAssignedToNameFromResponse];
+        } else {
+          const qcAssignedDisplay = mapUserIdsToNames((r as Record<string, unknown>).qcassignedto ?? (r as Record<string, unknown>).qcAssignedTo);
+          if (qcAssignedDisplay) {
+            r.qcassignedto = qcAssignedDisplay;
+            (r as Record<string, unknown>).qcAssignedTo = qcAssignedDisplay;
+          }
         }
         // some handy aliases
         r.saleid = r.saleid ?? (r as Record<string, unknown> & { saleId?: unknown }).saleId;
@@ -1357,6 +1443,8 @@ export const DetailsListHost: React.FC<DetailsListHostProps> = ({
       setTotalCount(0);
       setServerDriven(false);
       setApiFilterOptions({});
+      setApiUserLookup({});
+      setApiUserFilterOptions({});
       setLoadErrorMessage(undefined);
       selection.setAllSelected(false);
       setSelectedCount(0);
@@ -1374,6 +1462,16 @@ export const DetailsListHost: React.FC<DetailsListHostProps> = ({
 
     if (externalItems !== undefined) {
       // External data path; do not load from APIM
+      return;
+    }
+    if (restoredGridStateKey !== screenInstanceKey) {
+      prefilterSkipLogKeyRef.current = '';
+      setApimLoading(false);
+      return;
+    }
+    if (isSalesSearch && restoredSalesSearchKey !== salesSearchStorageKey) {
+      prefilterSkipLogKeyRef.current = '';
+      setApimLoading(false);
       return;
     }
     if (isSalesSearch && !salesSearchApplied) {
@@ -1415,6 +1513,14 @@ export const DetailsListHost: React.FC<DetailsListHostProps> = ({
       || lastRef.current.contextScope !== contextScopeKey
       || (!hasLoadedApim && !apimLoading);
     if (!changed) return;
+    // Guard first: if the Entra user context is still loading, show the loading state but do NOT
+    // consume lastRef (don't update the nonce). When the user context resolves the nonce will
+    // still be "dirty" and the effect will re-run with changed=true to make the actual API call.
+    if (requiresCurrentUserEntra && currentUserEntraLoading) {
+      setLoadErrorMessage(undefined);
+      setApimLoading(true);
+      return;
+    }
     lastRef.current = {
       table: tableKey,
       trigger,
@@ -1425,11 +1531,6 @@ export const DetailsListHost: React.FC<DetailsListHostProps> = ({
       columnFilters: nextColumnFilters,
       contextScope: contextScopeKey,
     };
-    if (requiresCurrentUserEntra && currentUserEntraLoading) {
-      setLoadErrorMessage(undefined);
-      setApimLoading(true);
-      return;
-    }
     if (requiresCurrentUserEntra && !currentUserId) {
       resetHostResultsState();
       setLoadErrorMessage('Unable to resolve current user Entra ID.');
@@ -1442,43 +1543,74 @@ export const DetailsListHost: React.FC<DetailsListHostProps> = ({
       // Keep status/date prefilters even when RequestedBy is set.
       // Plugin-side query builder already suppresses searchBy/preFilter for RequestedBy flows.
       const apiPrefilters = normalizedPrefilters;
+      const sanitizedSearchFilters = sanitizeFilters(mapSearchFiltersForApi(searchFilters));
+      const loadRequestKey = [
+        tableKey,
+        sourceCode,
+        String(currentPage),
+        String(pageSize),
+        nextSortKey,
+        String(searchNonce),
+        columnFilterQuery,
+        requestedBy ?? '',
+        contextScopeKey,
+        country ?? '',
+        listYear ?? '',
+        JSON.stringify(sanitizedSearchFilters),
+        JSON.stringify(apiPrefilters ?? null),
+      ].join('|');
+      if (inFlightGridLoadKeyRef.current === loadRequestKey) {
+        return;
+      }
+      inFlightGridLoadKeyRef.current = loadRequestKey;
     setLoadErrorMessage(undefined);
     setApimLoading(true);
     void (async () => {
-      console.debug('[Prefilter] host load start', {
-        screen: screenKind,
-        prefilterApplied,
-        prefilters: apiPrefilters,
-        requestedBy,
-        searchNonce,
-      });
-      const res = await loadGridData(context, {
-        tableKey,
-        filters: sanitizeFilters(mapSearchFiltersForApi(searchFilters)),
-        source: sourceCode,
-        requestedBy,
-        currentPage,
-        pageSize,
-        clientSort: serverClientSort,
-        prefilters: apiPrefilters,
-        searchQuery: columnFilterQuery,
-        country: includeCountryListYearApiParams ? country : undefined,
-        listYear: includeCountryListYearApiParams ? listYear : undefined,
-      });
-      setApimItems(res.items);
-      setTotalCount(res.totalCount);
-      setServerDriven(res.serverDriven);
-      setApimLoading(false);
-      setHasLoadedApim(true);
-      setLoadErrorMessage(res.errorMessage);
-      if (assignPendingRefresh && assignRefreshResolve.current) {
-        assignRefreshResolve.current(true);
-        assignRefreshResolve.current = null;
-        setAssignPendingRefresh(false);
+      try {
+        console.debug('[Prefilter] host load start', {
+          screen: screenKind,
+          prefilterApplied,
+          prefilters: apiPrefilters,
+          requestedBy,
+          searchNonce,
+        });
+        const res = await loadGridData(context, {
+          tableKey,
+          filters: sanitizedSearchFilters,
+          source: sourceCode,
+          requestedBy,
+          currentPage,
+          pageSize,
+          clientSort: serverClientSort,
+          prefilters: apiPrefilters,
+          searchQuery: columnFilterQuery,
+          country: includeCountryListYearApiParams ? country : undefined,
+          listYear: includeCountryListYearApiParams ? listYear : undefined,
+        });
+        if (inFlightGridLoadKeyRef.current !== loadRequestKey) {
+          return;
+        }
+        setApimItems(res.items);
+        setTotalCount(res.totalCount);
+        setServerDriven(res.serverDriven);
+        setApimLoading(false);
+        setHasLoadedApim(true);
+        setLoadErrorMessage(res.errorMessage);
+        if (assignPendingRefresh && assignRefreshResolve.current) {
+          assignRefreshResolve.current(true);
+          assignRefreshResolve.current = null;
+          setAssignPendingRefresh(false);
+        }
+        setApiFilterOptions(normalizeFilterOptions(tableKey, res.filters));
+        setApiUserLookup(res.userLookup ?? {});
+        setApiUserFilterOptions(res.userFilterOptions ?? {});
+      } finally {
+        if (inFlightGridLoadKeyRef.current === loadRequestKey) {
+          inFlightGridLoadKeyRef.current = '';
+        }
       }
-      setApiFilterOptions(normalizeFilterOptions(tableKey, res.filters));
     })();
-  }, [context, tableKey, sourceCode, searchFilters, currentPage, pageSize, clientSort, userSortActive, clientSideEligible, searchNonce, hasLoadedApim, apimLoading, currentUserEntraLoading, prefilters, prefilterApplied, isCaseworkerView, currentUserId, isPrefilterScreen, isQcView, isSalesSearch, normalizePrefilterStateUserIds, requiresCurrentUserEntra, salesSearchApplied, prefilterStorageKey, screenKind, columnFilterQuery, mapSearchFiltersForApi, resetHostResultsState, country, listYear, contextScopeKey]);
+  }, [context, tableKey, sourceCode, searchFilters, currentPage, pageSize, clientSort, userSortActive, clientSideEligible, searchNonce, hasLoadedApim, apimLoading, currentUserEntraLoading, prefilters, prefilterApplied, isCaseworkerView, currentUserId, isPrefilterScreen, isQcView, isSalesSearch, normalizePrefilterStateUserIds, requiresCurrentUserEntra, salesSearchApplied, prefilterStorageKey, screenKind, columnFilterQuery, mapSearchFiltersForApi, resetHostResultsState, country, listYear, contextScopeKey, restoredGridStateKey, screenInstanceKey, restoredSalesSearchKey, salesSearchStorageKey]);
 
   React.useEffect(() => {
     if (!assignPanelOpen || !assignmentContextKey) {
@@ -1993,7 +2125,6 @@ export const DetailsListHost: React.FC<DetailsListHostProps> = ({
         const metadataParams: Record<string, string> = {};
         if (includeCountryListYearApiParams) {
           if (country) metadataParams.country = country;
-          if (listYear) metadataParams.listYear = listYear;
         }
         const rawPayload = await executeUnboundCustomApi<unknown>(
           context,
@@ -2196,10 +2327,6 @@ export const DetailsListHost: React.FC<DetailsListHostProps> = ({
       if (assignmentTaskStatus) {
         assignmentParams.taskStatus = assignmentTaskStatus;
       }
-      if (includeCountryListYearApiParams) {
-        if (country) assignmentParams.country = country;
-        if (listYear) assignmentParams.listYear = listYear;
-      }
       const response = await executeUnboundCustomApi<Record<string, unknown>>(
         context,
         apiName,
@@ -2300,10 +2427,6 @@ export const DetailsListHost: React.FC<DetailsListHostProps> = ({
         qcRemark: markPassedQcText.qcRemark,
         qcReviewedBy: reviewedBy,
       };
-      if (includeCountryListYearApiParams) {
-        if (country) qcParams.country = country;
-        if (listYear) qcParams.listYear = listYear;
-      }
       await executeUnboundCustomApi<Record<string, unknown>>(
         context,
         apiName,
@@ -2430,6 +2553,8 @@ export const DetailsListHost: React.FC<DetailsListHostProps> = ({
           setTotalCount(0);
           setServerDriven(false);
           setApiFilterOptions({});
+          setApiUserLookup({});
+          setApiUserFilterOptions({});
           setLoadErrorMessage(undefined);
           return;
         }
@@ -2465,12 +2590,17 @@ export const DetailsListHost: React.FC<DetailsListHostProps> = ({
     currentUserId,
     onAssignTasks: assignTasksToUser,
     onMarkPassedQc: isQcView ? markPassedQcTasks : undefined,
+    onBulkCreateTask,
     onLoadFilterOptions: (field, query) => {
       const key = normalizeFilterKey(String(field ?? ''));
-      const options = displayFilterOptions[key] ?? [];
+      const options = displayFilterOptionsRich[key] ?? [];
       if (!query || query.trim().length === 0) return Promise.resolve(options);
       const q = query.trim().toLowerCase();
-      return Promise.resolve(options.filter((opt) => opt.toLowerCase().includes(q)));
+      return Promise.resolve(
+        options.filter((opt) =>
+          typeof opt === 'string' ? opt.toLowerCase().includes(q) : opt.text.toLowerCase().includes(q),
+        ),
+      );
     },
     onColumnFiltersChange: (f) => {
       const normalizedBase: Record<string, ColumnFilterValue> = {};
@@ -2534,6 +2664,8 @@ export const DetailsListHost: React.FC<DetailsListHostProps> = ({
       setServerDriven(false);
       setHasLoadedApim(false);
       setApiFilterOptions({});
+      setApiUserLookup({});
+      setApiUserFilterOptions({});
       try {
         localStorage.removeItem(storageKey);
         localStorage.removeItem(storageKeyNC);

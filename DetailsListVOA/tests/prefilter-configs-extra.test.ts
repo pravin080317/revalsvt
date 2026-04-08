@@ -127,7 +127,7 @@ describe('prefilter configs extra', () => {
       caseworkers: ['__all__'],
       workThat: 'caseworkerCompleted',
     });
-    expect(params.searchBy).toBe('Tk');
+    expect(params.searchBy).toBe('TK');
     expect(params.preFilter).toBeUndefined();
     expect(params.taskStatus).toBe('Complete');
   });

@@ -2,7 +2,12 @@ import { type NumericFilter, type DateRangeFilter } from '../Filters';
 import { getColumnFilterConfigFor, type TableKey } from '../config/TableConfigs';
 import { COLUMN_FILTER_CONDITION_SEPARATOR, COLUMN_FILTER_VALUE_SEPARATOR } from '../config/PrefilterConfigs';
 
-export type ColumnFilterValue = string | string[] | NumericFilter | DateRangeFilter;
+interface SummaryFlagFilterValue {
+  operator: 'contains' | 'notContains' | 'eq';
+  values: string[];
+}
+
+export type ColumnFilterValue = string | string[] | NumericFilter | DateRangeFilter | SummaryFlagFilterValue;
 
 const COLUMN_FILTER_FIELD_MAP: Record<string, string> = {
   saleid: 'saleId',
@@ -41,6 +46,9 @@ const isNumericFilterValue = (val: ColumnFilterValue): val is NumericFilter =>
 
 const isDateRangeFilterValue = (val: ColumnFilterValue): val is DateRangeFilter =>
   !!val && typeof val === 'object' && ('from' in (val as DateRangeFilter) || 'to' in (val as DateRangeFilter));
+
+const isSummaryFlagFilterValue = (val: ColumnFilterValue): val is SummaryFlagFilterValue =>
+  !!val && typeof val === 'object' && 'operator' in val && 'values' in val;
 
 const formatApiDate = (value?: string): string | undefined => {
   if (!value) return undefined;
@@ -91,6 +99,23 @@ export const buildColumnFilterTokens = (
     if (values.length === 0) return undefined;
     const operator = 'in';
     return [apiField, operator, values.join(COLUMN_FILTER_VALUE_SEPARATOR)];
+  }
+
+  if ((normalizedField === 'summaryflag' || normalizedField === 'summaryflags') && isSummaryFlagFilterValue(value)) {
+    const values = value.values
+      .map((entry) => String(entry ?? '').trim())
+      .filter((entry) => entry !== '');
+    if (values.length === 0) return undefined;
+    const operator = value.operator === 'notContains'
+      ? 'NTL'
+      : value.operator === 'eq'
+        ? 'EQ'
+        : 'like';
+    const serializedValue = value.operator === 'eq'
+      ? `${values[0]};`
+      : values.join(';');
+    if (!serializedValue) return undefined;
+    return [apiField, operator, serializedValue];
   }
 
   if (cfg.control === 'numeric' && isNumericFilterValue(value)) {

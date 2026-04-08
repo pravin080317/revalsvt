@@ -29,7 +29,7 @@ This document is the single source of truth for `DetailsListVOA` manifest parame
 | `auditLogsApiType` | SingleLine.Text | No | `function` | Audit logs API operation type. |
 | `manualTaskCreationApiName` | SingleLine.Text | No | `voa_SvtManualTaskCreation` | Manual-task-creation Custom API name. |
 | `manualTaskCreationApiType` | SingleLine.Text | No | `action` | Manual-task-creation API operation type. |
-| `enablePcfViewSalesDetails` | TwoOptions | No | `false` | Enables in-PCF Sale Details rendering (`viewSalePcf`). |
+| `enablePcfViewSalesDetails` | TwoOptions | No | `true` | Enables in-PCF Sale Details rendering (`viewSalePcf`). |
 | `pageSize` | Whole.None | No | `500` | Grid page size. |
 | `serverDrivenThreshold` | Whole.None | No | `2000` | Record-count threshold to switch to server-driven paging. |
 | `columnDisplayNames` | SingleLine.Text | No | `{}` | JSON map of logical name to display name. |

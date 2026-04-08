@@ -2,6 +2,7 @@ using Microsoft.Xrm.Sdk;
 using Microsoft.Xrm.Sdk.Extensions;
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Net.Http;
 using System.Net.Http.Headers;
 using System.Text;
@@ -44,14 +45,14 @@ namespace VOA.SVT.Plugins.CustomAPI
                 context.OutputParameters["Result"] = BuildResult(false, "SVT manual task creation is restricted to SVT Managers.", string.Empty);
                 return;
             }
-            var saleId = GetInput(context, "saleId");
+            var saleIds = GetInput(context, "saleIds");
             var sourceType = GetInput(context, "sourceType");
             var createdBy = GetInput(context, "createdBy");
             createdBy = NormalizeGuidOrEmpty(createdBy);
 
-            if (string.IsNullOrWhiteSpace(saleId))
+            if (string.IsNullOrWhiteSpace(saleIds))
             {
-                context.OutputParameters["Result"] = BuildResult(false, "saleId is required.", string.Empty);
+                context.OutputParameters["Result"] = BuildResult(false, "saleIds is required.", string.Empty);
                 return;
             }
 
@@ -107,11 +108,17 @@ namespace VOA.SVT.Plugins.CustomAPI
             var auth = new Authentication(localPluginContext, apiConfig);
             var authResult = auth.GenerateAuthentication();
 
-            var fullUrl = BuildUrl(apiConfig.Address, saleId);
-            var payload = new Dictionary<string, string>
+            var fullUrl = BuildUrl(apiConfig.Address);
+            var saleIdList = (saleIds ?? string.Empty)
+                .Split(new[] { ',' }, StringSplitOptions.RemoveEmptyEntries)
+                .Select(s => s.Trim())
+                .Where(s => !string.IsNullOrEmpty(s))
+                .ToList();
+            var payload = new
             {
-                ["sourceType"] = sourceType ?? string.Empty,
-                ["createdBy"] = createdBy ?? string.Empty
+                saleIdList,
+                sourceType = sourceType ?? string.Empty,
+                createdBy = createdBy ?? string.Empty
             };
             var jsonBody = JsonSerializer.Serialize(payload);
 
@@ -180,7 +187,7 @@ namespace VOA.SVT.Plugins.CustomAPI
         private static string GetInput(IPluginExecutionContext context, string key)
             => context.InputParameters.Contains(key) ? context.InputParameters[key]?.ToString() : null;
 
-        private static string BuildUrl(string baseAddress, string saleId)
+        private static string BuildUrl(string baseAddress)
         {
             if (string.IsNullOrWhiteSpace(baseAddress))
             {
@@ -189,22 +196,12 @@ namespace VOA.SVT.Plugins.CustomAPI
 
             var trimmed = baseAddress.TrimEnd('/');
 
-            if (trimmed.Contains("{saleId}", StringComparison.Ordinal))
-            {
-                return trimmed.Replace("{saleId}", saleId);
-            }
-
-            if (trimmed.Contains("{id}", StringComparison.Ordinal))
-            {
-                return trimmed.Replace("{id}", saleId);
-            }
-
             if (trimmed.EndsWith("/sales", StringComparison.OrdinalIgnoreCase))
             {
-                return $"{trimmed}/{saleId}/task";
+                return $"{trimmed}/task";
             }
 
-            return $"{trimmed}/sales/{saleId}/task";
+            return $"{trimmed}/sales/task";
         }
 
         private static string BuildResult(bool success, string message, string payload)

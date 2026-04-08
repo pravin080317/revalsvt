@@ -65,13 +65,17 @@ const buildPadChip = (
     getValue(propertyAndBandingDetails, `${attributeKey}Colour`),
   );
 
+  const displayValue = value.length > 0 ? value : '-';
+
   const tooltip = tooltipFromMap && tooltipFromMap !== '-'
     ? tooltipFromMap
-    : `${toReadableLabel(attributeKey)}: ${value}`;
+    : value.length > 0
+    ? `${toReadableLabel(attributeKey)}: ${value}`
+    : toReadableLabel(attributeKey);
 
   const color = colorFromMap && colorFromMap !== '-' ? colorFromMap : undefined;
 
-  return createAttributeChip(attributeKey, value, tone, tooltip, color);
+  return createAttributeChip(attributeKey, displayValue, tone, tooltip, color);
 };
 
 const toEditableInput = (value: string): string => {
@@ -1123,11 +1127,17 @@ export const useSaleDetailsViewModel = (
     const vmsX = normalizeLinkValue(getValue(links, 'vmsX'));
     const vmsY = normalizeLinkValue(getValue(links, 'vmsY'));
     const vmsLegacy = normalizeLinkValue(getValue(links, 'vms'));
+    // Fallback: some API responses return VMS coordinates as a top-level vms object {X, Y}
+    const vmsRootRecord = (!vmsX || !vmsY) ? getRecord(details, 'vms') : {};
+    const resolvedVmsX = vmsX || normalizeLinkValue(firstNonEmpty(getValue(vmsRootRecord, 'X'), getValue(vmsRootRecord, 'x')));
+    const resolvedVmsY = vmsY || normalizeLinkValue(firstNonEmpty(getValue(vmsRootRecord, 'Y'), getValue(vmsRootRecord, 'y')));
     const vmsUrl = isHttpUrl(vmsLegacy)
       ? vmsLegacy
       : (vmsX && vmsY
         ? `${vmsCenterBase}${vmsX},${vmsY}${EXTERNAL_LINK_URL_PARTS.vmsSpatialReferenceSuffix}${EXTERNAL_LINK_URL_PARTS.vmsZoomLevelSuffix}`
-        : '');
+        : (resolvedVmsX && resolvedVmsY
+          ? `${vmsCenterBase}${resolvedVmsX},${resolvedVmsY}${EXTERNAL_LINK_URL_PARTS.vmsSpatialReferenceSuffix}${EXTERNAL_LINK_URL_PARTS.vmsZoomLevelSuffix}`
+          : ''));
 
     const zooplaRaw = normalizeLinkValue(getValue(links, 'zoopla'));
     const rightMoveRaw = normalizeLinkValue(firstNonEmpty(getValue(links, 'rightMove'), getValue(links, 'rightmove')));
@@ -1195,16 +1205,13 @@ export const useSaleDetailsViewModel = (
     const composite = formatValue(getValue(propertyAndBandingDetails, 'composite'));
 
     const padStatusDisplay = formatValue(getValue(propertyAndBandingDetails, 'padStatus'));
-    const padStatusLabel = padStatusDisplay.toLowerCase() === 'committed' ? 'PAD Status: Synced' : `PAD Status: ${padStatusDisplay}`;
-
-    const isActiveRequestPresent = isTrueLike(
-      firstNonEmpty(
-        getValue(propertyAndBandingDetails, 'activeRequestInVos'),
-        getValue(propertyAndBandingDetails, 'isActiveRequestPresent'),
-        getValue(details, 'activeRequestInVos'),
-        getValue(details, 'isActiveRequestPresent'),
-      ),
+    const hereditamentActiveRequestRaw = firstNonEmpty(
+      getValue(propertyAndBandingDetails, 'hereditamentActiveRequest'),
+      getValue(details, 'hereditamentActiveRequest'),
     );
+    const hasHereditamentActiveRequest = hereditamentActiveRequestRaw.trim().length > 0 && hereditamentActiveRequestRaw.trim() !== '-';
+    const isActiveRequestPresent = hasHereditamentActiveRequest && isTrueLike(hereditamentActiveRequestRaw);
+    const padStatusLabel = hasHereditamentActiveRequest && !isActiveRequestPresent ? 'PAD Status: Synced' : '';
 
     const effectiveDate = formatValue(toUkDate(getValue(propertyAndBandingDetails, 'effectiveDate')));
     const effectiveTo = formatValue(toUkDate(getValue(propertyAndBandingDetails, 'effectiveTo')));
@@ -1254,6 +1261,17 @@ export const useSaleDetailsViewModel = (
       getValue(propertyAndBandingDetails, 'sourceCodes'),
       getValue(propertyAndBandingDetails, 'sourceCode'),
     ));
+
+    const rawSourceCodeDescription = getValue(propertyAndBandingDetails, 'sourceCodeDescription');
+    const sourceCodeDescMap: Record<string, string> = {};
+    if (typeof rawSourceCodeDescription === 'string' && rawSourceCodeDescription) {
+      rawSourceCodeDescription.split(',').map(s => s.trim()).filter(Boolean).forEach(part => {
+        const dashIdx = part.indexOf(' - ');
+        const code = dashIdx > 0 ? part.substring(0, dashIdx).trim() : '';
+        if (code) sourceCodeDescMap[code] = part;
+      });
+    }
+    const sourceCodeDescriptions = sourceCodes.map(code => sourceCodeDescMap[code] ?? '');
 
     const initialPadConfirmationKey = mapPadConfirmationToKey(getValue(propertyAndBandingDetails, 'padConfirmation'));
 
@@ -1632,6 +1650,7 @@ export const useSaleDetailsViewModel = (
       attributeGroups,
       vscCodes,
       sourceCodes,
+      sourceCodeDescriptions,
       initialPadConfirmationKey,
       masterSale,
       wlttRecords,

@@ -37,7 +37,7 @@ describe('WRT-200 Master Sales Record AC', () => {
   });
 
   test('AC3: Ratio help text is exposed as tooltip text on the Ratio label', () => {
-    expect(sectionSource).toContain('labelTitle="Ratio = Model Value / HPI Adjusted Price"');
+    expect(sectionSource).toMatch(/labelTitle="Ratio = Model Value (\/|÷) HPI Adjusted Price"/);
     expect(kvpRowSource).toContain('labelTitle?: string;');
     expect(kvpRowSource).toContain('title={labelTitle}');
   });

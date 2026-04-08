@@ -46,6 +46,19 @@ describe('grid state persistence', () => {
     });
   });
 
+  test('restores summary flag structured operator filter', () => {
+    const restored = deserializeColumnFiltersFromStorage('sales', JSON.stringify({
+      summaryFlags: ['{"operator":"contains","values":["band inactive"]}'],
+    }));
+
+    expect(restored).toEqual({
+      summaryflags: {
+        operator: 'contains',
+        values: ['band inactive'],
+      },
+    });
+  });
+
   test('parses valid stored sort state', () => {
     expect(parseStoredSortState('{"name":"saleId","sortDirection":1}')).toEqual({
       name: 'saleId',

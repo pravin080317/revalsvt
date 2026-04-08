@@ -359,6 +359,9 @@ export const SaleDetailsShell: React.FC<SaleDetailsShellProps> = ({
         )}
 
         <span id={NEW_TAB_HINT_ID} className="voa-visually-hidden">Opens in a new browser tab.</span>
+        <Text variant="small" className="voa-external-link-hint" role="note">
+          External links open in a new browser tab.
+        </Text>
 
         <Stack key={`${model.saleId}::${model.taskId}`} tokens={{ childrenGap: 8 }} className="voa-sale-details-sections">
           <SalesVerificationTaskSection
@@ -400,6 +403,7 @@ export const SaleDetailsShell: React.FC<SaleDetailsShellProps> = ({
             attributeGroups={model.attributeGroups}
             vscCodes={model.vscCodes}
             sourceCodes={model.sourceCodes}
+            sourceCodeDescriptions={model.sourceCodeDescriptions}
             padConfirmationKey={padConfirmationKey}
             onPadConfirmationChange={setPadConfirmationKey}
             padConfirmationError={padConfirmationError}

@@ -96,7 +96,7 @@
   margin: 0;
   text-align: center;
   color: var(--voa-heading);
-  font-size: 17px;
+  font-size: 20px;
   font-weight: 700;
   letter-spacing: -0.01em;
   white-space: nowrap;
@@ -125,6 +125,11 @@
 
 .voa-sale-details-sections {
   min-height: 0;
+}
+
+.voa-external-link-hint {
+  margin: 4px 0 8px;
+  color: var(--voa-muted);
 }
 
 .voa-sale-details-card {
@@ -213,11 +218,15 @@
 
 .voa-kvp-row__label {
   color: #4a5568;
-  font-size: 12.5px;
+  font-size: 13px;
   font-weight: 600;
   text-transform: capitalize;
   letter-spacing: 0.01em;
   cursor: default;
+}
+
+.voa-kvp-row__label::after {
+  content: ':';
 }
 
 .voa-kvp-row__label[title] {
@@ -226,7 +235,7 @@
 
 .voa-kvp-row__value {
   color: #1a202c;
-  font-size: 15px;
+  font-size: 14px;
   font-weight: 600;
 }
 
@@ -324,10 +333,14 @@
 
 .voa-ownership-row__label {
   color: #4a5568;
-  font-size: 12.5px;
+  font-size: 13px;
   font-weight: 600;
   text-transform: capitalize;
   letter-spacing: 0.01em;
+}
+
+.voa-ownership-row__label::after {
+  content: ':';
 }
 
 .voa-ownership-row__label[title] {
@@ -1240,7 +1253,7 @@
 }
 
 .voa-sales-particular-review .ms-ChoiceField-field {
-  font-size: 16px;
+  font-size: 13px;
   font-weight: 600;
   color: #334155;
 }
@@ -1268,7 +1281,7 @@
 
 .voa-sales-particular-row__label {
   color: #1f2937;
-  font-size: 16px;
+  font-size: 13px;
   font-weight: 600;
   line-height: 1.35;
 }
@@ -1361,7 +1374,7 @@
 
 .voa-sales-particular-outcomes__label {
   color: #1f2937;
-  font-size: 16px;
+  font-size: 13px;
   font-weight: 600;
   line-height: 1.35;
 }
@@ -2247,6 +2260,42 @@
 .voa-confirm-dialog .ms-DialogFooter .ms-Button--default:hover {
   background-color: #f4f6f8;
   border-color: #b0bcc8;
+}
+
+.voa-dialog-success-notice {
+  margin-top: 10px;
+  border: 1px solid #d8e2dc;
+  border-radius: 8px;
+  background: #fbfcfb;
+  padding: 14px;
+  display: grid;
+  gap: 10px;
+  animation: voa-dialog-success-enter 140ms ease-out;
+}
+
+.voa-dialog-success-notice__title {
+  color: #1f3b2d;
+  font-weight: 600;
+  line-height: 1.4;
+}
+
+.voa-dialog-success-notice__detail {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: #536457;
+}
+
+@keyframes voa-dialog-success-enter {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 
 

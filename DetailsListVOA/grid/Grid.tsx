@@ -45,9 +45,10 @@ import { RecordsColumns } from '../config/ManifestConstants';
 import { IGridColumn, ColumnConfig } from '../Component.types';
 import { GridCell } from './GridCell';
 import { ClassNames } from './Grid.styles';
-import { GridFilterState, createDefaultGridFilters, sanitizeFilters, SearchByOption, ManualCheckFilter } from '../Filters';
+import { GridFilterState, createDefaultGridFilters, sanitizeFilters, SearchByOption, ManualCheckFilter, DateRangeFilter } from '../Filters';
 import { logPerf } from '../utils/Perf';
-import { getSearchByOptionsFor, isLookupFieldFor } from '../config/TableConfigs';
+import { getSearchByOptionsFor, isLookupFieldFor, getColumnFilterConfigFor } from '../config/TableConfigs';
+import { ColumnFilterValue } from '../utils/GridColumnFilters';
 import { SCREEN_TEXT } from '../constants/ScreenText';
 
 type DataSet = ComponentFramework.PropertyHelper.DataSetApi.EntityRecord & IObjectWithKey;
@@ -89,10 +90,10 @@ export interface GridProps {
   errorMessage?: string;
   showResults?: boolean;
   onLoadFilterOptions?: (field: string, query: string) => Promise<string[]>;
-  onColumnFiltersChange?: (filters: Record<string, string | string[]>) => void;
+  onColumnFiltersChange?: (filters: Record<string, ColumnFilterValue>) => void;
   allowColumnReorder?: boolean;
   // Fully controlled header filters from host
-  columnFilters: Record<string, string | string[]>;
+  columnFilters: Record<string, ColumnFilterValue>;
   canvasScreenName?: string;
   onAssignTasks?: (user: { id: string; firstName: string; lastName: string; email: string; team: string; role: string }) => Promise<boolean>;
   statusMessage?: { text: string; type: MessageBarType };
@@ -218,6 +219,8 @@ export const Grid = React.memo((props: GridProps) => {
   }>();
   const [menuFilterValue, setMenuFilterValue] = React.useState<string | string[]>('');
   const [menuFilterText, setMenuFilterText] = React.useState('');
+  const [menuDateFrom, setMenuDateFrom] = React.useState<Date | undefined>(undefined);
+  const [menuDateTo, setMenuDateTo] = React.useState<Date | undefined>(undefined);
   const [menuExtraOptions, setMenuExtraOptions] = React.useState<string[]>([]);
   const [menuOptionsLoading, setMenuOptionsLoading] = React.useState(false);
   const menuOptionsTimer = React.useRef<number | undefined>(undefined);
@@ -705,6 +708,13 @@ export const Grid = React.memo((props: GridProps) => {
     );
   }, [isLookupField]);
 
+  const isDateRangeColumn = React.useCallback((field: string | undefined): boolean => {
+    if (!field || !tableKey) return false;
+    const f = field.replace(/[^a-z0-9]/gi, '').toLowerCase();
+    const cfg = getColumnFilterConfigFor(tableKey, f);
+    return cfg?.control === 'dateRange';
+  }, [tableKey]);
+
   // Derive icons each render to reflect current sort/filter state
   const columnsWithIcons = React.useMemo<IGridColumn[]>(() => {
     return columns.map((c) => {
@@ -735,7 +745,7 @@ export const Grid = React.memo((props: GridProps) => {
   const filteredItems = React.useMemo(() => {
     const t0 = performance.now();
     const filterEntries = Object.entries(columnFilters).filter(([, value]) =>
-      Array.isArray(value) ? value.length > 0 : value.trim() !== '',
+      Array.isArray(value) ? value.length > 0 : typeof value === 'string' && value.trim() !== '',
     );
     if (filterEntries.length === 0) {
       const t1 = performance.now();
@@ -749,6 +759,7 @@ export const Grid = React.memo((props: GridProps) => {
         if (Array.isArray(filterValue)) {
           const needles = filterValue.map((v) => String(v).trim().toLowerCase()).filter((v) => v !== '');
           if (needles.length === 0) return true;
+          if (needles.length === 1 && needles[0] === 'all') return true;
           if (Array.isArray(raw)) {
             const hay = raw
               .map((v) => (typeof v === 'string' || typeof v === 'number' || typeof v === 'boolean' ? String(v).trim().toLowerCase() : ''))
@@ -758,6 +769,7 @@ export const Grid = React.memo((props: GridProps) => {
           const text = getFilterableText(raw).trim().toLowerCase();
           return needles.some((n) => text === n);
         }
+        if (typeof filterValue !== 'string') return true;
         const needle = filterValue.trim().toLowerCase();
         if (Array.isArray(raw)) {
           return raw.some((v) => (typeof v === 'string' || typeof v === 'number' || typeof v === 'boolean') && String(v).toLowerCase().includes(needle));
@@ -818,7 +830,7 @@ export const Grid = React.memo((props: GridProps) => {
       window.clearTimeout(liveFilterTimer.current);
     }
     liveFilterTimer.current = window.setTimeout(() => {
-      const updated: Record<string, string | string[]> = { ...columnFilters };
+      const updated: Record<string, ColumnFilterValue> = { ...columnFilters };
       const trimmed = value.trim();
       if (trimmed === '') {
         delete updated[fieldName];
@@ -876,11 +888,22 @@ export const Grid = React.memo((props: GridProps) => {
         mode: Array.isArray(existing) ? 'multi' : 'text',
         text: typeof existing === 'string' ? existing : '',
       });
-      if (Array.isArray(existing)) {
+      const isDateRange = isDateRangeColumn(fieldName);
+      if (isDateRange) {
+        const dr = existing as unknown as DateRangeFilter | undefined;
+        setMenuDateFrom(dr?.from ? parseISODate(dr.from) : undefined);
+        setMenuDateTo(dr?.to ? parseISODate(dr.to) : undefined);
+        setMenuFilterValue('');
+        setMenuFilterText('');
+      } else if (Array.isArray(existing)) {
+        setMenuDateFrom(undefined);
+        setMenuDateTo(undefined);
         setMenuFilterValue(existing);
         setMenuFilterText('');
       } else {
-        setMenuFilterValue(existing ?? '');
+        setMenuDateFrom(undefined);
+        setMenuDateTo(undefined);
+        setMenuFilterValue((existing as string | undefined) ?? '');
         setMenuFilterText(typeof existing === 'string' ? existing : '');
       }
       setMenuExtraOptions([]);
@@ -902,7 +925,7 @@ export const Grid = React.memo((props: GridProps) => {
           });
       }
     },
-    [columnFilters, isLookupField, onLoadFilterOptions, recordCount],
+    [columnFilters, isLookupField, isDateRangeColumn, parseISODate, onLoadFilterOptions, recordCount],
   );
 
   // Ensure prefill is applied after the menu is set (covers any race on first open after reload)
@@ -912,15 +935,26 @@ export const Grid = React.memo((props: GridProps) => {
     const key = String(fieldName ?? '');
     const keyLower = key.toLowerCase();
     const existing = columnFilters[key] ?? columnFilters[keyLower];
-    if (Array.isArray(existing)) {
+    const isDateRange = isDateRangeColumn(fieldName);
+    if (isDateRange) {
+      const dr = existing as unknown as DateRangeFilter | undefined;
+      setMenuDateFrom(dr?.from ? parseISODate(dr.from) : undefined);
+      setMenuDateTo(dr?.to ? parseISODate(dr.to) : undefined);
+      setMenuFilterValue('');
+      setMenuFilterText('');
+    } else if (Array.isArray(existing)) {
+      setMenuDateFrom(undefined);
+      setMenuDateTo(undefined);
       setMenuFilterValue(existing);
       setMenuFilterText('');
     } else {
+      setMenuDateFrom(undefined);
+      setMenuDateTo(undefined);
       const text = typeof existing === 'string' ? existing : '';
       setMenuFilterValue(text);
       setMenuFilterText(text);
     }
-  }, [menuState, columnFilters]);
+  }, [menuState, columnFilters, isDateRangeColumn, parseISODate]);
 
   const onColumnHeaderClick = React.useCallback(
     (ev?: React.MouseEvent<HTMLElement>, column?: IColumn) => {
@@ -954,7 +988,21 @@ export const Grid = React.memo((props: GridProps) => {
       return;
     }
     const fieldName = menuState.column.fieldName ?? menuState.column.key;
-    const updated: Record<string, string | string[]> = { ...columnFilters };
+    const updated: Record<string, ColumnFilterValue> = { ...columnFilters };
+    // For date range columns, produce a DateRangeFilter object
+    if (isDateRangeColumn(fieldName)) {
+      const fromStr = toISODateString(menuDateFrom);
+      const toStr = toISODateString(menuDateTo);
+      if (!fromStr && !toStr) {
+        delete updated[fieldName];
+      } else {
+        updated[fieldName] = { from: fromStr, to: toStr } as DateRangeFilter;
+      }
+      onColumnFiltersChange?.(updated);
+      setMenuState(undefined);
+      menuState.target?.focus?.();
+      return;
+    }
     // If any values are selected in the list, prefer them (exact match semantics).
     if (Array.isArray(menuFilterValue)) {
       const vals = menuFilterValue.map((v) => String(v).trim()).filter((v) => v !== '');
@@ -976,7 +1024,7 @@ export const Grid = React.memo((props: GridProps) => {
       onColumnFiltersChange?.(updated);
       setMenuState(undefined);
       menuState.target?.focus?.();
-    }, [menuFilterValue, menuFilterText, menuState, onColumnFiltersChange, columnFilters]);
+    }, [menuFilterValue, menuFilterText, menuState, onColumnFiltersChange, columnFilters, isDateRangeColumn, menuDateFrom, menuDateTo, toISODateString]);
 
   const clearFilter = React.useCallback(() => {
     if (!menuState) {
@@ -987,6 +1035,8 @@ export const Grid = React.memo((props: GridProps) => {
       const lookup = isLookupField(fieldName);
       setMenuFilterValue(lookup ? [] : '');
       setMenuFilterText('');
+      setMenuDateFrom(undefined);
+      setMenuDateTo(undefined);
       setMenuState(undefined);
       menuState.target?.focus?.();
       return;
@@ -997,6 +1047,8 @@ export const Grid = React.memo((props: GridProps) => {
     const lookup = isLookupField(fieldName);
     setMenuFilterValue(lookup ? [] : '');
     setMenuFilterText('');
+    setMenuDateFrom(undefined);
+    setMenuDateTo(undefined);
     setMenuState(undefined);
     menuState.target?.focus?.();
   }, [menuState, isLookupField, onColumnFiltersChange, columnFilters]);
@@ -1140,6 +1192,29 @@ export const Grid = React.memo((props: GridProps) => {
         key: 'filterInput',
         onRender: () => (
           <div style={{ padding: '0 12px 12px', width: 260 }}>
+            {isDateRangeColumn(fieldName) ? (
+              <>
+                <DatePicker
+                  label="From"
+                  firstDayOfWeek={DayOfWeek.Monday}
+                  strings={dateStrings}
+                  value={menuDateFrom}
+                  formatDate={formatDisplayDate}
+                  onSelectDate={(d) => setMenuDateFrom(d ?? undefined)}
+                  placeholder="Select start date"
+                />
+                <DatePicker
+                  label="To"
+                  firstDayOfWeek={DayOfWeek.Monday}
+                  strings={dateStrings}
+                  value={menuDateTo}
+                  formatDate={formatDisplayDate}
+                  onSelectDate={(d) => setMenuDateTo(d ?? undefined)}
+                  placeholder="Select end date"
+                />
+              </>
+            ) : (
+              <>
             <Text variant="small" style={{ marginBottom: 4, display: 'block' }}>
               Contains
             </Text>
@@ -1244,6 +1319,8 @@ export const Grid = React.memo((props: GridProps) => {
                 />)}
               </>
             )}
+              </>
+            )}
             <Stack horizontal tokens={{ childrenGap: 8 }} style={{ marginTop: 8 }}>
               <PrimaryButton
                 text="Apply"
@@ -1260,7 +1337,7 @@ export const Grid = React.memo((props: GridProps) => {
         ),
       },
     ];
-  }, [applyFilter, clearFilter, handleSort, menuFilterValue, menuState, isLookupField, getDistinctOptions, scheduleLiveTextFilter]);
+  }, [applyFilter, clearFilter, handleSort, menuFilterValue, menuState, isLookupField, getDistinctOptions, scheduleLiveTextFilter, isDateRangeColumn, menuDateFrom, menuDateTo, dateStrings, formatDisplayDate]);
 
   if (datasetColumns.length === 0) {
     return <NoFields resources={resources} />;

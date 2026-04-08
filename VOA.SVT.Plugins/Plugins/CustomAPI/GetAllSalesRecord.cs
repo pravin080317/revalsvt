@@ -70,9 +70,9 @@ namespace VOA.SVT.Plugins.CustomAPI
             var authResult = auth.GenerateAuthentication();
 
             // 3) Build full URL (base Address + query from Custom API inputs)
-            var searchQuery = CustomApiQueryHelper.BuildSearchQuery(context.InputParameters);
+           var searchQuery = CustomApiQueryHelper.BuildSearchQuery(context.InputParameters);
             var fullUrl = BuildUrl(apiConfig.Address, searchQuery);
-
+            
             localPluginContext.TracingService.Trace($"Calling APIM URL: {Truncate(fullUrl, 300)}");
 
             using (var httpClient = new HttpClient())

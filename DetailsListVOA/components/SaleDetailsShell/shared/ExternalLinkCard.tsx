@@ -38,7 +38,7 @@ export const ExternalLinkCard: React.FC<ExternalLinkCardProps> = ({ index, link,
           title={openLabel}
         >
           <Icon iconName="NavigateExternalInline" className="voa-link-card__button-icon" />
-          <span>Open in new tab</span>
+          <span>Open link</span>
         </a>
       ) : (
         <span

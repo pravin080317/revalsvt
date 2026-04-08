@@ -17,9 +17,11 @@ export interface TaskSearchItem {
     overallFlag?: string;
     summaryFlags?: string[];
     assignedTo?: string[] | string;
+    assignedToName?: string;
     assignedDate?: string;
     taskCompletedDate?: string;
     qcAssignedTo?: string[] | string;
+    qcAssignedToName?: string;
     qcAssignedDate?: string;
     qcCompletedDate?: string;
 }
@@ -31,6 +33,8 @@ export interface TaskSearchResponse {
     pageSize: number;
     filters?: Record<string, string | string[]>;
     errorMessage?: string;
+    userLookup?: Record<string, string>;
+    userFilterOptions?: Record<string, Array<{ key: string; text: string }>>;
 }
 
 export const SAMPLE_TASK_RESULTS: TaskSearchItem[] = [

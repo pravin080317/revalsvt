@@ -19,6 +19,8 @@ export interface IInputs {
     submitQcRemarksApiType: ComponentFramework.PropertyTypes.StringProperty;
     viewSaleRecordApiName: ComponentFramework.PropertyTypes.StringProperty;
     viewSaleRecordApiType: ComponentFramework.PropertyTypes.StringProperty;
+    hereditamentRelatedRequestsApiName: ComponentFramework.PropertyTypes.StringProperty;
+    hereditamentRelatedRequestsApiType: ComponentFramework.PropertyTypes.StringProperty;
     auditLogsApiName: ComponentFramework.PropertyTypes.StringProperty;
     auditLogsApiType: ComponentFramework.PropertyTypes.StringProperty;
     manualTaskCreationApiName: ComponentFramework.PropertyTypes.StringProperty;

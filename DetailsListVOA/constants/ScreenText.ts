@@ -79,7 +79,7 @@ export const PREFILTER_API_PARAMS = {
     source: 'QCA',
     searchBy: {
       qcUser: 'QC',
-      task: 'Tk',
+      task: 'TK',
       caseworker: 'CW',
     },
   },

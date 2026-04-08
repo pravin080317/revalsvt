@@ -95,12 +95,13 @@ describe('SalesParticularSection state initialisation', () => {
 
 describe('cross-section mandatory validation', () => {
   test('collectCrossSectionMandatoryErrors checks salesParticularModel (the draft)', () => {
-    expect(salesVerificationSource).toContain('salesParticularModel.reviewStatusKey');
-    expect(salesVerificationSource).toContain('salesParticularModel[key]');
+    expect(salesVerificationSource).toContain('getSalesVerificationMandatoryValidation({');
+    expect(rulesSource).toContain('salesParticularModel.reviewStatusKey');
+    expect(rulesSource).toContain('salesParticularModel[key]');
   });
 
   test('all 8 required fields are validated (including condition score)', () => {
-    const FIELDS = [
+    const EDITABLE_FIELDS = [
       'kitchenAge',
       'kitchenSpecification',
       'bathroomAge',
@@ -108,15 +109,20 @@ describe('cross-section mandatory validation', () => {
       'glazing',
       'heating',
       'decorativeFinishes',
-      'conditionScore',
     ];
-    FIELDS.forEach((field) => {
-      expect(salesVerificationSource).toContain(`key: '${field}'`);
+
+    EDITABLE_FIELDS.forEach((field) => {
+      expect(rulesSource).toContain(`key: '${field}'`);
     });
+
+    // condition score is validated in the same details-available branch via
+    // an explicit mandatory message, not as part of editable field key list.
+    expect(rulesSource).toContain('salesParticularModel.conditionScore');
+    expect(rulesSource).toContain('conditionScore');
   });
 
   test('padConfirmation is also validated cross-section', () => {
-    expect(salesVerificationSource).toContain('trimValue(padConfirmationKey)');
+    expect(rulesSource).toContain('toTrimmed(padConfirmationKey)');
   });
 });
 
@@ -177,7 +183,7 @@ describe('error clearing on model change', () => {
   });
 
   test('SalesVerificationSection clears mandatory errors when salesParticularModel changes', () => {
-    expect(salesVerificationSource).toContain('[salesParticularModel, padConfirmationKey]');
+    expect(salesVerificationSource).toContain('salesParticularModel, padConfirmationKey');
   });
 
   test('SalesParticularSection clears validationErrors when model changes', () => {
@@ -227,7 +233,7 @@ describe('condition score mandatory validation', () => {
 
   test('condition score validation only triggers for details-available', () => {
     // The conditionScore check sits inside the `reviewStatusKey === 'details-available'` branch
-    expect(salesVerificationSource).toContain("salesParticularModel.reviewStatusKey === 'details-available'");
+    expect(rulesSource).toContain("salesParticularModel.reviewStatusKey === 'details-available'");
   });
 
   test('calculate button exists in SalesParticularSection', () => {

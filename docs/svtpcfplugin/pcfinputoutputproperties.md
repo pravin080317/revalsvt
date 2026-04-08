@@ -33,7 +33,7 @@ This document lists every manifest property from `DetailsListVOA/ControlManifest
 | `manualTaskCreationApiType` | `SingleLine.Text` | `action` | Expected: `action` (manual task creation API is implemented as action/POST). |
 | `modifyTaskApiName` | `SingleLine.Text` | `voa_SvtModifyTask` | Unbound Custom API name for modify task. |
 | `modifyTaskApiType` | `SingleLine.Text` | `action` | Expected: `action` (modify task API is implemented as action/POST). |
-| `enablePcfViewSalesDetails` | `TwoOptions` | `false` | Boolean flag. Accepted truthy values include `true`, `1`, `yes`; falsy include `false`, `0`, `no`. |
+| `enablePcfViewSalesDetails` | `TwoOptions` | `true` | Boolean flag. Accepted truthy values include `true`, `1`, `yes`; falsy include `false`, `0`, `no`. |
 | `pageSize` | `Whole.None` | `500` | Positive integer page size. |
 | `serverDrivenThreshold` | `Whole.None` | `2000` | Integer threshold used to switch to server-driven paging. |
 | `columnDisplayNames` | `SingleLine.Text` | `{}` | JSON object mapping logical column name to display text. Example: `{"saleid":"Sale ID"}`. |

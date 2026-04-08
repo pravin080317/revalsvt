@@ -39,17 +39,27 @@ interface SalesApiItem {
   summaryFlags?: string[];
   taskStatus?: string;
   assignedTo?: string[] | string;
+  assignedToName?: string;
+  assignedToIsActive?: boolean;
   assignedDate?: string | null;
   taskCompletedDate?: string | null;
   qcAssignedTo?: string[] | string;
+  qcAssignedToName?: string;
+  qcAssignedToIsActive?: boolean;
   qcAssignedDate?: string | null;
   qcCompletedDate?: string | null;
+}
+
+interface SalesApiUserEntry {
+  userId?: string;
+  userName?: string;
+  isActive?: boolean;
 }
 
 export interface SalesApiResponse {
   pageInfo?: SalesPageInfo;
   sales?: SalesApiItem[];
-  filters?: Record<string, string | string[]>;
+  filters?: Record<string, unknown>;
 }
 
 type SalesPayload = TaskSearchResponse | SalesApiResponse;
@@ -235,9 +245,11 @@ const normalizeSalesItem = (item: SalesApiItem): TaskSearchItem => {
     overallFlag: toText(getNormalizedValue(map, 'overallFlag')) ?? undefined,
     summaryFlags: toDelimitedStringArray(getNormalizedValue(map, 'summaryFlags', ['summaryFlag']), ';') ?? [],
     assignedTo,
+    assignedToName: toText(getNormalizedValue(map, 'assignedToName', ['assignedtoname'])) ?? undefined,
     assignedDate: toText(getNormalizedValue(map, 'assignedDate')) ?? undefined,
     taskCompletedDate: toText(getNormalizedValue(map, 'taskCompletedDate', ['completedDate', 'taskcomplpleteddate', 'taskcompleteddate'])) ?? undefined,
     qcAssignedTo: toStringOrArrayOrEmpty(getNormalizedValue(map, 'qcAssignedTo', ['acassignedto', 'qeassssignedto'])),
+    qcAssignedToName: toText(getNormalizedValue(map, 'qcAssignedToName', ['qcassignedtoname'])) ?? undefined,
     qcAssignedDate: toText(getNormalizedValue(map, 'qcAssignedDate', ['qcassigneddate'])) ?? undefined,
     qcCompletedDate: toText(getNormalizedValue(map, 'qcCompletedDate', ['qccompleteddate'])) ?? undefined,
   };
@@ -262,15 +274,56 @@ const normalizeFilterMap = (filters: Record<string, string | string[]>): Record<
   return normalized;
 };
 
+const extractUserList = (value: unknown): SalesApiUserEntry[] => {
+  if (!Array.isArray(value)) return [];
+  return value.filter((e): e is SalesApiUserEntry => !!e && typeof e === 'object');
+};
+
 export const normalizeSearchResponse = (payload: TaskSearchResponse | SalesApiResponse): TaskSearchResponse => {
   if ('sales' in payload || 'pageInfo' in payload) {
     const sales = payload.sales ?? [];
+
+    // Extract per-filter user lists before normalizing the rest of the filters.
+    const rawFilters = payload.filters ?? {};
+    const assignedToUserList = extractUserList(rawFilters['assignedToUserList'] ?? rawFilters['assignedtouserlist']);
+    const qcAssignedToUserList = extractUserList(rawFilters['qcAssignedToUserList'] ?? rawFilters['qcassignedtouserlist']);
+
+    // Strip the user-list keys so normalizeFilterMap only sees string | string[] values.
+    const strippedFilters: Record<string, string | string[]> = {};
+    Object.entries(rawFilters).forEach(([key, value]) => {
+      const normalizedKey = key.replace(/[^a-z0-9]/gi, '').toLowerCase();
+      if (normalizedKey === 'assignedtouserlist' || normalizedKey === 'qcassignedtouserlist') return;
+      if (typeof value === 'string' || Array.isArray(value)) {
+        strippedFilters[key] = value as string | string[];
+      }
+    });
+
+    // Build a guid→name lookup from the user lists.
+    const userLookup: Record<string, string> = {};
+    [...assignedToUserList, ...qcAssignedToUserList].forEach((u) => {
+      const id = String(u.userId ?? '').trim().toLowerCase();
+      const name = String(u.userName ?? '').trim();
+      if (id && name) userLookup[id] = name;
+    });
+
+    // Build rich {key, text} option arrays for user filter dropdowns.
+    const userFilterOptions: Record<string, Array<{ key: string; text: string }>> = {};
+    const buildOptions = (list: SalesApiUserEntry[]): Array<{ key: string; text: string }> =>
+      list
+        .map((u) => ({ key: String(u.userId ?? '').trim().toLowerCase(), text: String(u.userName ?? '').trim() }))
+        .filter((o) => o.key && o.text);
+
+    if (assignedToUserList.length > 0) userFilterOptions['assignedto'] = buildOptions(assignedToUserList);
+    if (qcAssignedToUserList.length > 0) userFilterOptions['qcassignedto'] = buildOptions(qcAssignedToUserList);
+
     return {
       items: sales.map(normalizeSalesItem),
       totalCount: payload.pageInfo?.totalRecords ?? payload.pageInfo?.totalRows ?? sales.length,
       page: payload.pageInfo?.pageNumber ?? 1,
       pageSize: payload.pageInfo?.pageSize ?? sales.length,
-      filters: payload.filters ? normalizeFilterMap(payload.filters) : undefined,
+      filters: Object.keys(strippedFilters).length > 0 ? normalizeFilterMap(strippedFilters) : undefined,
+      userLookup: Object.keys(userLookup).length > 0 ? userLookup : undefined,
+      userFilterOptions: Object.keys(userFilterOptions).length > 0 ? userFilterOptions : undefined,
     };
   }
   return payload as TaskSearchResponse;

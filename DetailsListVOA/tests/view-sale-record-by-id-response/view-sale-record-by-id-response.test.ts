@@ -21,13 +21,16 @@ const REAL_API_RESPONSE: ViewSaleRecordByIdResponse = {
     taskStatus: 'Assigned',
     assignedTo: '025942bd-acb8-ef11-a72f-002248c8be77',
     assignedToName: 'Jane Smith',
+    assignedToIsActive: true,
     wlttId: null,
     lrppdId: null,
     salesSource: null,
     requestedBy: null,
     requestedByName: null,
+    requestedByIsActive: false,
     qcAssignedTo: null,
     qcAssignedToName: null,
+    qcAssignedToIsActive: null,
   },
   links: {
     epc: 'CF35 6PD',
@@ -151,11 +154,10 @@ const REAL_API_RESPONSE: ViewSaleRecordByIdResponse = {
     qcRemark: null,
     qcReviewedBy: null,
     qcReviewedByName: null,
+    qcReviewedByIsActive: null,
   },
 };
 
-/* ------------------------------------------------------------------ */
-/*  Helpers (import from SaleDetailsShell utils)                      */
 /* ------------------------------------------------------------------ */
 
 import {
@@ -211,10 +213,20 @@ describe('ViewSaleRecordById response model', () => {
     });
 
     test('salesVerificationTaskDetails interface has all fields', () => {
-      const fields = ['saleId', 'taskId', 'taskStatus', 'assignedTo', 'assignedToName', 'wlttId', 'lrppdId', 'salesSource', 'requestedBy', 'requestedByName', 'qcAssignedTo', 'qcAssignedToName'];
+      const fields = [
+        'saleId', 'taskId', 'taskStatus',
+        'assignedTo', 'assignedToName', 'assignedToIsActive',
+        'wlttId', 'lrppdId', 'salesSource',
+        'requestedBy', 'requestedByName', 'requestedByIsActive',
+        'qcAssignedTo', 'qcAssignedToName', 'qcAssignedToIsActive',
+      ];
       fields.forEach((field) => {
         expect(modelSource).toContain(`${field}?:`);
       });
+    });
+
+    test('qualityControlOutcome interface has qcReviewedByIsActive field', () => {
+      expect(modelSource).toContain('qcReviewedByIsActive?:');
     });
 
     test('propertyAndBandingDetails interface has description tooltip fields', () => {
@@ -312,6 +324,21 @@ describe('ViewSaleRecordById response model', () => {
       expect(getValue(task, 'salesSource')).toBe('');
       expect(getValue(task, 'requestedBy')).toBe('');
       expect(getValue(task, 'qcAssignedTo')).toBe('');
+    });
+
+    test('assignedToIsActive true is preserved through parseSaleDetails', () => {
+      const task2 = getRecordFromKeys(details, ['salesVerificationTaskDetails', 'taskDetails']) as SaleDetailsRecord;
+      expect((task2 as Record<string, unknown>).assignedToIsActive).toBe(true);
+    });
+
+    test('requestedByIsActive false is preserved through parseSaleDetails', () => {
+      const task2 = getRecordFromKeys(details, ['salesVerificationTaskDetails', 'taskDetails']) as SaleDetailsRecord;
+      expect((task2 as Record<string, unknown>).requestedByIsActive).toBe(false);
+    });
+
+    test('qcAssignedToIsActive null is preserved through parseSaleDetails', () => {
+      const task2 = getRecordFromKeys(details, ['salesVerificationTaskDetails', 'taskDetails']) as SaleDetailsRecord;
+      expect((task2 as Record<string, unknown>).qcAssignedToIsActive).toBeNull();
     });
   });
 
@@ -571,6 +598,10 @@ describe('ViewSaleRecordById response model', () => {
       expect(getValue(qc, 'qcReviewedBy')).toBe('');
       expect(getValue(qc, 'qcReviewedByName')).toBe('');
     });
+
+    test('qcReviewedByIsActive null is preserved through parseSaleDetails', () => {
+      expect((qc as Record<string, unknown>).qcReviewedByIsActive).toBeNull();
+    });
   });
 
   /* ---------- View-model builder source-level checks ---------- */
@@ -601,8 +632,10 @@ describe('ViewSaleRecordById response model', () => {
         salesSource: 'WLTT',
         requestedBy: 'ddccbbaa-4433-2211-8877-665544332211',
         requestedByName: 'Bob Requester',
+        requestedByIsActive: true,
         qcAssignedTo: 'aabbccdd-1122-3344-5566-778899aabbcc',
         qcAssignedToName: 'Alice QC Reviewer',
+        qcAssignedToIsActive: true,
       },
       salesParticularDetails: {
         salesParticular: 'Details available',
@@ -629,6 +662,7 @@ describe('ViewSaleRecordById response model', () => {
         qcRemark: 'Missing EPC data',
         qcReviewedBy: 'aabbccdd-1122-3344-5566-778899aabbcc',
         qcReviewedByName: 'Alice QC Reviewer',
+        qcReviewedByIsActive: true,
       },
       repeatSaleInfo: {
         previousRatioRange: '0.95 - 1.05',
@@ -678,6 +712,21 @@ describe('ViewSaleRecordById response model', () => {
       expect(getValue(qc, 'qcOutcome')).toBe('Fail');
       expect(getValue(qc, 'qcRemark')).toBe('Missing EPC data');
       expect(getValue(qc, 'qcReviewedByName')).toBe('Alice QC Reviewer');
+    });
+
+    test('isActive boolean fields are preserved in populated scenario', () => {
+      expect((task as Record<string, unknown>).assignedToIsActive).toBe(true);
+      expect((task as Record<string, unknown>).requestedByIsActive).toBe(true);
+      expect((task as Record<string, unknown>).qcAssignedToIsActive).toBe(true);
+      expect((qc as Record<string, unknown>).qcReviewedByIsActive).toBe(true);
+    });
+
+    test('name fields take priority over GUIDs in display — view model uses name-first key arrays', () => {
+      // Confirm that assignedToName, qcAssignedToName, qcReviewedByName are present
+      // (name fields must come before GUID fields in ASSIGNED_TO_NAME_KEYS arrays).
+      expect(viewModelSource).toContain("'assignedToName'");
+      expect(viewModelSource).toContain("'qcAssignedToName'");
+      expect(viewModelSource).toContain("'qcReviewedByName'");
     });
 
     test('repeat sale info ratio ranges are populated', () => {

@@ -7,7 +7,6 @@ using System.Linq;
 using System.Net.Http;
 using System.Net.Http.Headers;
 using System.Text.RegularExpressions;
-using System.Web;
 using VOA.Common;
 using VOA.SVT.Plugins.CustomAPI.DataAccessLayer.Model;
 using VOA.SVT.Plugins.Helpers;
@@ -160,7 +159,7 @@ namespace VOA.SVT.Plugins.CustomAPI
             }
         }
 
-        private static string BuildUrl(string baseAddress, string saleId, string country, string listYear)
+        private static string BuildUrl(string baseAddress, string saleId, string country = null, string listYear = null)
         {
             if (string.IsNullOrWhiteSpace(baseAddress))
             {
@@ -168,44 +167,32 @@ namespace VOA.SVT.Plugins.CustomAPI
             }
 
             var trimmed = baseAddress.TrimEnd('/');
-            string url;
 
+            string path;
             if (trimmed.Contains("{saleId}", StringComparison.Ordinal))
             {
-                url = trimmed.Replace("{saleId}", saleId);
+                path = trimmed.Replace("{saleId}", saleId);
             }
             else if (trimmed.Contains("{id}", StringComparison.Ordinal))
             {
-                url = trimmed.Replace("{id}", saleId);
+                path = trimmed.Replace("{id}", saleId);
             }
             else if (trimmed.EndsWith("/sales", StringComparison.OrdinalIgnoreCase))
             {
-                url = $"{trimmed}/{saleId}";
+                path = $"{trimmed}/{saleId}";
             }
             else
             {
-                url = $"{trimmed}/sales/{saleId}";
+                path = $"{trimmed}/sales/{saleId}";
             }
 
-            var countryValue = country?.Trim();
-            var listYearValue = listYear?.Trim();
-            if (string.IsNullOrWhiteSpace(countryValue) && string.IsNullOrWhiteSpace(listYearValue))
-            {
-                return url;
-            }
+            if (!string.IsNullOrWhiteSpace(country))
+                path = $"{path}/country/{Uri.EscapeDataString(country.Trim())}";
 
-            var separator = url.Contains("?", StringComparison.Ordinal) ? "&" : "?";
-            if (!string.IsNullOrWhiteSpace(countryValue))
-            {
-                url = $"{url}{separator}country={HttpUtility.UrlEncode(countryValue)}";
-                separator = "&";
-            }
-            if (!string.IsNullOrWhiteSpace(listYearValue))
-            {
-                url = $"{url}{separator}listYear={HttpUtility.UrlEncode(listYearValue)}";
-            }
+            if (!string.IsNullOrWhiteSpace(listYear))
+                path = $"{path}/listYear/{Uri.EscapeDataString(listYear.Trim())}";
 
-            return url;
+            return path;
         }
 
         private static string Truncate(string s, int maxLen)
@@ -397,11 +384,13 @@ namespace VOA.SVT.Plugins.CustomAPI
                    "\"assignedTo\":\"05b749d9-f8cb-47ea-8487-5e891176e36d\"" +
                    "}," +
                    "\"createdBy\":\"5b003c7b-ba0f-4df9-9419-a4a06832071d\"," +
-                   "\"links\":{}," +
-                   "\"epc\":\"POSTCODE123\"," +
-                   "\"zoopla\":\"POSTCODE123\"," +
-                   "\"rightMove\":\"POSTCODE123\"," +
-                   "\"vms\":{\"X\":\"ABC1230976\",\"Y\":\"ABC1230976\"}," +
+                   "\"links\":{" +
+                   "\"vmsX\":\"297591\"," +
+                   "\"vmsY\":\"182457\"," +
+                   "\"epc\":\"BN11 1AA\"," +
+                   "\"zoopla\":\"BN11-1AA\"," +
+                   "\"rightMove\":\"BN11 1AA\"" +
+                   "}," +
                    "\"bandingInfo\":{" +
                    "\"address\":\"10 Example Street, Worthing, BN11 1AA\"," +
                    "\"band\":\"C\"," +

@@ -49,6 +49,7 @@ interface ManagerJourneyShellProps {
   onContextChange?: (args: { country: string; listYear: string }) => void;
   refreshNonce?: number;
   entraObjectId?: string;
+  onBulkCreateTask?: (saleIds: string[]) => Promise<void>;
 }
 
 
@@ -181,6 +182,7 @@ export const ManagerJourneyShell: React.FC<ManagerJourneyShellProps> = ({
   onContextChange,
   refreshNonce,
   entraObjectId,
+  onBulkCreateTask,
 }) => {
   const initialCountryValue = React.useMemo(() => normalizeText(initialCountry), [initialCountry]);
   const initialListYearValue = React.useMemo(() => normalizeText(initialListYear), [initialListYear]);
@@ -623,6 +625,7 @@ export const ManagerJourneyShell: React.FC<ManagerJourneyShellProps> = ({
                   onEditContext={changeContext}
                   refreshNonce={refreshNonce}
                   entraObjectId={effectiveEntraObjectId}
+                  onBulkCreateTask={onBulkCreateTask}
                 />
               </div>
             </section>

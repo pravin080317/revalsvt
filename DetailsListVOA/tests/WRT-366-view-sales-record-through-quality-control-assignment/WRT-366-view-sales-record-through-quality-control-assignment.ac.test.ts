@@ -69,7 +69,8 @@ describe('WRT-366 View Sales Record through Quality Control Assignment AC', () =
     expect(shellSource).toContain('externalReviewStatusError={salesParticularReviewStatusError}');
     expect(shellSource).toContain('<SalesVerificationSection');
     expect(padSectionSource).toContain('text="Create Data Enhancement Job"');
-    expect(padSectionSource).toContain('ariaLabel="Create Data Enhancement Job"');
+    expect(padSectionSource).toContain('ariaLabel="Create Data Enhancement Job (opens in new tab)"');
+    expect(padSectionSource).toContain('ariaLabel="View Hereditament (opens in new tab)"');
     // Create Data Enhancement Job is disabled unless caseworker can create
     expect(padSectionSource).toContain('disabled={!canCreateDataEnhancement || !dataEnhancementUrl}');
     // View Hereditament is disabled when no URL

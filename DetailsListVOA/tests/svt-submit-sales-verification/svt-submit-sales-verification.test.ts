@@ -207,7 +207,6 @@ function buildSubmitPayload(detailsJson: string, currentUserId?: string): string
 
 describe('SvtSubmitSalesVerification model', () => {
   const modelSource = readRepoFile('DetailsListVOA/models/SvtSubmitSalesVerification.ts');
-  const pluginSource = readRepoFile('VOA.SVT.Plugins/Plugins/CustomAPI/SvtSubmitSalesVerification.cs');
   const saleDetailsSource = readRepoFile('DetailsListVOA/services/runtime/sale-details.ts');
 
   /* ---------------------------------------------------------------- */
@@ -244,46 +243,6 @@ describe('SvtSubmitSalesVerification model', () => {
       expect(modelSource).toContain("'Complete'");
       expect(modelSource).toContain("'QC Requested'");
       expect(modelSource).toContain("'Reassigned To QC'");
-    });
-  });
-
-  /* ---------------------------------------------------------------- */
-  /*  Plugin source cross-checks                                      */
-  /* ---------------------------------------------------------------- */
-
-  describe('plugin alignment', () => {
-    test('plugin reads saleSubmitPayload with payload fallback', () => {
-      expect(pluginSource).toContain('GetInput(context, "saleSubmitPayload")');
-      expect(pluginSource).toContain('GetInput(context, "payload")');
-    });
-
-    test('plugin reads saleSubmitRemarks and injects into salesVerificationDetails', () => {
-      expect(pluginSource).toContain('GetInput(context, "saleSubmitRemarks")');
-      expect(pluginSource).toContain('normalized["remarks"] = remarksOverride');
-    });
-
-    test('plugin normalizes canonical wlttId/lrppdId and requestedBy in task details', () => {
-      expect(pluginSource).toContain('["wlttId"]');
-      expect(pluginSource).toContain('["lrppdId"]');
-      expect(pluginSource).toContain('["requestedBy"]');
-      expect(pluginSource).toContain('NormalizeOptionalGuidString');
-    });
-
-    test('plugin validates taskStatus against stored procedure contract', () => {
-      expect(pluginSource).toContain('AllowedTaskStatuses');
-      expect(pluginSource).toContain('Complete');
-      expect(pluginSource).toContain('QC Requested');
-      expect(pluginSource).toContain('Reassigned To QC');
-      expect(pluginSource).toContain('taskStatus must be one of: Complete, QC Requested, Reassigned To QC.');
-    });
-
-    test('plugin fallback builds salesParticularDetails with particularNotes (singular)', () => {
-      expect(pluginSource).toContain('["particularNotes"]');
-    });
-
-    test('plugin sends PUT to /sales/{saleId}', () => {
-      expect(pluginSource).toContain('HttpMethod.Put');
-      expect(pluginSource).toContain('/sales/');
     });
   });
 

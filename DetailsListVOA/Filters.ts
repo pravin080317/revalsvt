@@ -63,7 +63,10 @@ export interface GridFilterState {
   outlierKeySale?: string[];
   outlierRatio?: NumericFilter;
   overallFlag?: string[];
-  summaryFlag?: string;
+  summaryFlag?: string | {
+    operator: 'contains' | 'notContains' | 'eq';
+    values: string[];
+  };
   taskStatus?: string[];
   assignedTo?: string;
   assignedDate?: DateRangeFilter;
@@ -200,8 +203,19 @@ export const sanitizeFilters = (filters: GridFilterState): GridFilterState => {
   if (overallFlag) sanitized.overallFlag = overallFlag;
 
   if (filters.summaryFlag) {
-    const trimmed = filters.summaryFlag.trim();
-    sanitized.summaryFlag = trimmed.length >= 3 ? trimmed : undefined;
+    if (typeof filters.summaryFlag === 'object' && !Array.isArray(filters.summaryFlag)) {
+      // New structure with operator and values
+      const summaryFlagObj = filters.summaryFlag as { operator: 'contains' | 'notContains' | 'eq'; values: string[] };
+      if (Array.isArray(summaryFlagObj.values) && summaryFlagObj.values.length > 0) {
+        sanitized.summaryFlag = summaryFlagObj;
+      }
+    } else if (typeof filters.summaryFlag === 'string') {
+      // Legacy string format
+      const trimmed = filters.summaryFlag.trim();
+      if (trimmed.length >= 3) {
+        sanitized.summaryFlag = trimmed;
+      }
+    }
   }
 
   if (filters.source) {

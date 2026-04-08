@@ -46,7 +46,7 @@ import {
   resolveActiveRequestContext,
   resolveSharePointCatalogChunks,
 } from './runtime/context-routing';
-import { hasDisplayText, normalizeTextValue } from './runtime/text';
+import { hasDisplayText, normalizeGuidValue, normalizeTextValue } from './runtime/text';
 
 const EDITABLE_CASEWORKER_STATUSES = new Set(['assigned', 'assigned qc failed']);
 const EDITABLE_QC_STATUSES = new Set(['assigned to qc', 'reassigned to qc']);
@@ -148,7 +148,12 @@ export class DetailsListRuntimeController {
     this.activeViewSaleRequestId = undefined;
     this.showPcfSaleDetails = false;
     this.viewSalePending = false;
-    this._notifyOutputChanged?.();
+    this._saleDetails = '';
+    this.saleDetailsReadOnly = false;
+    this.saleDetailsReadOnlyMessage = undefined;
+    this.saleDetailsCanSubmitQcOutcome = false;
+    this.saleDetailsShowQcSection = false;
+    this.emitAction('back');
   }
 
   public get canCreateManualTask(): boolean {
@@ -312,16 +317,22 @@ export class DetailsListRuntimeController {
     await this.onTaskClick(this.selectedTaskId, this.selectedSaleId);
   }
 
-  public async createManualTask(saleId: string): Promise<void> {
-    svtDebug.log('Runtime', 'createManualTask', { saleId });
-    const normalizedSaleId = normalizeTextValue(saleId) || normalizeTextValue(this.selectedSaleId);
-    if (!hasDisplayText(normalizedSaleId)) {
+  public async createManualTask(saleIds: string[]): Promise<void> {
+    svtDebug.log('Runtime', 'createManualTask', { saleIds });
+    const normalizedSaleIds = saleIds
+      .map((id) => normalizeTextValue(id))
+      .filter((id) => hasDisplayText(id));
+    if (normalizedSaleIds.length === 0) {
       throw new Error('Sale ID is not available for manual task creation.');
     }
 
-    const existingTaskId = resolveCurrentTaskIdFromDetails(this._saleDetails, this.selectedTaskId);
-    if (existingTaskId) {
-      throw new Error('Task ID already exists for this sale record.');
+    const isSingle = normalizedSaleIds.length === 1;
+
+    if (isSingle) {
+      const existingTaskId = resolveCurrentTaskIdFromDetails(this._saleDetails, this.selectedTaskId);
+      if (existingTaskId) {
+        throw new Error('Task ID already exists for this sale record.');
+      }
     }
 
     await this.ensureCaseworkerAccess();
@@ -342,7 +353,7 @@ export class DetailsListRuntimeController {
       this._context,
       apiName,
       {
-        saleId: normalizedSaleId,
+        saleIds: normalizedSaleIds.join(','),
         sourceType: 'M',
         createdBy: this.entraObjectId,
       },
@@ -360,20 +371,25 @@ export class DetailsListRuntimeController {
       throw new Error(parsed.message || 'Manual task creation failed.');
     }
 
-    const createdTaskId = extractTaskIdFromUnknown(parsed.payload) || extractTaskIdFromUnknown(response);
-    this._saleDetails = mergeManualTaskCreationDetails(this._saleDetails, {
-      saleId: normalizedSaleId,
-      taskId: createdTaskId,
-      assignedTo: resolveCurrentUserDisplayName(this._context),
-    });
+    if (isSingle) {
+      const normalizedSaleId = normalizedSaleIds[0];
+      const createdTaskId = extractTaskIdFromUnknown(parsed.payload) || extractTaskIdFromUnknown(response);
+      this._saleDetails = mergeManualTaskCreationDetails(this._saleDetails, {
+        saleId: normalizedSaleId,
+        taskId: createdTaskId,
+        assignedTo: resolveCurrentUserDisplayName(this._context),
+      });
 
-    this.selectedSaleId = normalizedSaleId;
-    if (createdTaskId) {
-      this.selectedTaskId = createdTaskId;
+      this.selectedSaleId = normalizedSaleId;
+      if (createdTaskId) {
+        this.selectedTaskId = createdTaskId;
+      }
+
+      this._notifyOutputChanged();
+      await this.onTaskClick(this.selectedTaskId, normalizedSaleId);
+    } else {
+      this._notifyOutputChanged();
     }
-
-    this._notifyOutputChanged();
-    await this.onTaskClick(this.selectedTaskId, normalizedSaleId);
   }
 
   public async modifySvtTask(): Promise<void> {
@@ -544,22 +560,12 @@ export class DetailsListRuntimeController {
       throw new Error('Task ID is invalid for QC outcome submission.');
     }
 
-    const { country, listYear } = resolveActiveRequestContext(
-      this._context,
-      this.managerJourneyActive,
-      this.managerJourneyContext,
-    );
-
     const qcParams: Record<string, string> = {
       taskId: JSON.stringify([normalizedTaskId]),
       qcOutcome: payload.qcOutcome,
       qcRemark: normalizeTextValue(payload.qcRemark),
       qcReviewedBy: this.entraObjectId,
     };
-    if (ENABLE_COUNTRY_LIST_YEAR_API_PARAMS) {
-      if (country) qcParams.country = country;
-      if (listYear) qcParams.listYear = listYear;
-    }
 
     const response = await executeUnboundCustomApi<unknown>(
       this._context,
@@ -681,8 +687,8 @@ export class DetailsListRuntimeController {
       );
       const viewSaleParams: Record<string, string> = { saleId };
       if (ENABLE_COUNTRY_LIST_YEAR_API_PARAMS) {
-        if (country) viewSaleParams.country = country;
-        if (listYear) viewSaleParams.listYear = listYear;
+        if (country) viewSaleParams['country'] = country;
+        if (listYear) viewSaleParams['listYear'] = listYear;
       }
 
       const rawPayload = await executeUnboundCustomApi<unknown>(
@@ -692,9 +698,9 @@ export class DetailsListRuntimeController {
         { operationType: viewSaleApiType },
       );
       const payload = unwrapCustomApiPayload(rawPayload);
-      detailsPayload = typeof payload === 'string'
-        ? payload
-        : JSON.stringify(payload ?? getEmptySaleRecord());
+      const payloadRecord = this.tryGetSaleDetailsRecord(payload) ?? getEmptySaleRecord();
+      const enrichedPayload = await this.enrichWithHereditamentActiveRequest(payloadRecord);
+      detailsPayload = JSON.stringify(enrichedPayload);
     } catch (error) {
       console.warn('Failed to fetch SVT sale record.', error);
       detailsPayload = JSON.stringify(getEmptySaleRecord());
@@ -802,6 +808,126 @@ export class DetailsListRuntimeController {
     }
 
     this._notifyOutputChanged();
+  }
+
+  private async enrichWithHereditamentActiveRequest(details: Record<string, unknown>): Promise<Record<string, unknown>> {
+    const hereditamentId = this.resolveHereditamentId(details);
+    if (!hereditamentId) {
+      return details;
+    }
+
+    const apiName = resolveConfiguredApiName(
+      this._context,
+      'hereditamentRelatedRequestsApiName',
+      CONTROL_CONFIG.hereditamentRelatedRequestsApiName,
+    );
+    if (!apiName) {
+      return details;
+    }
+
+    const customApiType = resolveConfiguredApiType(
+      this._context,
+      'hereditamentRelatedRequestsApiType',
+      CONTROL_CONFIG.hereditamentRelatedRequestsApiType,
+    );
+
+    try {
+      const rawPayload = await executeUnboundCustomApi<unknown>(
+        this._context,
+        apiName,
+        { hereditamentId },
+        { operationType: customApiType },
+      );
+
+      const response = unwrapCustomApiPayload(rawPayload);
+      const responseRecord = toRecord(response);
+      const hasActiveRequest = this.toBooleanFlag(responseRecord?.hereditamentActiveRequest);
+      if (hasActiveRequest === undefined) {
+        return details;
+      }
+
+      details.hereditamentActiveRequest = hasActiveRequest;
+      details.activeRequestInVos = hasActiveRequest;
+      details.isActiveRequestPresent = hasActiveRequest;
+
+      const propertyAndBandingDetails = toRecord(details.propertyAndBandingDetails);
+      if (propertyAndBandingDetails) {
+        propertyAndBandingDetails.hereditamentActiveRequest = hasActiveRequest;
+        propertyAndBandingDetails.activeRequestInVos = hasActiveRequest;
+        propertyAndBandingDetails.isActiveRequestPresent = hasActiveRequest;
+      }
+    } catch (error) {
+      console.warn('Failed to fetch hereditament related active-request status.', error);
+    }
+
+    return details;
+  }
+
+  private resolveHereditamentId(details: Record<string, unknown>): string {
+    const candidates = [
+      details.hereditamentId,
+      details.suId,
+      details.suid,
+      toRecord(details.propertyAndBandingDetails)?.hereditamentId,
+      toRecord(details.propertyAndBandingDetails)?.suId,
+      toRecord(details.propertyAndBandingDetails)?.suid,
+      toRecord(details.bandingInfo)?.hereditamentId,
+      toRecord(details.bandingInfo)?.suId,
+      toRecord(details.bandingInfo)?.suid,
+    ];
+
+    for (const candidate of candidates) {
+      const normalized = normalizeGuidValue(normalizeTextValue(candidate));
+      if (normalized) {
+        return normalized;
+      }
+    }
+
+    return '';
+  }
+
+  private toBooleanFlag(value: unknown): boolean | undefined {
+    if (typeof value === 'boolean') {
+      return value;
+    }
+
+    if (typeof value === 'number') {
+      if (value === 1) return true;
+      if (value === 0) return false;
+      return undefined;
+    }
+
+    const normalized = normalizeTextValue(value).toLowerCase();
+    if (!normalized) {
+      return undefined;
+    }
+
+    if (['true', '1', 'yes', 'y'].includes(normalized)) {
+      return true;
+    }
+
+    if (['false', '0', 'no', 'n'].includes(normalized)) {
+      return false;
+    }
+
+    return undefined;
+  }
+
+  private tryGetSaleDetailsRecord(payload: unknown): Record<string, unknown> | undefined {
+    if (typeof payload === 'string') {
+      const trimmed = payload.trim();
+      if (!trimmed) {
+        return undefined;
+      }
+      try {
+        const parsed = JSON.parse(trimmed) as unknown;
+        return toRecord(parsed);
+      } catch {
+        return undefined;
+      }
+    }
+
+    return toRecord(payload);
   }
 
   private async ensureCaseworkerAccess(): Promise<boolean> {

@@ -26,7 +26,7 @@ describe('WRT-199 View and Update Sales Particulars AC', () => {
   });
 
   test('AC2: review status is mandatory and shows exact validation message', () => {
-    expect(sectionSource).toContain("renderRequiredLabel('Review Status', true)");
+    expect(sectionSource).toContain("renderRequiredLabel('Review Status:', true)");
     expect(sectionSource).toContain("const reviewStatusLabelId = 'voa-sales-particular-review-status-label';");
     expect(sectionSource).toContain('ariaLabelledBy={reviewStatusLabelId}');
     expect(sectionSource).toContain("{ key: 'details-available', text: 'Details available' }");
