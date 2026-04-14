@@ -3,9 +3,19 @@ import { MessageBar, MessageBarType } from '@fluentui/react';
 import { IInputs } from '../../generated/ManifestTypes';
 import { PCFContext } from '../context/PCFContext';
 import { DetailsListHost } from '../DetailsListHost/DetailsListHost';
-import { ManagerJourneyShell } from '../HomeShell/ManagerJourneyShell';
-import { SaleDetailsShell } from '../SaleDetailsShell/SaleDetailsShell';
 import { QcOutcomeActionPayload, SalesVerificationActionPayload, SharePointCatalogChunks } from '../SaleDetailsShell/types';
+import type { SaleDetailsShellProps } from '../SaleDetailsShell/types';
+import type { ManagerJourneyShellProps } from '../HomeShell/ManagerJourneyShell';
+
+const SaleDetailsShell = React.lazy(async (): Promise<{ default: React.ComponentType<SaleDetailsShellProps> }> => {
+  const module: typeof import('../SaleDetailsShell/SaleDetailsShell') = await import('../SaleDetailsShell/SaleDetailsShell');
+  return { default: module.SaleDetailsShell };
+});
+
+const ManagerJourneyShell = React.lazy(async (): Promise<{ default: React.ComponentType<ManagerJourneyShellProps> }> => {
+  const module: typeof import('../HomeShell/ManagerJourneyShell') = await import('../HomeShell/ManagerJourneyShell');
+  return { default: module.ManagerJourneyShell };
+});
 
 interface DetailsListControlShellProps {
   context: ComponentFramework.Context<IInputs>;
@@ -20,6 +30,7 @@ interface DetailsListControlShellProps {
   saleDetailsCanProgressTask: boolean;
   saleDetailsCanSubmitQcOutcome: boolean;
   saleDetailsShowQcSection: boolean;
+  canCreateManualTask?: boolean;
   activeWorkspaceName: string;
   currentUserDisplayName: string;
   loading: boolean;
@@ -69,6 +80,7 @@ export const DetailsListControlShell: React.FC<DetailsListControlShellProps> = (
   saleDetailsCanProgressTask,
   saleDetailsCanSubmitQcOutcome,
   saleDetailsShowQcSection,
+  canCreateManualTask = false,
   activeWorkspaceName,
   currentUserDisplayName,
   entraObjectId,
@@ -121,7 +133,7 @@ export const DetailsListControlShell: React.FC<DetailsListControlShellProps> = (
     prevShowPcfDetailsRef.current = showPcfDetails;
   }, [showPcfDetails]);
 
-  const gridElement = React.useMemo(
+  const gridElement: React.ReactElement = React.useMemo(
     () => (
       useManagerJourney
         ? (
@@ -133,6 +145,7 @@ export const DetailsListControlShell: React.FC<DetailsListControlShellProps> = (
             refreshNonce={refreshNonce}
             entraObjectId={entraObjectId}
             onBulkCreateTask={onBulkCreateTask}
+            canCreateManualTask={canCreateManualTask}
           />
         ) : (
           <DetailsListHost
@@ -144,13 +157,26 @@ export const DetailsListControlShell: React.FC<DetailsListControlShellProps> = (
             refreshNonce={refreshNonce}
             entraObjectId={entraObjectId}
             onBulkCreateTask={onBulkCreateTask}
+            canCreateManualTask={canCreateManualTask}
           />
         )
     ),
-    [handleUserDisplayNameMapChange, onBackToCanvas, onContextChange, refreshNonce, requestContext.country, requestContext.listYear, sharedHostProps, useManagerJourney],
+    [
+      canCreateManualTask,
+      entraObjectId,
+      handleUserDisplayNameMapChange,
+      onBackToCanvas,
+      onBulkCreateTask,
+      onContextChange,
+      refreshNonce,
+      requestContext.country,
+      requestContext.listYear,
+      sharedHostProps,
+      useManagerJourney,
+    ],
   );
 
-  const detailElement = React.useMemo(
+  const detailElement: React.ReactElement = React.useMemo(
     () => (
       <SaleDetailsShell
         saleDetailsJson={saleDetailsJson}
@@ -237,14 +263,18 @@ export const DetailsListControlShell: React.FC<DetailsListControlShellProps> = (
               </MessageBar>
             </div>
           )}
-          {gridElement}
+          <React.Suspense fallback={null}>
+            {gridElement}
+          </React.Suspense>
         </div>
         {pcfViewSalesEnabled ? (
           <div
             className={showPcfDetails ? 'voa-details-view-wrap voa-details-view-wrap--active' : 'voa-details-view-wrap'}
             style={{ display: showPcfDetails ? 'block' : 'none', height: '100%' }}
           >
-            {detailElement}
+            <React.Suspense fallback={null}>
+              {detailElement}
+            </React.Suspense>
           </div>
         ) : null}
       </>

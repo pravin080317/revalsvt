@@ -467,8 +467,7 @@ function getCellValue<T>(
     fieldName?: string,
     item?: ComponentFramework.PropertyHelper.DataSetApi.EntityRecord | Record<string, unknown>,
 ) {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    let value: any = '';
+    let value: unknown = '';
     if (fieldName && item) {
         if (item.getValue) {
             const itemEntityRecord = item as ComponentFramework.PropertyHelper.DataSetApi.EntityRecord;

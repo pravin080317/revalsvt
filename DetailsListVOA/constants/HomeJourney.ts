@@ -14,7 +14,7 @@ export const HOME_JOURNEY_COUNTRY_BASE_VALUES = ['England', 'Wales'];
 
 // List year choices are discrete business cycles, not a continuous yearly range.
 // Keep this list to 2-3 options and update when cycle years change.
-export const HOME_JOURNEY_LIST_YEAR_BASE_VALUES = ['2026', '2036', '2048'] as const;
+export const HOME_JOURNEY_LIST_YEAR_BASE_VALUES = ['2028', '2033'] as const;
 
 export const HOME_JOURNEY_AUTOMATION_IDS = {
   contextStage: 'voa-home-context-stage',

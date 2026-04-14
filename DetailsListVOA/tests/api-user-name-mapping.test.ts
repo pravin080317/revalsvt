@@ -14,7 +14,7 @@
 
 import fs from 'fs';
 import path from 'path';
-import { normalizeSearchResponse } from '../services/DataService';
+import { normalizeSearchResponse, unwrapCustomApiPayload } from '../services/DataService';
 
 const repoRoot = path.resolve(__dirname, '..', '..');
 
@@ -30,6 +30,39 @@ const hostSource = fs.readFileSync(
 // ---------------------------------------------------------------------------
 
 describe('getSales API user name mapping', () => {
+  describe('unwrapCustomApiPayload — APIM envelopes', () => {
+    test('unwraps nested response.Result payload with pageInfo and sales items', () => {
+      const wrapped = {
+        response: {
+          '@odata.context': 'https://example.crm11.dynamics.com/api/data/v9.0/$metadata#Microsoft.Dynamics.CRM.voa_GetAllSalesRecordResponse',
+          Result: JSON.stringify({
+            pageInfo: { pageNumber: 1, pageSize: 500, totalRows: 24 },
+            sales: [
+              {
+                saleId: 'S-1000026',
+                taskId: 'M-1029671',
+                address: '10 SUMMERLAND CLOSE',
+                assignedTo: '95ba3c88-b8e2-4bd1-a7c3-fa5ea4399859',
+                assignedToName: 'Maria Augustine',
+                qcAssignedTo: 'e5ed7758-1b05-428b-b726-414329ce2486',
+                qcAssignedToName: 'Shahul Sheik Dawood',
+              },
+            ],
+          }),
+        },
+      };
+
+      const unwrapped = unwrapCustomApiPayload(wrapped);
+      const normalized = normalizeSearchResponse(unwrapped);
+
+      expect(normalized.totalCount).toBe(24);
+      expect(normalized.items).toHaveLength(1);
+      expect(normalized.items[0].saleId).toBe('S-1000026');
+      expect(normalized.items[0].assignedToName).toBe('Maria Augustine');
+      expect(normalized.items[0].qcAssignedToName).toBe('Shahul Sheik Dawood');
+    });
+  });
+
   // -------------------------------------------------------------------------
   describe('normalizeSearchResponse — assignedToUserList extraction', () => {
     const payload = {
@@ -192,6 +225,11 @@ describe('getSales API user name mapping', () => {
     test('apiUserLookup and apiUserFilterOptions state is held in DetailsListHost', () => {
       expect(hostSource).toContain('apiUserLookup');
       expect(hostSource).toContain('apiUserFilterOptions');
+    });
+
+    test('preserves assigned/qc assigned ID fields for GUID-backed filtering', () => {
+      expect(hostSource).toContain('r.assignedtoid = assignedToIds');
+      expect(hostSource).toContain('r.qcassignedtoid = qcAssignedToIds');
     });
   });
 });

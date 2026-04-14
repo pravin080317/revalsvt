@@ -8,6 +8,8 @@ export interface SummaryFlagFilter {
 
 export type ColumnFilterValue = string | string[] | NumericFilter | DateRangeFilter | SummaryFlagFilter;
 
+const GUID_LIKE_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 const MONTH_MAP: Record<string, number> = {
   jan: 1,
   feb: 2,
@@ -86,6 +88,55 @@ const toNumericValue = (raw: unknown, fallbackText: string): number | undefined 
   return Number.isNaN(parsed) ? undefined : parsed;
 };
 
+const toTokenText = (value: unknown): string => {
+  if (typeof value === 'string') return value;
+  if (typeof value === 'number' || typeof value === 'boolean') return String(value);
+  return '';
+};
+
+const normalizeToken = (value: unknown): string => toTokenText(value).trim().toLowerCase();
+
+const splitTokens = (value: unknown): string[] => {
+  if (Array.isArray(value)) {
+    return value
+      .map((entry) => normalizeToken(entry))
+      .filter((entry) => entry !== '');
+  }
+  const text = toTokenText(value).trim();
+  if (!text) return [];
+  return text
+    .split(/[;,]/)
+    .map((entry) => entry.trim().toLowerCase())
+    .filter((entry) => entry !== '');
+};
+
+const isGuidLike = (value: string): boolean => GUID_LIKE_REGEX.test(value.trim());
+
+const resolveUserIdFieldCandidates = (fieldName: string): string[] => {
+  const normalizedField = fieldName.replace(/[^a-z0-9]/gi, '').toLowerCase();
+  if (normalizedField === 'assignedto') {
+    return [
+      'assignedtoid',
+      'assignedToId',
+      'assignedtouserid',
+      'assignedToUserId',
+      'caseworkerassignedtoid',
+      'caseworkerAssignedToId',
+      'caseworkerassignedtouserid',
+      'caseworkerAssignedToUserId',
+    ];
+  }
+  if (normalizedField === 'qcassignedto') {
+    return [
+      'qcassignedtoid',
+      'qcAssignedToId',
+      'qcassignedtouserid',
+      'qcAssignedToUserId',
+    ];
+  }
+  return [];
+};
+
 const isActiveFilterValue = (value: ColumnFilterValue): boolean => {
   if (Array.isArray(value)) return value.length > 0;
   if (typeof value === 'string') return value.trim() !== '';
@@ -143,9 +194,34 @@ export const filterItemsByColumnFilters = <T>(
               ? textVal.toLowerCase().includes(filterValue.trim().toLowerCase())
               : true;
           case 'singleSelect':
-            return typeof filterValue === 'string'
-              ? textVal.toLowerCase() === filterValue.trim().toLowerCase()
-              : true;
+            if (typeof filterValue !== 'string') {
+              return true;
+            }
+            {
+              const needle = normalizeToken(filterValue);
+              if (!needle) return true;
+              const textTokens = splitTokens(raw);
+              if (textTokens.length > 0) {
+                if (textTokens.some((token) => token === needle)) {
+                  return true;
+                }
+              }
+              if (textVal.toLowerCase() === needle) {
+                return true;
+              }
+              if (!isGuidLike(needle)) {
+                return false;
+              }
+              const idFieldCandidates = resolveUserIdFieldCandidates(fieldName);
+              if (idFieldCandidates.length === 0) {
+                return false;
+              }
+              return idFieldCandidates.some((candidate) => {
+                const candidateRaw = getFieldValue(item, candidate);
+                const candidateTokens = splitTokens(candidateRaw);
+                return candidateTokens.some((token) => token === needle);
+              });
+            }
           case 'multiSelect': {
             const isSummaryFlagField = fieldName.toLowerCase() === 'summaryflags' || fieldName.toLowerCase() === 'summaryflag';
             const isSummaryFlagObj = isSummaryFlagField

@@ -45,6 +45,13 @@ describe('column filter query', () => {
     expect(query).toBe('columnFilter=summaryFlags~EQ~Potential%3B');
   });
 
+  test('serializes summary flag exact filters as eq with multiple values and trailing semicolon', () => {
+    const query = buildColumnFilterQuery('sales', {
+      summaryFlag: { operator: 'eq', values: ['Potential', 'Review'] },
+    });
+    expect(query).toBe('columnFilter=summaryFlags~EQ~Potential%3BReview%3B');
+  });
+
   test('serializes summary flag not-contains filters with the NTL operator and semicolons', () => {
     const query = buildColumnFilterQuery('sales', {
       summaryFlag: { operator: 'notContains', values: ['Potential', 'Review'] },

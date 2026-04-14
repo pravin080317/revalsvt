@@ -12,7 +12,9 @@
     "start:watch": "pcf-scripts start watch",
     "refreshTypes": "pcf-scripts refreshTypes",
     "test": "jest",
-    "test:ci": "jest --ci --coverage --coverageReporters=cobertura --coverageReporters=lcov --coverageReporters=text-summary --reporters=default --reporters=jest-junit"
+    "test:ci": "jest --ci --coverage --coverageReporters=cobertura --coverageReporters=lcov --coverageReporters=text-summary --reporters=default --reporters=jest-junit",
+    "perf:ui": "k6 run scripts/perf-ui-200.js",
+    "perf:ui:200": "k6 run scripts/perf-ui-200.js -e TARGET_URL=http://localhost:8182"
   },
   "dependencies": {
     "react": "16.14.0",

@@ -10,11 +10,9 @@ function readRepoFile(relativePath: string): string {
 describe('summary flag equal filter contract', () => {
   const gridSource = readRepoFile('DetailsListVOA/Grid.tsx');
 
-  test('equal-mode combobox resolves typed exact value into a selected key so Apply can be enabled', () => {
-    expect(gridSource).toContain('const isSummaryFlagMultiSelect = !isSummaryFlagField || menuSummaryOperator !== \'eq\';');
+  test('equal-mode uses multi-select combobox (same as contains/notContains)', () => {
+    expect(gridSource).toContain('const isSummaryFlagMultiSelect = true;');
     expect(gridSource).toContain('allowFreeInput');
-    expect(gridSource).toContain('const resolvedKey = next ? resolveComboOptionKey(options, next) : undefined;');
-    expect(gridSource).toContain("setMenuFilterValue(resolvedKey ? String(resolvedKey) : '');");
     expect(gridSource).toContain("isSummaryFlagField && menuSummaryOperator === 'eq' && typeof menuFilterValue === 'string'");
     expect(gridSource).toContain("? [menuFilterValue.trim()].filter((v) => v !== '')");
   });

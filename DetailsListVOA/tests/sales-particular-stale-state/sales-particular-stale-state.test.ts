@@ -141,8 +141,8 @@ describe('retainSaleDetails behaviour in runtime controller', () => {
     expect(runtimeSource).toContain("this._saleDetails = ''");
   });
 
-  test('finishViewSaleRequest always sets _saleDetails to the new payload', () => {
-    expect(runtimeSource).toContain('this._saleDetails = detailsPayload');
+  test('finishViewSaleRequest preserves QC outcome fields when incoming payload is missing them', () => {
+    expect(runtimeSource).toContain('this._saleDetails = preserveQcOutcomeDetails(detailsPayload, this._saleDetails);');
   });
 
   test('handleDetailsBack clears _saleDetails', () => {
@@ -180,6 +180,14 @@ describe('shell draft resync effects', () => {
 describe('error clearing on model change', () => {
   test('SalesVerificationSection clears mandatoryErrorMessages when model changes', () => {
     expect(salesVerificationSource).toContain('setMandatoryErrorMessages([]);');
+  });
+
+  test('SalesVerificationSection clears validation state when editing becomes disabled', () => {
+    expect(salesVerificationSource).toContain('if (!editingDisabled) {');
+    expect(salesVerificationSource).toContain('setIsSaleUsefulError(undefined);');
+    expect(salesVerificationSource).toContain('setWhyNotUsefulError(undefined);');
+    expect(salesVerificationSource).toContain('clearCrossSectionFieldErrors();');
+    expect(salesVerificationSource).toContain('[clearCrossSectionFieldErrors, editingDisabled]');
   });
 
   test('SalesVerificationSection clears mandatory errors when salesParticularModel changes', () => {

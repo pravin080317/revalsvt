@@ -1,7 +1,6 @@
 import { 
   CheckboxVisibility,
   ColumnActionsMode,
-  ContextualMenu,
   ContextualMenuItemType,
   createTheme,
   DetailsList,
@@ -39,18 +38,17 @@ import {
   Link,
   DatePicker,
   DayOfWeek,
-  FocusTrapZone,
   IDatePickerStrings,
   IButtonStyles,
   TooltipHost,
-  Dialog,
-  DialogFooter,
-  DialogType,
 } from '@fluentui/react';
 import * as React from 'react';
 import { NoFields } from '../DetailsListVOA/grid/NoFields';
 import { RecordsColumns } from '../DetailsListVOA/config/ManifestConstants';
 import { IGridColumn, ColumnConfig, AssignUser } from './Component.types';
+import { AssignTasksOverlay } from './components/Grid/AssignTasksOverlay';
+import { ColumnFilterContextMenu } from './components/Grid/ColumnFilterContextMenu';
+import { CreateTaskDialog } from './components/Grid/CreateTaskDialog';
 import { GridCell } from '../DetailsListVOA/grid/GridCell';
 import { ClassNames } from '../DetailsListVOA/grid/Grid.styles';
 import { GridFilterState, NumericFilter, NumericFilterMode, createDefaultGridFilters, sanitizeFilters, SearchByOption, DateRangeFilter, isValidUkPostcode, normalizeUkPostcode } from './Filters';
@@ -185,6 +183,7 @@ export interface GridProps {
   onAssignPanelToggle?: (isOpen: boolean) => boolean | void;
   currentUserId?: string;
   onBulkCreateTask?: (saleIds: string[]) => Promise<void>;
+  canCreateManualTask?: boolean;
 }
 
 const defaultTheme = createTheme({
@@ -308,6 +307,7 @@ interface FocusableActionButtonProps {
   onClick: () => void;
   onUnavailableClick?: () => void;
   styles?: IButtonStyles;
+  dataTestId?: string;
   text?: string;
   title?: string;
   unavailable?: boolean;
@@ -326,6 +326,7 @@ const FocusableActionButton = ({
   onClick,
   onUnavailableClick,
   styles,
+  dataTestId,
   text,
   title,
   unavailable = false,
@@ -359,6 +360,7 @@ const FocusableActionButton = ({
         text={text}
         iconProps={iconProps}
         onClick={handleClick}
+        data-testid={dataTestId}
         aria-describedby={describedBy}
         ariaLabel={ariaLabel}
         aria-current={ariaCurrent}
@@ -813,6 +815,7 @@ export const Grid = React.memo((props: GridProps) => {
     currentUserId,
     onMarkPassedQc,
     onBulkCreateTask,
+    canCreateManualTask = false,
   } = props;
 
   const theme = useTheme(themeJSON);
@@ -868,6 +871,8 @@ export const Grid = React.memo((props: GridProps) => {
   const [menuFilterError, setMenuFilterError] = React.useState<string | undefined>();
   const [menuFilterSearch, setMenuFilterSearch] = React.useState('');
   const [menuSummaryOperator, setMenuSummaryOperator] = React.useState<'contains' | 'notContains' | 'eq'>('contains');
+  const [menuNumericMinText, setMenuNumericMinText] = React.useState('');
+  const [menuNumericMaxText, setMenuNumericMaxText] = React.useState('');
   const [menuExtraOptions, setMenuExtraOptions] = React.useState<Array<string | { key: string; text: string }>>([]); 
   const menuOptionsFieldRef = React.useRef<string>('');
   const liveFilterTimer = React.useRef<number | undefined>(undefined);
@@ -913,6 +918,8 @@ export const Grid = React.memo((props: GridProps) => {
   const [dismissedAssignUsersError, setDismissedAssignUsersError] = React.useState(false);
   const [dismissedCreateTaskInfo, setDismissedCreateTaskInfo] = React.useState(false);
   const [createTaskModalOpen, setCreateTaskModalOpen] = React.useState(false);
+  const [createTaskBusy, setCreateTaskBusy] = React.useState(false);
+  const [createTaskError, setCreateTaskError] = React.useState<string | undefined>(undefined);
   const [searchResetNotice, setSearchResetNotice] = React.useState<string | undefined>();
   const [salesSearchTouched, setSalesSearchTouched] = React.useState<Partial<Record<SalesSearchFieldKey, boolean>>>({});
   const [salesSearchAttempted, setSalesSearchAttempted] = React.useState(false);
@@ -1085,6 +1092,7 @@ export const Grid = React.memo((props: GridProps) => {
   React.useEffect(() => {
     if (createTaskModalOpen) {
       setDismissedCreateTaskInfo(false);
+      setCreateTaskError(undefined);
     }
   }, [createTaskModalOpen]);
 
@@ -3010,8 +3018,7 @@ export const Grid = React.memo((props: GridProps) => {
       const field = c.fieldName ?? c.key;
       const activeFilter = columnFiltersState[(field ?? '').toString()] !== undefined;
       const sort = sorting?.find((s) => s.name === field);
-      const sortIcon = sort ? (Number(sort.sortDirection) === 1 ? 'SortDown' : 'SortUp') : undefined;
-      const iconName = sortIcon ?? (activeFilter ? 'Filter' : undefined);
+      const iconName = !sort && activeFilter ? 'Filter' : undefined;
       const columnName = c.name ?? String(field ?? '');
       const sortState = sort ? (Number(sort.sortDirection) === 1 ? 'sorted descending' : 'sorted ascending') : 'not sorted';
       const filterState = activeFilter ? 'filtered' : 'not filtered';
@@ -3911,6 +3918,14 @@ export const Grid = React.memo((props: GridProps) => {
     }
   }, [disableViewSalesRecordAction, handleNavigate, selection]);
 
+  const onOpenFirstSaleForTest = React.useCallback(() => {
+    if (disableViewSalesRecordAction) return;
+    const first = filteredItems[0] as ComponentFramework.PropertyHelper.DataSetApi.EntityRecord | undefined;
+    if (first) {
+      void handleNavigate(first, undefined, true);
+    }
+  }, [disableViewSalesRecordAction, filteredItems, handleNavigate]);
+
   const onItemInvoked = React.useCallback(
     (item?: ComponentFramework.PropertyHelper.DataSetApi.EntityRecord) => {
       void handleNavigate(item);
@@ -3976,9 +3991,30 @@ export const Grid = React.memo((props: GridProps) => {
           opts.unshift({ key: SELECT_ALL_KEY, text: 'Select all' });
         }
       }
+
+      // Preserve active selections in the options list so reopening a filter never hides
+      // already-selected values when the backend returns a partial option set.
+      const existing = columnFiltersState[fieldName];
+      const selectedValues = Array.isArray(existing)
+        ? existing
+        : typeof existing === 'string'
+          ? [existing]
+          : (typeof existing === 'object' && existing !== null && Array.isArray((existing as { values?: unknown }).values)
+            ? (existing as { values: unknown[] }).values
+            : []);
+      selectedValues
+        .map((value) => {
+          if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') {
+            return String(value).trim();
+          }
+          return '';
+        })
+        .filter((value) => value !== '')
+        .forEach((value) => push(value, value));
+
       return opts;
     },
-    [getDistinctOptions, menuExtraOptions],
+    [columnFiltersState, getDistinctOptions, menuExtraOptions],
   );
 
   const openMenuForColumn = React.useCallback(
@@ -4009,9 +4045,8 @@ export const Grid = React.memo((props: GridProps) => {
               // New object format with operator and values
               const rawValues = (existing as { values?: unknown }).values;
               const valuesArray = Array.isArray(rawValues) ? (rawValues as string[]) : [];
-              // 'eq' uses a single-select ComboBox that expects a string; other operators use the multi-select which expects an array
-              const existingOperator = (existing as { operator?: unknown }).operator;
-              initialValue = existingOperator === 'eq' ? (valuesArray[0] ?? '') : valuesArray;
+              // All operators (contains, notContains, eq) use multi-select ComboBox which expects an array
+              initialValue = valuesArray;
             } else if (Array.isArray(existing)) {
               // Legacy array format
               initialValue = existing;
@@ -4022,9 +4057,13 @@ export const Grid = React.memo((props: GridProps) => {
               initialValue = [];
             }
             break;
-          case 'numeric':
-            initialValue = (existing as NumericFilter) ?? { mode: '>=' };
+          case 'numeric': {
+            const existingNum = existing as NumericFilter | undefined;
+            initialValue = existingNum ?? { mode: '>=' };
+            setMenuNumericMinText(existingNum?.min !== undefined ? String(existingNum.min) : '');
+            setMenuNumericMaxText(existingNum?.max !== undefined ? String(existingNum.max) : '');
             break;
+          }
           case 'dateRange':
             initialValue = (existing as DateRangeFilter) ?? {};
             break;
@@ -4166,7 +4205,9 @@ export const Grid = React.memo((props: GridProps) => {
             && String(cfg.selectAllValues[0] ?? '').toUpperCase() === 'ALL';
           const allKey = isSingleAll ? String(cfg.selectAllValues?.[0] ?? 'ALL') : '';
           const normalizedVals = allKey && vals.includes(allKey) ? [allKey] : vals;
-          if (normalizedVals.length === 0) {
+          const hasSingleAllSelection = isSingleAll
+            && normalizedVals.some((value) => isAllToken(value) || String(value) === allKey);
+          if (normalizedVals.length === 0 || hasSingleAllSelection) {
             delete updated[fieldName];
           } else if (isSummaryFlagField) {
             updated[fieldName] = {
@@ -4264,6 +4305,8 @@ export const Grid = React.memo((props: GridProps) => {
         const current = (menuFilterValue as NumericFilter) ?? { mode: '>=' };
         setMenuFilterValue({ mode: current.mode ?? '>=', min: undefined, max: undefined });
         setMenuFilterText('');
+        setMenuNumericMinText('');
+        setMenuNumericMaxText('');
         break;
       }
       case 'dateRange': {
@@ -4321,6 +4364,12 @@ export const Grid = React.memo((props: GridProps) => {
     [assignUsers, derivedScreenKind, selectedAssignmentRecords],
   );
   const createTaskButtonState = React.useMemo((): { disabled: boolean; tooltip?: string } => {
+    if (!canCreateManualTask) {
+      return {
+        disabled: true,
+        tooltip: 'Create task is available only to users with both manager and caseworker role/team access.',
+      };
+    }
     if (selectedCount === 0) {
       return { disabled: true, tooltip: 'Select one or more sales to create tasks.' };
     }
@@ -4337,7 +4386,7 @@ export const Grid = React.memo((props: GridProps) => {
       return { disabled: true, tooltip: 'Create Task is enabled only when selected Task ID is empty or null.' };
     }
     return { disabled: false };
-  }, [selectedCount, selectedCreateTaskRecords, selectedCreateTaskSaleIds.length]);
+  }, [canCreateManualTask, selectedCount, selectedCreateTaskRecords, selectedCreateTaskSaleIds.length]);
   const createTaskPreviewSaleIds = React.useMemo(
     () => selectedCreateTaskSaleIds.slice(0, 20),
     [selectedCreateTaskSaleIds],
@@ -4388,6 +4437,8 @@ export const Grid = React.memo((props: GridProps) => {
 
   React.useEffect(() => {
     if (selectedCount > 0) return;
+    setCreateTaskBusy(false);
+    setCreateTaskError(undefined);
     setCreateTaskModalOpen(false);
   }, [selectedCount]);
 
@@ -4396,14 +4447,39 @@ export const Grid = React.memo((props: GridProps) => {
     setAssignSelectedUserId(userId);
   }, [assignLoading, isAssignUserDisabled]);
 
+  const handleAssignSearchChange = React.useCallback((value: string) => {
+    if (assignLoading || assignUsersLoading) return;
+    setAssignSearch(value);
+  }, [assignLoading, assignUsersLoading]);
+
   const openCreateTaskModal = React.useCallback(() => {
     if (createTaskButtonState.disabled) return;
+    setCreateTaskError(undefined);
     setCreateTaskModalOpen(true);
   }, [createTaskButtonState.disabled]);
 
   const closeCreateTaskModal = React.useCallback(() => {
+    if (createTaskBusy) return;
+    setCreateTaskError(undefined);
     setCreateTaskModalOpen(false);
-  }, []);
+  }, [createTaskBusy]);
+
+  const handleConfirmCreateTask = React.useCallback(async () => {
+    if (!onBulkCreateTask || createTaskBusy) return;
+    setCreateTaskBusy(true);
+    setCreateTaskError(undefined);
+    try {
+      await onBulkCreateTask(selectedCreateTaskSaleIds);
+      setCreateTaskModalOpen(false);
+    } catch (error) {
+      const message = error instanceof Error && error.message.trim().length > 0
+        ? error.message
+        : 'Manual task creation failed. Please try again.';
+      setCreateTaskError(message);
+    } finally {
+      setCreateTaskBusy(false);
+    }
+  }, [createTaskBusy, onBulkCreateTask, selectedCreateTaskSaleIds]);
 
   const handleAssignClick = React.useCallback(async (user: AssignUser) => {
     if (!onAssignTasks || assignLoading || isAssignUserDisabled(user.id)) return;
@@ -4496,6 +4572,13 @@ export const Grid = React.memo((props: GridProps) => {
     },
     [isAssignUserDisabled],
   );
+
+  const handleAssignItemInvoked = React.useCallback((item?: AssignUser) => {
+    const record = item;
+    if (!record || record.id === ASSIGN_LOADING_ROW_ID) return;
+    if (assignLoading || isAssignUserDisabled(record.id)) return;
+    handleAssignUserSelect(record.id);
+  }, [assignLoading, handleAssignUserSelect, isAssignUserDisabled]);
 
   const prefilterWorkThatOptions = React.useMemo(() => {
     if (isCaseworkerView) {
@@ -4754,6 +4837,11 @@ export const Grid = React.memo((props: GridProps) => {
     && (viewportMetrics.width <= 640 || viewportMetrics.height <= 520);
   const microViewport = viewportMetrics.width > 0
     && (viewportMetrics.width <= 420 || viewportMetrics.height <= 360);
+  const isLocalHarness = React.useMemo(() => {
+    if (typeof window === 'undefined') return false;
+    const host = window.location?.hostname ?? '';
+    return host === 'localhost' || host === '127.0.0.1' || host === '::1';
+  }, []);
   const showBulkSelectionControls = showSelectionControls;
   const showCompactClearSelection = false;
   const showClearFiltersButton = hasColumnFilters && !microViewport;
@@ -4767,6 +4855,11 @@ export const Grid = React.memo((props: GridProps) => {
     && (!compactViewport || !createTaskButtonState.disabled));
   const showMarkPassedQcButton = !microViewport && Boolean(showMarkPassedQc
     && (!compactViewport || (!markPassedQcButtonState.disabled && !markPassedQcLoading)));
+  const showOpenFirstSaleTestButton = isLocalHarness
+    && showResults
+    && filteredItems.length > 0
+    && !viewSaleNavigationPending
+    && !disableViewSalesRecordAction;
   const compactActionMenuItems = React.useMemo<IContextualMenuItem[]>(() => {
     if (!microViewport) return [];
     const items: IContextualMenuItem[] = [];
@@ -4970,15 +5063,21 @@ export const Grid = React.memo((props: GridProps) => {
     };
     const applyDisabled = isApplyDisabled();
 
-    const isSummaryFlagMultiSelect = !isSummaryFlagField || menuSummaryOperator !== 'eq';
+    const isSummaryFlagMultiSelect = true;
+    const rawFilterColumnName = String(menuState.column.name ?? menuState.column.fieldName ?? 'column');
+    const opensInNewTabSuffix = SCREEN_TEXT.common.links.opensInNewTab.toLowerCase();
+    const normalizedFilterColumnName = rawFilterColumnName.trim();
+    const filterColumnName = normalizedFilterColumnName.toLowerCase().endsWith(opensInNewTabSuffix)
+      ? normalizedFilterColumnName.slice(0, -SCREEN_TEXT.common.links.opensInNewTab.length).trim()
+      : normalizedFilterColumnName;
 
     const renderControl = () => {
       if (!cfg) {
         return (
           <>
             <TextField
-              label={`Filter ${menuState.column.name}`}
-              placeholder={`Filter ${menuState.column.name}`}
+              label={`Filter ${filterColumnName}`}
+              placeholder={`Filter ${filterColumnName}`}
               value={textVal}
               onChange={(_, v) => {
                 const next = isTaskIdField ? sanitizeTaskIdInput(v, ID_FIELD_MAX_LENGTH) : (v ?? '');
@@ -5003,8 +5102,8 @@ export const Grid = React.memo((props: GridProps) => {
             return (
               <>
                 <TextField
-                  label={`Filter ${menuState.column.name}`}
-                  placeholder={`Filter ${menuState.column.name}`}
+                  label={`Filter ${filterColumnName}`}
+                  placeholder={`Filter ${filterColumnName}`}
                   value={textVal}
                   onChange={(_, v) => {
                     const next = isTaskIdField ? sanitizeTaskIdInput(v, ID_FIELD_MAX_LENGTH) : (v ?? '');
@@ -5035,8 +5134,8 @@ export const Grid = React.memo((props: GridProps) => {
               return (
                 <>
                   <ComboBox
-                    label={`Filter ${menuState.column.name}`}
-                    placeholder={`Select ${menuState.column.name}`}
+                    label={`Filter ${filterColumnName}`}
+                    placeholder={`Select ${filterColumnName}`}
                     aria-describedby={buildAriaDescribedBy(menuHint ? menuHintId : undefined)}
                     options={filteredColumnOptions}
                     allowFreeform={false}
@@ -5241,8 +5340,8 @@ export const Grid = React.memo((props: GridProps) => {
                     )}
                     {isSummaryFlagMultiSelect ? (
                       <ComboBox
-                        label={`Filter ${menuState.column.name}`}
-                        placeholder={`Select ${menuState.column.name}`}
+                        label={`Filter ${filterColumnName}`}
+                        placeholder={`Select ${filterColumnName}`}
                         aria-describedby={buildAriaDescribedBy(menuHint ? menuHintId : undefined)}
                         options={exactMatchOptions}
                         multiSelect
@@ -5286,8 +5385,8 @@ export const Grid = React.memo((props: GridProps) => {
                       />
                     ) : (
                       <ComboBox
-                        label={`Filter ${menuState.column.name}`}
-                        placeholder={`Select ${menuState.column.name}`}
+                        label={`Filter ${filterColumnName}`}
+                        placeholder={`Select ${filterColumnName}`}
                         aria-describedby={buildAriaDescribedBy(menuHint ? menuHintId : undefined)}
                         options={exactMatchOptions}
                         allowFreeform={false}
@@ -5327,7 +5426,7 @@ export const Grid = React.memo((props: GridProps) => {
                     )}
                     {isSummaryFlagField && (
                       <Text variant="small" styles={{ root: { marginTop: 4 } }}>
-                        {menuSummaryOperator === 'eq' ? 'Select one summary flag.' : 'Select one or more summary flags from the current page.'}
+                        {'Select one or more summary flags from the current page.'}
                       </Text>
                     )}
                   </>
@@ -5351,6 +5450,8 @@ export const Grid = React.memo((props: GridProps) => {
                   setMenuFilterValue((prev) => {
                     const current = (prev as NumericFilter) ?? { mode: '>=' };
                     const mode = typeof opt?.key === 'string' ? (opt.key as NumericFilter['mode']) : current.mode ?? '>=';
+                    setMenuNumericMinText(current.min !== undefined ? String(current.min) : '');
+                    setMenuNumericMaxText(current.max !== undefined ? String(current.max) : '');
                     return { ...current, mode };
                   })
                 }
@@ -5362,30 +5463,44 @@ export const Grid = React.memo((props: GridProps) => {
               />
               <TextField
                 label={`${menuState.column.name} ${numVal.mode === '<=' ? 'max' : 'min'}`}
-                type="number"
-                value={String(numVal.mode === '<=' ? numVal.max ?? '' : numVal.min ?? '')}
-                onChange={(_, v) =>
+                type="text"
+                inputMode="decimal"
+                value={numVal.mode === '<=' ? menuNumericMaxText : menuNumericMinText}
+                onChange={(_, v) => {
+                  const text = v ?? '';
+                  if (text !== '' && !/^-?\d*\.?\d*$/.test(text)) return;
+                  if (numVal.mode === '<=') {
+                    setMenuNumericMaxText(text);
+                  } else {
+                    setMenuNumericMinText(text);
+                  }
                   setMenuFilterValue((prev) => {
                     const current = (prev as NumericFilter) ?? { mode: '>=' };
                     const mode = current.mode ?? '>=';
-                    if (mode === '<=') {
-                      return { ...current, max: v === '' ? undefined : Number(v) };
-                    }
-                    return { ...current, min: v === '' ? undefined : Number(v) };
-                  })
-                }
+                    const parsed = parseFloat(text);
+                    const num = text === '' || isNaN(parsed) ? undefined : parsed;
+                    if (mode === '<=') return { ...current, max: num };
+                    return { ...current, min: num };
+                  });
+                }}
               />
               {numVal.mode === 'between' && (
                 <TextField
                   label={`${menuState.column.name} max`}
-                  type="number"
-                  value={String(numVal.max ?? '')}
-                  onChange={(_, v) =>
+                  type="text"
+                  inputMode="decimal"
+                  value={menuNumericMaxText}
+                  onChange={(_, v) => {
+                    const text = v ?? '';
+                    if (text !== '' && !/^-?\d*\.?\d*$/.test(text)) return;
+                    setMenuNumericMaxText(text);
                     setMenuFilterValue((prev) => {
                       const current = (prev as NumericFilter) ?? { mode: 'between' };
-                      return { ...current, max: v === '' ? undefined : Number(v) };
-                    })
-                  }
+                      const parsed = parseFloat(text);
+                      const num = text === '' || isNaN(parsed) ? undefined : parsed;
+                      return { ...current, max: num };
+                    });
+                  }}
                 />
               )}
             </Stack>
@@ -5450,7 +5565,7 @@ export const Grid = React.memo((props: GridProps) => {
       }
     };
 
-    const columnName = menuState.column.name ?? 'column';
+    const columnName = filterColumnName;
     const applyUnavailableReason = isDateRangeMissingEndDate
       ? `Select an end date for ${columnName} to apply this filter.`
       : isDateRangeIncomplete
@@ -5505,6 +5620,8 @@ export const Grid = React.memo((props: GridProps) => {
     tableKey,
     commonText,
     menuSummaryOperator,
+    menuNumericMinText,
+    menuNumericMaxText,
     menuFilterError,
     menuFilterValue,
     menuFilterText,
@@ -6463,10 +6580,19 @@ export const Grid = React.memo((props: GridProps) => {
                     text={commonText.tableActions.viewSalesRecord}
                     iconProps={{ iconName: 'View' }}
                     onClick={onViewSelected}
+                    dataTestId="voa-view-sales-record-button"
                     unavailable={viewSaleNavigationPending || disableViewSalesRecordAction || selectedCount !== 1}
                     unavailableReason={viewSalesRecordUnavailableReason}
                     unavailableReasonId="voa-view-sales-record-unavailable"
                     ariaLabel={commonText.aria.viewSelectedSalesRecord}
+                  />
+                )}
+                {showOpenFirstSaleTestButton && (
+                  <FocusableActionButton
+                    text="Open First Sale (Test)"
+                    onClick={onOpenFirstSaleForTest}
+                    dataTestId="voa-open-first-sale-test"
+                    ariaLabel="Open first sale record for local automation testing"
                   />
                 )}
                 {showAssignButton && (
@@ -6594,15 +6720,12 @@ export const Grid = React.memo((props: GridProps) => {
               </div>
             </>
           )}
-        {showResults && menuState && (
-          <ContextualMenu
-            target={menuState.target}
-            items={menuItems}
-            onDismiss={() => setMenuState(undefined)}
-            directionalHint={DirectionalHint.bottomLeftEdge}
-            calloutProps={{ setInitialFocus: true }}
-          />
-        )}
+        <ColumnFilterContextMenu
+          isVisible={Boolean(showResults && menuState)}
+          target={menuState?.target}
+          items={menuItems}
+          onDismiss={() => setMenuState(undefined)}
+        />
         {showResults && (!compactViewport || totalPages > 0) && (
           <Stack
             id="voa-grid-pagination"
@@ -6694,166 +6817,69 @@ export const Grid = React.memo((props: GridProps) => {
           </Stack>
         )}
         {assignPanelOpen && (
-          <div className="voa-assign-overlay" role="dialog" aria-modal="true" aria-labelledby="assign-screen-title">
-            <FocusTrapZone>
-              <Stack tokens={{ childrenGap: 16 }} styles={{ root: { minHeight: '100%', padding: 20 } }}>
-                <Stack horizontal verticalAlign="center" styles={{ root: { borderBottom: '1px solid #e1e1e1', paddingBottom: 12 } }}>
-                  <DefaultButton
-                    text={commonText.buttons.back}
-                    iconProps={{ iconName: 'Back' }}
-                    onClick={closeAssignPanel}
-                    disabled={assignLoading}
-                    ariaLabel={assignTasksText.aria.backToManager}
-                  />
-                  <Text as="h1" id="assign-screen-title" variant="xLarge" styles={{ root: { marginLeft: 12, fontWeight: 600 } }}>
-                    {assignHeaderText}
-                  </Text>
-                  <Stack.Item styles={{ root: { marginLeft: 'auto' } }}>
-                    <DefaultButton
-                      text={commonText.buttons.close}
-                      iconProps={{ iconName: 'Cancel' }}
-                      disabled={assignLoading}
-                      ariaLabel={assignTasksText.aria.closeAssign}
-                      onClick={closeAssignPanel}
-                    />
-                  </Stack.Item>
-                </Stack>
-                <SearchBox
-                  placeholder={assignTasksText.searchPlaceholder}
-                  ariaLabel={assignTasksText.searchPlaceholder}
-                  aria-describedby={buildAriaDescribedBy(
-                    assignSearchUnavailableReason ? 'voa-assign-search-unavailable' : undefined,
-                  )}
-                  disabled={!!assignSearchUnavailableReason}
-                  value={assignSearch}
-                  onChange={(_, v) => {
-                    if (assignLoading || assignUsersLoading) return;
-                    setAssignSearch(v ?? '');
-                  }}
-                  className={assignSearchUnavailableReason ? 'voa-focusable-disabled-field' : undefined}
-                  title={assignSearchUnavailableReason}
-                />
-                {assignSearchUnavailableReason && (
-                  <span id="voa-assign-search-unavailable" className="voa-sr-only">
-                    {assignSearchUnavailableReason}
-                  </span>
-                )}
-                {assignUsersLoading && <Spinner size={SpinnerSize.small} ariaLabel={assignTasksText.loadingUsersText} />}
-                {assignLoading && (
-                  <Stack horizontal verticalAlign="center" tokens={{ childrenGap: 8 }}>
-                    <Spinner size={SpinnerSize.small} ariaLabel={assignTasksText.loadingAssignText} />
-                    <Text>{assignLoadingText}</Text>
-                  </Stack>
-                )}
-                {assignUsersInfo && !dismissedAssignUsersInfo && (
-                  <MessageBar
-                    messageBarType={MessageBarType.info}
-                    onDismiss={() => setDismissedAssignUsersInfo(true)}
-                    dismissButtonAriaLabel={commonText.buttons.clear}
-                  >
-                    {assignUsersInfo}
-                  </MessageBar>
-                )}
-                {assignUsersError && !dismissedAssignUsersError && (
-                  <MessageBar
-                    messageBarType={MessageBarType.error}
-                    onDismiss={() => setDismissedAssignUsersError(true)}
-                    dismissButtonAriaLabel={commonText.buttons.clear}
-                  >
-                    {assignUsersError}
-                  </MessageBar>
-                )}
-                <Text as="h2" variant="mediumPlus" styles={{ root: { fontWeight: 600 } }}>
-                  {assignUserListTitle}
-                </Text>
-                {disabledAssignUserIds.size > 0 && (
-                  <Text variant="small" className="voa-assign-disabled-note">
-                    {assignAlreadyAssignedReason}
-                  </Text>
-                )}
-                <DetailsList
-                  items={assignListItems}
-                  columns={assignColumns}
-                  selectionMode={SelectionMode.none}
-                  isHeaderVisible
-                  onRenderRow={onRenderAssignUserRow}
-                  onItemInvoked={(item) => {
-                    const record = item as AssignUser | undefined;
-                    if (!record || record.id === ASSIGN_LOADING_ROW_ID) return;
-                    if (assignLoading || isAssignUserDisabled(record.id)) return;
-                    handleAssignUserSelect(record.id);
-                  }}
-                />
-                <Stack horizontal horizontalAlign="end" tokens={{ childrenGap: 12 }}>
-                  <FocusableActionButton
-                    text={assignActionText}
-                    iconProps={{ iconName: 'AddFriend' }}
-                    onClick={() => {
-                      if (selectedAssignUser) {
-                        void handleAssignClick(selectedAssignUser);
-                      }
-                    }}
-                    unavailable={!selectedAssignUser || assignLoading}
-                    unavailableReason={assignConfirmUnavailableReason}
-                    unavailableReasonId="voa-assign-confirm-unavailable"
-                    ariaLabel={assignActionText}
-                  />
-                </Stack>
-              </Stack>
-            </FocusTrapZone>
-          </div>
+          <AssignTasksOverlay
+            isOpen={assignPanelOpen}
+            assignLoading={assignLoading}
+            assignUsersLoading={assignUsersLoading}
+            assignHeaderText={assignHeaderText}
+            assignTasksText={assignTasksText}
+            commonBackText={commonText.buttons.back}
+            commonCloseText={commonText.buttons.close}
+            commonClearText={commonText.buttons.clear}
+            assignSearch={assignSearch}
+            assignSearchUnavailableReason={assignSearchUnavailableReason}
+            assignSearchAriaDescribedBy={buildAriaDescribedBy(
+              assignSearchUnavailableReason ? 'voa-assign-search-unavailable' : undefined,
+            )}
+            assignLoadingText={assignLoadingText}
+            assignUsersInfo={assignUsersInfo}
+            dismissedAssignUsersInfo={dismissedAssignUsersInfo}
+            assignUsersError={assignUsersError}
+            dismissedAssignUsersError={dismissedAssignUsersError}
+            assignUserListTitle={assignUserListTitle}
+            showDisabledNote={disabledAssignUserIds.size > 0}
+            assignAlreadyAssignedReason={assignAlreadyAssignedReason}
+            assignListItems={assignListItems}
+            assignColumns={assignColumns}
+            onRenderAssignUserRow={onRenderAssignUserRow}
+            onAssignSearchChange={handleAssignSearchChange}
+            onAssignItemInvoked={handleAssignItemInvoked}
+            onDismissAssignUsersInfo={() => setDismissedAssignUsersInfo(true)}
+            onDismissAssignUsersError={() => setDismissedAssignUsersError(true)}
+            onBack={closeAssignPanel}
+            onClose={closeAssignPanel}
+            assignConfirmButton={(
+              <FocusableActionButton
+                text={assignActionText}
+                iconProps={{ iconName: 'AddFriend' }}
+                onClick={() => {
+                  if (selectedAssignUser) {
+                    void handleAssignClick(selectedAssignUser);
+                  }
+                }}
+                unavailable={!selectedAssignUser || assignLoading}
+                unavailableReason={assignConfirmUnavailableReason}
+                unavailableReasonId="voa-assign-confirm-unavailable"
+                ariaLabel={assignActionText}
+              />
+            )}
+          />
         )}
-        <Dialog
-          hidden={!createTaskModalOpen}
+        <CreateTaskDialog
+          isOpen={createTaskModalOpen}
+          createTaskActionText={createTaskActionText}
+          selectedCreateTaskSaleIds={selectedCreateTaskSaleIds}
+          createTaskPreviewSaleIds={createTaskPreviewSaleIds}
+          createTaskRemainingCount={createTaskRemainingCount}
+          dismissedCreateTaskInfo={dismissedCreateTaskInfo}
+          canCreateTask={!!onBulkCreateTask}
+          isSubmitting={createTaskBusy}
+          errorMessage={createTaskError}
+          closeText={commonText.buttons.close}
           onDismiss={closeCreateTaskModal}
-          dialogContentProps={{
-            type: DialogType.normal,
-            title: createTaskActionText,
-            subText: `Create tasks for ${selectedCreateTaskSaleIds.length} selected sale${selectedCreateTaskSaleIds.length === 1 ? '' : 's'}.`,
-          }}
-          modalProps={{ isBlocking: false }}
-          minWidth={560}
-          maxWidth={720}
-        >
-          <Stack tokens={{ childrenGap: 12 }}>
-            {!dismissedCreateTaskInfo && (
-              <MessageBar
-                messageBarType={MessageBarType.info}
-                isMultiline={false}
-                onDismiss={() => setDismissedCreateTaskInfo(true)}
-                dismissButtonAriaLabel={commonText.buttons.close}
-              >
-                {selectedCreateTaskSaleIds.length} sale{selectedCreateTaskSaleIds.length === 1 ? '' : 's'} selected for task creation.
-              </MessageBar>
-            )}
-            <Text variant="mediumPlus" styles={{ root: { fontWeight: 600 } }}>
-              Selected Sale IDs
-            </Text>
-            <ul style={{ margin: 0, paddingLeft: 20, maxHeight: 220, overflowY: 'auto' }}>
-              {createTaskPreviewSaleIds.map((saleId) => (
-                <li key={saleId}>
-                  <Text>{saleId}</Text>
-                </li>
-              ))}
-            </ul>
-            {createTaskRemainingCount > 0 && (
-              <Text variant="small">
-                And {createTaskRemainingCount} more selected sale ID{createTaskRemainingCount === 1 ? '' : 's'}.
-              </Text>
-            )}
-          </Stack>
-          <DialogFooter>
-            <PrimaryButton
-              text={createTaskActionText}
-              onClick={() => { void onBulkCreateTask?.(selectedCreateTaskSaleIds); closeCreateTaskModal(); }}
-              disabled={!onBulkCreateTask}
-            />
-            <DefaultButton
-              text={commonText.buttons.close}
-              onClick={closeCreateTaskModal}
-            />
-          </DialogFooter>
-        </Dialog>
+          onDismissInfo={() => setDismissedCreateTaskInfo(true)}
+          onConfirm={handleConfirmCreateTask}
+        />
       </div>
     </ThemeProvider>
   );

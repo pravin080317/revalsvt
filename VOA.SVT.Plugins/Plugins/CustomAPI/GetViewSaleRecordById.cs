@@ -242,11 +242,15 @@ namespace VOA.SVT.Plugins.CustomAPI
                     if (resolved.TryGetValue(kvp.Value, out var displayName))
                     {
                         var nameField = kvp.Key + "Name";
-                        var escapedName = displayName.Replace("\\", "\\\\").Replace("\"", "\\\"");
-                        // Insert "assignedToName":"Display Name" immediately after "assignedTo":"guid-value"
-                        var pattern = $"\"{ kvp.Key}\"\\s*:\\s*\"[^\"]*\"";
-                        enriched = Regex.Replace(enriched, pattern, match =>
-                            match.Value + $",\"{nameField}\":\"{escapedName}\"");
+                        // Only inject if the name field doesn't already exist in the JSON to prevent duplicates
+                        if (!enriched.Contains($"\"{nameField}\""))
+                        {
+                            var escapedName = displayName.Replace("\\", "\\\\").Replace("\"", "\\\"");
+                            // Insert "assignedToName":"Display Name" immediately after "assignedTo":"guid-value"
+                            var pattern = $"\"{ kvp.Key}\"\\s*:\\s*\"[^\"]*\"";
+                            enriched = Regex.Replace(enriched, pattern, match =>
+                                match.Value + $",\"{nameField}\":\"{escapedName}\"");
+                        }
                     }
                 }
 

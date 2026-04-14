@@ -15,6 +15,10 @@ describe('WRT-308 Manual Task Creation AC', () => {
   const actionsSource = readRepoFile('DetailsListVOA/services/runtime/actions.ts');
   const indexSource = readRepoFile('DetailsListVOA/index.ts');
   const configSource = readRepoFile('DetailsListVOA/config/ControlConfig.ts');
+  const gridSource = readRepoFile('DetailsListVOA/Grid.tsx');
+  const detailsHostSource = readRepoFile('DetailsListVOA/components/DetailsListHost/DetailsListHost.tsx');
+  const controlShellSource = readRepoFile('DetailsListVOA/components/ControlShell/DetailsListControlShell.tsx');
+  const managerJourneySource = readRepoFile('DetailsListVOA/components/HomeShell/ManagerJourneyShell.tsx');
 
   test('AC1: clicking Create Task from Sales Record details routes to manual task creation and auto-assignment context', () => {
     expect(shellSource).toContain('onCreateTask={onCreateManualTask');
@@ -64,5 +68,22 @@ describe('WRT-308 Manual Task Creation AC', () => {
   test('AC3c: Create Task success notification auto-dismisses (short-lived, stays on details view)', () => {
     expect(sectionSource).toContain('setTimeout(() => setCreateTaskMessage(undefined), 3000)');
     expect(sectionSource).toContain("{createTaskMessage && (");
+  });
+
+  test('AC4: all-sales bulk Create Task uses the same manager+caseworker access gate', () => {
+    expect(gridSource).toContain('canCreateManualTask?: boolean;');
+    expect(gridSource).toContain('canCreateManualTask = false');
+    expect(gridSource).toContain('if (!canCreateManualTask) {');
+    expect(gridSource).toContain("tooltip: 'Create task is available only to users with both manager and caseworker role/team access.'");
+    expect(detailsHostSource).toContain('canCreateManualTask?: boolean;');
+    expect(detailsHostSource).toContain('canCreateManualTask = false');
+    expect(detailsHostSource).toContain('canCreateManualTask,');
+    expect(controlShellSource).toContain('canCreateManualTask?: boolean;');
+    expect(controlShellSource).toContain('canCreateManualTask = false');
+    expect(controlShellSource).toContain('canCreateManualTask={canCreateManualTask}');
+    expect(managerJourneySource).toContain('canCreateManualTask?: boolean;');
+    expect(managerJourneySource).toContain('canCreateManualTask = false');
+    expect(managerJourneySource).toContain('canCreateManualTask={canCreateManualTask}');
+    expect(indexSource).toContain('canCreateManualTask: this.runtime.canCreateManualTask');
   });
 });

@@ -39,7 +39,7 @@ interface ParsedUserContext {
   entraObjectId: string;
 }
 
-interface ManagerJourneyShellProps {
+export interface ManagerJourneyShellProps {
   context: ComponentFramework.Context<IInputs>;
   onRowInvoke?: (args: { taskId?: string; saleId?: string; screenKind?: string; tableKey?: string }) => void | Promise<void>;
   onSelectionChange?: (args: { taskId?: string; saleId?: string; selectedTaskIds?: string[]; selectedSaleIds?: string[] }) => void;
@@ -50,6 +50,7 @@ interface ManagerJourneyShellProps {
   refreshNonce?: number;
   entraObjectId?: string;
   onBulkCreateTask?: (saleIds: string[]) => Promise<void>;
+  canCreateManualTask?: boolean;
 }
 
 
@@ -183,6 +184,7 @@ export const ManagerJourneyShell: React.FC<ManagerJourneyShellProps> = ({
   refreshNonce,
   entraObjectId,
   onBulkCreateTask,
+  canCreateManualTask = false,
 }) => {
   const initialCountryValue = React.useMemo(() => normalizeText(initialCountry), [initialCountry]);
   const initialListYearValue = React.useMemo(() => normalizeText(initialListYear), [initialListYear]);
@@ -626,6 +628,7 @@ export const ManagerJourneyShell: React.FC<ManagerJourneyShellProps> = ({
                   refreshNonce={refreshNonce}
                   entraObjectId={effectiveEntraObjectId}
                   onBulkCreateTask={onBulkCreateTask}
+                  canCreateManualTask={canCreateManualTask}
                 />
               </div>
             </section>

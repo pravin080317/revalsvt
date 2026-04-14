@@ -12,6 +12,7 @@ describe('grid usability contract', () => {
   const cellSource = readRepoFile('DetailsListVOA/grid/GridCell.tsx');
   const cssSource = readRepoFile('DetailsListVOA/css/DetailsListVOA.css');
   const hostSource = readRepoFile('DetailsListVOA/components/DetailsListHost/DetailsListHost.tsx');
+  const createTaskDialogSource = readRepoFile('DetailsListVOA/components/Grid/CreateTaskDialog.tsx');
   const semanticUtilSource = readRepoFile('DetailsListVOA/utils/TagSemanticUtils.ts');
 
   test('keeps the selection column and Sale ID visible during horizontal scrolling so people do not lose row context', () => {
@@ -68,7 +69,7 @@ describe('grid usability contract', () => {
     expect(gridSource).toContain('text={searchPanelToggleText}');
     expect(gridSource).toContain('text={prefilterToggleText}');
     expect(gridSource).toContain('text={commonText.buttons.moreActions}');
-    expect(gridSource).toContain('text={commonText.buttons.close}');
+    expect(createTaskDialogSource).toContain('text={closeText}');
     expect(gridSource).not.toContain('text={ultraCompactViewport ? undefined : searchPanelToggleText}');
     expect(gridSource).not.toContain('text={ultraCompactViewport ? undefined : prefilterToggleText}');
   });
@@ -239,5 +240,20 @@ describe('grid usability contract', () => {
     // Re-opening an existing eq filter must set menuFilterValue to the first element string,
     // not the whole values array, otherwise selectedKey resolves to '' and the field shows blank.
     expect(gridSource).toContain("existingOperator === 'eq' ? (valuesArray[0] ?? '') : valuesArray");
+  });
+
+  test('treats single-value All selection as clearing only the active column filter', () => {
+    expect(gridSource).toContain('const hasSingleAllSelection = isSingleAll');
+    expect(gridSource).toContain('normalizedVals.some((value) => isAllToken(value) || String(value) === allKey)');
+    expect(gridSource).toContain('if (normalizedVals.length === 0 || hasSingleAllSelection) {');
+    expect(gridSource).toContain('delete updated[fieldName];');
+  });
+
+  test('keeps currently selected dropdown values in the options list when reopening a filter', () => {
+    expect(gridSource).toContain('Preserve active selections in the options list');
+    expect(gridSource).toContain('const existing = columnFiltersState[fieldName];');
+    expect(gridSource).toContain('const selectedValues = Array.isArray(existing)');
+    expect(gridSource).toContain('selectedValues');
+    expect(gridSource).toContain('.forEach((value) => push(value, value));');
   });
 });

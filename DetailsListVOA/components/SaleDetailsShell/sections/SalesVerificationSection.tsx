@@ -279,12 +279,26 @@ export const SalesVerificationSection: React.FC<SalesVerificationSectionProps> =
     }
 
     clearReturnToTableTimeout();
-    setIsSaleUsefulKey(toUsefulKey(model.isSaleUseful));
-    setWhyNotUsefulKey(toWhyKey(model.whyNotUseful) ?? (model.whyNotUseful || undefined));
+    const nextSaleUsefulKey = toUsefulKey(model.isSaleUseful);
+    setIsSaleUsefulKey(nextSaleUsefulKey);
+    setWhyNotUsefulKey(
+      nextSaleUsefulKey === 'no'
+        ? (toWhyKey(model.whyNotUseful) ?? (model.whyNotUseful || undefined))
+        : undefined,
+    );
     setAdditionalNotes(model.additionalNotes);
     setQcRemarks(model.remarks);
-    setQcOutcomeKey(toQcOutcomeKey(model.qcOutcome));
-    setQcOutcomeRemarks(model.qcRemark);
+    // Only sync the QC-submission fields when the API has a committed value.
+    // While qcOutcome is empty the task is still "in-progress": the useEffect
+    // firing due to audit-history load or container-resize (DevTools / zoom)
+    // must not overwrite draft values the user is currently typing.
+    // When a new task is opened the Stack key forces a full remount, so
+    // React.useState already initialises qcOutcomeKey / qcOutcomeRemarks
+    // correctly without needing a setXxx call here.
+    if (model.qcOutcome) {
+      setQcOutcomeKey(toQcOutcomeKey(model.qcOutcome));
+      setQcOutcomeRemarks(model.qcRemark);
+    }
     setIsSaleUsefulError(undefined);
     setWhyNotUsefulError(undefined);
     setMandatoryErrorMessages([]);
@@ -404,6 +418,17 @@ export const SalesVerificationSection: React.FC<SalesVerificationSectionProps> =
     ? undefined
     : submitQcOutcomeActionRule.reason;
   const editingDisabled = salesVerificationEditRule.disabled;
+
+  React.useEffect(() => {
+    if (!editingDisabled) {
+      return;
+    }
+
+    setIsSaleUsefulError(undefined);
+    setWhyNotUsefulError(undefined);
+    setMandatoryErrorMessages([]);
+    clearCrossSectionFieldErrors();
+  }, [clearCrossSectionFieldErrors, editingDisabled]);
 
   const validate = React.useCallback((): boolean => {
     const validation = getSalesVerificationMandatoryValidation({
@@ -738,7 +763,7 @@ export const SalesVerificationSection: React.FC<SalesVerificationSectionProps> =
               <Dropdown
                 id="voa-why-not-useful"
                 placeholder="Select why the sale is not useful"
-                selectedKey={whyNotUsefulKey}
+                selectedKey={isNotUseful ? whyNotUsefulKey : undefined}
                 options={whyNotOptions}
                 disabled={editingDisabled || !isNotUseful}
                 onChange={(_, option) => {

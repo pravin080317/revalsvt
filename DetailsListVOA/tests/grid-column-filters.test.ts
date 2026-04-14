@@ -50,6 +50,46 @@ describe('grid column filter engine', () => {
     expect(result).toHaveLength(2);
   });
 
+  test('singleSelect assignedto filter matches row by assignedtoid when filter value is a GUID', () => {
+    const aliceId = '11111111-1111-1111-1111-111111111111';
+    const bobId = '22222222-2222-2222-2222-222222222222';
+    const items = [
+      { assignedto: ['Alice Caseworker'], assignedtoid: aliceId },
+      { assignedto: ['Bob Caseworker'], assignedtoid: bobId },
+    ];
+
+    const result = filterItemsByColumnFilters(
+      items,
+      { assignedto: aliceId },
+      'sales',
+      getFilterableText,
+      (item, field) => item[field as keyof typeof item],
+    );
+
+    expect(result).toHaveLength(1);
+    expect(result[0].assignedtoid).toBe(aliceId);
+  });
+
+  test('singleSelect qcassignedto filter matches row by qcassignedtoid when filter value is a GUID', () => {
+    const qcAId = '33333333-3333-3333-3333-333333333333';
+    const qcBId = '44444444-4444-4444-4444-444444444444';
+    const items = [
+      { qcassignedto: ['Carol QC'], qcassignedtoid: qcAId },
+      { qcassignedto: ['Dan QC'], qcassignedtoid: qcBId },
+    ];
+
+    const result = filterItemsByColumnFilters(
+      items,
+      { qcassignedto: qcAId },
+      'sales',
+      getFilterableText,
+      (item, field) => item[field as keyof typeof item],
+    );
+
+    expect(result).toHaveLength(1);
+    expect(result[0].qcassignedtoid).toBe(qcAId);
+  });
+
   describe('dateRange column filter', () => {
     const items = [
       { transactiondate: '2024-01-10' },

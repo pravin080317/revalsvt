@@ -543,6 +543,64 @@ export const mergeQcOutcomeDetails = (
 
   return JSON.stringify(root);
 };
+
+export const preserveQcOutcomeDetails = (
+  incomingSaleDetailsJson: string,
+  existingSaleDetailsJson: string,
+): string => {
+  const incomingRoot = getSaleDetailsRoot(incomingSaleDetailsJson);
+  const existingRoot = getSaleDetailsRoot(existingSaleDetailsJson);
+
+  const incomingTaskId = resolveCurrentTaskIdFromDetails(incomingSaleDetailsJson);
+  const existingTaskId = resolveCurrentTaskIdFromDetails(existingSaleDetailsJson);
+  const incomingSaleId = resolveCurrentSaleIdFromDetails(incomingSaleDetailsJson);
+  const existingSaleId = resolveCurrentSaleIdFromDetails(existingSaleDetailsJson);
+
+  if (incomingTaskId && existingTaskId && incomingTaskId !== existingTaskId) {
+    return incomingSaleDetailsJson;
+  }
+
+  if (incomingSaleId && existingSaleId && incomingSaleId !== existingSaleId) {
+    return incomingSaleDetailsJson;
+  }
+
+  const incomingOutcomeRecord = toRecord(incomingRoot.qualityControlOutcome) ?? {};
+  const existingOutcomeRecord = toRecord(existingRoot.qualityControlOutcome) ?? {};
+
+  const incomingQcOutcome = normalizeTextValue(incomingOutcomeRecord.qcOutcome);
+  const incomingQcRemark = normalizeTextValue(incomingOutcomeRecord.qcRemark);
+  const incomingQcReviewedBy = normalizeTextValue(incomingOutcomeRecord.qcReviewedBy);
+  const incomingQcReviewedOn = normalizeTextValue(incomingOutcomeRecord.qcReviewedOn);
+
+  const existingQcOutcome = normalizeTextValue(existingOutcomeRecord.qcOutcome);
+  const existingQcRemark = normalizeTextValue(existingOutcomeRecord.qcRemark);
+  const existingQcReviewedBy = normalizeTextValue(existingOutcomeRecord.qcReviewedBy);
+  const existingQcReviewedOn = normalizeTextValue(existingOutcomeRecord.qcReviewedOn);
+
+  const nextQcOutcome = incomingQcOutcome || existingQcOutcome;
+  const nextQcRemark = incomingQcRemark || existingQcRemark;
+  const nextQcReviewedBy = incomingQcReviewedBy || existingQcReviewedBy;
+  const nextQcReviewedOn = incomingQcReviewedOn || existingQcReviewedOn;
+
+  const changed = nextQcOutcome !== incomingQcOutcome
+    || nextQcRemark !== incomingQcRemark
+    || nextQcReviewedBy !== incomingQcReviewedBy
+    || nextQcReviewedOn !== incomingQcReviewedOn;
+
+  if (!changed) {
+    return incomingSaleDetailsJson;
+  }
+
+  incomingRoot.qualityControlOutcome = {
+    ...incomingOutcomeRecord,
+    qcOutcome: nextQcOutcome,
+    qcRemark: nextQcRemark,
+    qcReviewedBy: nextQcReviewedBy,
+    qcReviewedOn: nextQcReviewedOn,
+  };
+
+  return JSON.stringify(incomingRoot);
+};
 export const mergeAuditHistoryDetails = (
   saleDetailsJson: string,
   auditType: AuditType,

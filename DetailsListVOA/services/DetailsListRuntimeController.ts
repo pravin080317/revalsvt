@@ -29,6 +29,7 @@ import {
   mergeAuditHistoryDetails,
   mergeManualTaskCreationDetails,
   mergeModifyTaskDetails,
+  preserveQcOutcomeDetails,
   mergeQcOutcomeDetails,
   mergeSalesVerificationDetails,
   resolveCurrentSaleIdFromDetails,
@@ -737,7 +738,7 @@ export class DetailsListRuntimeController {
       return;
     }
     svtDebug.log('Runtime', 'finishViewSaleRequest', { requestId, showPcfDetails, emitViewAction, payloadLength: detailsPayload.length });
-    this._saleDetails = detailsPayload;
+    this._saleDetails = preserveQcOutcomeDetails(detailsPayload, this._saleDetails);
     this.viewSalePending = false;
     this.showPcfSaleDetails = showPcfDetails;
     const access = this.resolveSaleDetailsAccess(detailsPayload);

@@ -112,7 +112,7 @@ export const buildColumnFilterTokens = (
         ? 'EQ'
         : 'like';
     const serializedValue = value.operator === 'eq'
-      ? `${values[0]};`
+      ? values.join(';') + ';'
       : values.join(';');
     if (!serializedValue) return undefined;
     return [apiField, operator, serializedValue];

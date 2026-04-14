@@ -329,19 +329,58 @@ export const normalizeSearchResponse = (payload: TaskSearchResponse | SalesApiRe
   return payload as TaskSearchResponse;
 };
 
+const tryParseJsonPayload = (value: string): unknown => {
+  const trimmed = value.trim();
+  if (!trimmed) return value;
+  try {
+    return JSON.parse(trimmed) as unknown;
+  } catch {
+    return value;
+  }
+};
+
 export const unwrapCustomApiPayload = (payload: unknown): SalesPayload => {
-  if (payload && typeof payload === 'object') {
-    const record = payload as Record<string, unknown>;
+  const unwrap = (candidate: unknown, depth: number): unknown => {
+    if (depth > 6) {
+      return candidate;
+    }
+
+    if (typeof candidate === 'string') {
+      const parsed = tryParseJsonPayload(candidate);
+      return parsed === candidate ? candidate : unwrap(parsed, depth + 1);
+    }
+
+    if (!candidate || typeof candidate !== 'object') {
+      return candidate;
+    }
+
+    const record = candidate as Record<string, unknown>;
     const raw = record.Result ?? record.result;
     if (typeof raw === 'string') {
-      try {
-        return JSON.parse(raw) as SalesPayload;
-      } catch {
-        return payload as SalesPayload;
+      const parsed = tryParseJsonPayload(raw);
+      return parsed === raw ? candidate : unwrap(parsed, depth + 1);
+    }
+
+    const envelopeKeys = ['response', 'Response', 'data', 'Data', 'body', 'Body', 'value'];
+    for (const key of envelopeKeys) {
+      if (!(key in record)) continue;
+      const nested = record[key];
+      if (nested === undefined || nested === null) continue;
+      return unwrap(nested, depth + 1);
+    }
+
+    const nonODataKeys = Object.keys(record).filter((key) => !key.startsWith('@odata.'));
+    if (nonODataKeys.length === 1) {
+      const nested = record[nonODataKeys[0]];
+      if (nested !== undefined && nested !== null) {
+        return unwrap(nested, depth + 1);
       }
     }
-  }
-  return payload as SalesPayload;
+
+    return candidate;
+  };
+
+  return unwrap(payload, 0) as SalesPayload;
 };
 
 const resolveCustomApiName = (context: ComponentFramework.Context<IInputs>): string => {

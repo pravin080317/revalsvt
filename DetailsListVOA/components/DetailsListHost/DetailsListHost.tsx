@@ -60,6 +60,8 @@ export interface DetailsListHostProps {
   entraObjectId?: string;
   // Bulk create task handler - passed down to Grid.
   onBulkCreateTask?: (saleIds: string[]) => Promise<void>;
+  // Access gate for bulk create task action.
+  canCreateManualTask?: boolean;
 }
 
 type ColumnFilterValue = string | string[] | NumericFilter | DateRangeFilter;
@@ -325,6 +327,7 @@ export const DetailsListHost: React.FC<DetailsListHostProps> = ({
   refreshNonce,
   entraObjectId,
   onBulkCreateTask,
+  canCreateManualTask = false,
 }) => {
   // Parse basic params
   const pageSize = (context.parameters as unknown as Record<string, { raw?: number }>).pageSize?.raw ?? 500;
@@ -1253,6 +1256,19 @@ export const DetailsListHost: React.FC<DetailsListHostProps> = ({
           return userDisplayNameMap[normalizedId] ?? id;
         });
       };
+      const extractNormalizedUserIds = (value: unknown): string[] | undefined => {
+        const ids = Array.isArray(value)
+          ? value.map((v) => String(v ?? '').trim()).filter((v) => v !== '')
+          : typeof value === 'string'
+          ? value.split(',').map((v) => v.trim()).filter((v) => v !== '')
+          : [];
+        if (ids.length === 0) return undefined;
+        const normalized = ids
+          .map((entry) => normalizeAssignableUserId(entry))
+          .filter((entry) => entry !== '');
+        if (normalized.length === 0) return undefined;
+        return Array.from(new Set(normalized));
+      };
       apimItems.forEach((item, index) => {
         const base: Record<string, unknown> = {};
         const r = base as ComponentFramework.PropertyHelper.DataSetApi.EntityRecord & Record<string, unknown>;
@@ -1274,6 +1290,17 @@ export const DetailsListHost: React.FC<DetailsListHostProps> = ({
         r.getValue = ((columnName: string) => r[columnName] ?? '') as ComponentFramework.PropertyHelper.DataSetApi.EntityRecord['getValue'];
         r.getFormattedValue = ((columnName: string) => toText(r[columnName])) as ComponentFramework.PropertyHelper.DataSetApi.EntityRecord['getFormattedValue'];
         Object.keys(obj).forEach((k) => (r[k.toLowerCase()] = obj[k]));
+
+        const assignedToIds = extractNormalizedUserIds((r as Record<string, unknown>).assignedto ?? (r as Record<string, unknown>).assignedTo);
+        if (assignedToIds && assignedToIds.length > 0) {
+          r.assignedtoid = assignedToIds;
+          (r as Record<string, unknown>).assignedToId = assignedToIds;
+        }
+        const qcAssignedToIds = extractNormalizedUserIds((r as Record<string, unknown>).qcassignedto ?? (r as Record<string, unknown>).qcAssignedTo);
+        if (qcAssignedToIds && qcAssignedToIds.length > 0) {
+          r.qcassignedtoid = qcAssignedToIds;
+          (r as Record<string, unknown>).qcAssignedToId = qcAssignedToIds;
+        }
 
         // Prefer DB-resolved names from the API response; fall back to plugin cache lookup.
         const assignedToNameFromResponse = toText((r as Record<string, unknown>).assignedtoname ?? (r as Record<string, unknown>).assignedToName);
@@ -2590,7 +2617,13 @@ export const DetailsListHost: React.FC<DetailsListHostProps> = ({
     currentUserId,
     onAssignTasks: assignTasksToUser,
     onMarkPassedQc: isQcView ? markPassedQcTasks : undefined,
-    onBulkCreateTask,
+    onBulkCreateTask: onBulkCreateTask
+      ? async (saleIds: string[]) => {
+        await onBulkCreateTask(saleIds);
+        setSearchNonce((n) => n + 1);
+      }
+      : undefined,
+    canCreateManualTask,
     onLoadFilterOptions: (field, query) => {
       const key = normalizeFilterKey(String(field ?? ''));
       const options = displayFilterOptionsRich[key] ?? [];
@@ -2674,7 +2707,7 @@ export const DetailsListHost: React.FC<DetailsListHostProps> = ({
       }
       clearStoredSort();
     },
-    rowInvokeEnabled: false,
+    rowInvokeEnabled: isLocalHost,
   };
 
   return <Grid {...(props as unknown as GridProps)} height={allocatedHeight} onBackRequested={onBackRequested} contextSubtitle={contextSubtitle} onEditContext={onEditContext} />;

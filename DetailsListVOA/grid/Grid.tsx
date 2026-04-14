@@ -725,8 +725,7 @@ export const Grid = React.memo((props: GridProps) => {
       const hasControlled = !!(columnFilters[key]) || !!(columnFilters[keyLower]);
       const activeFilter = hasLocal || hasControlled;
       const sort = sorting?.find((s) => s.name === field);
-      const sortIcon = sort ? (Number(sort.sortDirection) === 1 ? 'SortDown' : 'SortUp') : undefined;
-      const iconName = sortIcon ?? (activeFilter ? 'Filter' : undefined);
+      const iconName = !sort && activeFilter ? 'Filter' : undefined;
       const columnName = c.name ?? String(field ?? '');
       const sortState = sort ? (Number(sort.sortDirection) === 1 ? 'sorted descending' : 'sorted ascending') : 'not sorted';
       const filterState = activeFilter ? 'filtered' : 'not filtered';
@@ -1190,7 +1189,15 @@ export const Grid = React.memo((props: GridProps) => {
       },
       {
         key: 'filterInput',
-        onRender: () => (
+        onRender: () => {
+          const rawFilterColumnName = String(menuState.column.name ?? menuState.column.fieldName ?? 'column');
+          const opensInNewTabSuffix = SCREEN_TEXT.common.links.opensInNewTab.toLowerCase();
+          const normalizedFilterColumnName = rawFilterColumnName.trim();
+          const filterColumnName = normalizedFilterColumnName.toLowerCase().endsWith(opensInNewTabSuffix)
+            ? normalizedFilterColumnName.slice(0, -SCREEN_TEXT.common.links.opensInNewTab.length).trim()
+            : normalizedFilterColumnName;
+
+          return (
           <div style={{ padding: '0 12px 12px', width: 260 }}>
             {isDateRangeColumn(fieldName) ? (
               <>
@@ -1221,8 +1228,8 @@ export const Grid = React.memo((props: GridProps) => {
             {lookup ? (
               <>
               <TextField
-                    label={`Filter ${menuState.column.name}`}
-                    placeholder={`Filter ${menuState.column.name}`}
+                  label={`Filter ${filterColumnName}`}
+                  placeholder={`Filter ${filterColumnName}`}
                     value={menuFilterText}
                     onChange={(_, v) => {
                     const next = v ?? '';
@@ -1247,8 +1254,8 @@ export const Grid = React.memo((props: GridProps) => {
                   </Stack>
                 )}
                   <Dropdown
-                    label={`Filter ${menuState.column.name}`}
-                    placeholder={`Select ${menuState.column.name}`}
+                    label={`Filter ${filterColumnName}`}
+                    placeholder={`Select ${filterColumnName}`}
                     options={filteredValueOptions}
                     multiSelect
                     selectedKeys={Array.isArray(menuFilterValue) ? menuFilterValue : []}
@@ -1271,7 +1278,7 @@ export const Grid = React.memo((props: GridProps) => {
             ) : (
               <>
                 <TextField
-                  placeholder={`Filter ${menuState.column.name}`}
+                  placeholder={`Filter ${filterColumnName}`}
                   value={menuFilterText}
                   onChange={(_, v) => {
                     const next = v ?? '';
@@ -1297,8 +1304,8 @@ export const Grid = React.memo((props: GridProps) => {
                 )}
                 {!isTextOnlyField(fieldName) && (
                   <Dropdown
-                    label={`Filter ${menuState.column.name}`}
-                    placeholder={`Select ${menuState.column.name}`}
+                    label={`Filter ${filterColumnName}`}
+                    placeholder={`Select ${filterColumnName}`}
                     options={filteredValueOptions}
                     multiSelect
                     selectedKeys={Array.isArray(menuFilterValue) ? menuFilterValue : (menuFilterValue ? [menuFilterValue] : [])}
@@ -1325,16 +1332,17 @@ export const Grid = React.memo((props: GridProps) => {
               <PrimaryButton
                 text="Apply"
                 onClick={applyFilter}
-                ariaLabel={`Apply filter for ${menuState.column.name ?? 'column'}`}
+                ariaLabel={`Apply filter for ${filterColumnName}`}
               />
               <DefaultButton
                 text="Clear"
                 onClick={clearFilter}
-                ariaLabel={`Clear filter for ${menuState.column.name ?? 'column'}`}
+                ariaLabel={`Clear filter for ${filterColumnName}`}
               />
             </Stack>
           </div>
-        ),
+          );
+        },
       },
     ];
   }, [applyFilter, clearFilter, handleSort, menuFilterValue, menuState, isLookupField, getDistinctOptions, scheduleLiveTextFilter, isDateRangeColumn, menuDateFrom, menuDateTo, dateStrings, formatDisplayDate]);

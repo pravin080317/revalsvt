@@ -1076,9 +1076,14 @@ export const useSaleDetailsViewModel = (
     return hasData ? detailsFromPayload : SAMPLE_SALE_DETAILS;
   }, [detailsFromPayload]);
 
+  // Use the individual string values as deps rather than the object reference.
+  // resolveSharePointCatalogChunks() creates a new object on every PCF updateView
+  // call (including container-resize / DevTools / zoom events), so depending on
+  // object identity would rebuild the model on every resize even when the catalog
+  // data has not actually changed.
   const chunkedReferenceImages = React.useMemo(
     () => buildReferenceImagesFromSharePointChunks(sharePointCatalogChunks),
-    [sharePointCatalogChunks],
+    [sharePointCatalogChunks?.optionsJson, sharePointCatalogChunks?.recordsJson1, sharePointCatalogChunks?.recordsJson2],
   );
 
   return React.useMemo(() => {

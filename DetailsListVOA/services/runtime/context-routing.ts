@@ -88,5 +88,15 @@ export const isPcfViewSalesDetailsEnabled = (context: ComponentFramework.Context
       return false;
     }
   }
+
+  // Always enable PCF details view in local harness to support end-to-end
+  // automation and dummy-data testing without Canvas navigation dependencies.
+  if (typeof window !== 'undefined') {
+    const host = window.location?.hostname ?? '';
+    if (host === 'localhost' || host === '127.0.0.1' || host === '::1') {
+      return true;
+    }
+  }
+
   return CONTROL_CONFIG.enablePcfViewSalesDetails === true;
 };
