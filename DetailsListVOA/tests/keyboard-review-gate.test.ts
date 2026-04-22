@@ -9,23 +9,24 @@ function readRepoFile(relativePath: string): string {
 
 describe('keyboard review gate', () => {
   const gridSource = readRepoFile('DetailsListVOA/Grid.tsx');
+  const assignOverlaySource = readRepoFile('DetailsListVOA/components/Grid/AssignTasksOverlay.tsx');
   const gridCellSource = readRepoFile('DetailsListVOA/grid/GridCell.tsx');
 
   test('keeps active custom controls keyboard-operable', () => {
     expect(gridCellSource).toContain('<button');
     expect(gridCellSource).toContain('type="button"');
     expect(gridCellSource).toContain('<Link');
-    expect(gridSource).toContain('<FocusTrapZone>');
+    expect(assignOverlaySource).toContain('<FocusTrapZone>');
   });
 
   test('removes inactive controls from keyboard navigation by using disabled states', () => {
     expect(gridSource).toContain('disabled={unavailable}');
-    expect(gridSource).toContain('disabled={assignLoading}');
+    expect(assignOverlaySource).toContain('disabled={assignLoading}');
     expect(gridSource).toContain('disabled');
     expect(gridSource).toContain('disabled={selectionControlsDisabled}');
-    expect(gridSource).toContain('disabled={!!assignSearchUnavailableReason}');
+    expect(assignOverlaySource).toContain('disabled={!!assignSearchUnavailableReason}');
     expect(gridSource).not.toContain('aria-disabled={selectionControlsDisabled || undefined}');
-    expect(gridSource).not.toContain('aria-disabled={assignSearchUnavailableReason ? true : undefined}');
+    expect(assignOverlaySource).not.toContain('aria-disabled={assignSearchUnavailableReason ? true : undefined}');
   });
 
   test('keeps grouped controls and scroll regions intentionally structured for keyboard flow', () => {

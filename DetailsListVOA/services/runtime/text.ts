@@ -1,6 +1,8 @@
 export const normalizeTextValue = (value: unknown): string => {
   if (typeof value === 'string') {
-    return value.trim();
+    return value
+      .replace(/[\u2010-\u2015\u2212]/g, '-')
+      .trim();
   }
   if (typeof value === 'number' || typeof value === 'boolean') {
     return String(value).trim();

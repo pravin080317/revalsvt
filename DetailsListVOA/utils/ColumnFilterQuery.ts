@@ -98,7 +98,10 @@ export const buildColumnFilterTokens = (
       .map((entry) => (normalizedField === 'flaggedforreview' ? normalizeFlaggedForReviewValue(entry) : entry));
     if (values.length === 0) return undefined;
     const operator = 'in';
-    return [apiField, operator, values.join(COLUMN_FILTER_VALUE_SEPARATOR)];
+    const serializedValue = normalizedField === 'reviewflags'
+      ? `${values.join(';')};`
+      : values.join(COLUMN_FILTER_VALUE_SEPARATOR);
+    return [apiField, operator, serializedValue];
   }
 
   if ((normalizedField === 'summaryflag' || normalizedField === 'summaryflags') && isSummaryFlagFilterValue(value)) {

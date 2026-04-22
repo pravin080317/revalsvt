@@ -28,6 +28,110 @@ export interface ApiMutationResult {
   message: string;
 }
 
+const TECHNICAL_ERROR_MESSAGE = 'Technical error. Please try again in some time.';
+const GENERIC_ERROR_MESSAGE = 'Unable to process your request. Please try again.';
+
+const stripHtmlAndNormalizeWhitespace = (value: string): string =>
+  value
+    .replace(/<[^>]+>/g, ' ')
+    .replace(/\\r|\\n|\r|\n/g, ' ')
+    .replace(/\\"/g, '"')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+const tryParseJson = (value: string): unknown => {
+  const trimmed = value.trim();
+  if (!trimmed) return undefined;
+
+  try {
+    return JSON.parse(trimmed) as unknown;
+  } catch {
+    const firstBrace = trimmed.indexOf('{');
+    const lastBrace = trimmed.lastIndexOf('}');
+    if (firstBrace >= 0 && lastBrace > firstBrace) {
+      const candidate = trimmed.substring(firstBrace, lastBrace + 1);
+      try {
+        return JSON.parse(candidate) as unknown;
+      } catch {
+        return undefined;
+      }
+    }
+    return undefined;
+  }
+};
+
+const extractMessageFromUnknown = (value: unknown, depth = 0): string | undefined => {
+  if (depth > 6 || value === null || value === undefined) {
+    return undefined;
+  }
+
+  if (typeof value === 'string') {
+    const parsed = tryParseJson(value);
+    if (parsed !== undefined) {
+      return extractMessageFromUnknown(parsed, depth + 1);
+    }
+    return value;
+  }
+
+  if (value instanceof Error) {
+    return extractMessageFromUnknown(value.message, depth + 1);
+  }
+
+  if (typeof value === 'object') {
+    const record = value as Record<string, unknown>;
+    const keys = ['errorMessage', 'message', 'Message', 'error', 'Error', 'innerError', 'response', 'responseText', '_message', 'title', 'detail'];
+    for (const key of keys) {
+      if (!Object.prototype.hasOwnProperty.call(record, key)) continue;
+      const nested = extractMessageFromUnknown(record[key], depth + 1);
+      if (nested) return nested;
+    }
+  }
+
+  return undefined;
+};
+
+const isServerErrorMessage = (message: string): boolean => {
+  const normalized = message.toLowerCase();
+  return normalized.includes('500')
+    || normalized.includes('internal server error')
+    || normalized.includes('status: 500')
+    || normalized.includes('status code 500');
+};
+
+const isBadRequestStyleMessage = (message: string): boolean => {
+  const normalized = message.toLowerCase();
+  return normalized.includes('400')
+    || normalized.includes('bad request')
+    || normalized.includes('invalid url')
+    || normalized.includes('request uri is invalid')
+    || normalized.includes('request url is invalid')
+    || normalized.includes('requestistooolong')
+    || normalized.includes('is request too long');
+};
+
+const sanitizeMutationErrorMessage = (message: string | undefined, fallback: string): string => {
+  const extracted = extractMessageFromUnknown(message) ?? message ?? '';
+  const cleaned = stripHtmlAndNormalizeWhitespace(extracted);
+  const normalized = cleaned.toLowerCase();
+  if (!cleaned) {
+    return fallback || GENERIC_ERROR_MESSAGE;
+  }
+
+  if (isServerErrorMessage(normalized)) {
+    return TECHNICAL_ERROR_MESSAGE;
+  }
+
+  if (isBadRequestStyleMessage(normalized) || normalized.includes('<!doctype html') || normalized.includes('<html')) {
+    return fallback || GENERIC_ERROR_MESSAGE;
+  }
+
+  if (cleaned.length > 240 || normalized.includes('clientrequestid') || normalized.includes('actionstack')) {
+    return fallback || GENERIC_ERROR_MESSAGE;
+  }
+
+  return cleaned;
+};
+
 export const resolveConfiguredApiName = (
   context: ComponentFramework.Context<IInputs>,
   paramName: string,
@@ -95,6 +199,7 @@ export const parseManualTaskCreationResult = (response: unknown): ManualTaskCrea
   const parsed = parseManualTaskCreationCandidate(unwrapCustomApiPayload(response))
     ?? parseManualTaskCreationCandidate(response);
   if (parsed) {
+    parsed.message = sanitizeMutationErrorMessage(parsed.message, parsed.success ? 'Manual task creation succeeded.' : 'Manual task creation failed.');
     return parsed;
   }
   return { success: false, message: 'Manual task creation failed.', payload: '' };
@@ -153,6 +258,7 @@ export const parseModifyTaskResult = (response: unknown): ModifyTaskResult => {
   const parsed = parseModifyTaskCandidate(unwrapCustomApiPayload(response))
     ?? parseModifyTaskCandidate(response);
   if (parsed) {
+    parsed.message = sanitizeMutationErrorMessage(parsed.message, parsed.success ? 'Modify SVT task succeeded.' : 'Modify SVT task failed.');
     return parsed;
   }
 
@@ -277,6 +383,7 @@ export const parseApiMutationResult = (response: unknown, fallbackFailureMessage
   const parsed = parseMutationResultCandidate(unwrapCustomApiPayload(response))
     ?? parseMutationResultCandidate(response);
   if (parsed) {
+    parsed.message = sanitizeMutationErrorMessage(parsed.message, fallbackFailureMessage);
     if (!parsed.success && !parsed.message) {
       return { success: false, message: fallbackFailureMessage };
     }

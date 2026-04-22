@@ -235,11 +235,12 @@ describe('grid usability contract', () => {
     expect(cssSource).toContain('--voa-selected-row-bg');
   });
 
-  test('restores summary-flag eq filter as a string so the single-select ComboBox shows the previously chosen value', () => {
-    // The 'eq' operator uses a single-select ComboBox (selectedKey expects a string).
-    // Re-opening an existing eq filter must set menuFilterValue to the first element string,
-    // not the whole values array, otherwise selectedKey resolves to '' and the field shows blank.
-    expect(gridSource).toContain("existingOperator === 'eq' ? (valuesArray[0] ?? '') : valuesArray");
+  test('restores summary-flag eq filter as array values so the shared multi-select ComboBox shows the previous selection', () => {
+    // Summary flag now uses the same multi-select ComboBox for contains, notContains, and eq.
+    // Re-opening an existing eq filter should keep the saved values array rather than coercing
+    // back to a single string representation.
+    expect(gridSource).toContain('// All operators (contains, notContains, eq) use multi-select ComboBox which expects an array');
+    expect(gridSource).toContain('initialValue = valuesArray;');
   });
 
   test('treats single-value All selection as clearing only the active column filter', () => {

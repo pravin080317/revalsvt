@@ -19,6 +19,8 @@ export interface LoadResult {
 }
 
 const TECHNICAL_ERROR_MESSAGE = 'Technical error. Please try again in some time.';
+const BAD_REQUEST_ERROR_MESSAGE = 'Unable to load results with the selected filters. Please clear some filters and try again.';
+const GENERIC_LOAD_ERROR_MESSAGE = 'Unable to load results. Please try again.';
 
 const isServerErrorMessage = (message: string): boolean => {
   const normalized = message.toLowerCase();
@@ -28,9 +30,113 @@ const isServerErrorMessage = (message: string): boolean => {
     || normalized.includes('status code 500');
 };
 
+const isBadRequestStyleMessage = (message: string): boolean => {
+  const normalized = message.toLowerCase();
+  return normalized.includes('400')
+    || normalized.includes('bad request')
+    || normalized.includes('invalid url')
+    || normalized.includes('request uri is invalid')
+    || normalized.includes('request url is invalid')
+    || normalized.includes('requestistooolong')
+    || normalized.includes('is request too long');
+};
+
+const stripHtmlAndNormalizeWhitespace = (value: string): string =>
+  value
+    .replace(/<[^>]+>/g, ' ')
+    .replace(/\\r|\\n|\r|\n/g, ' ')
+    .replace(/\\"/g, '"')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+const tryParseJson = (value: string): unknown => {
+  const trimmed = value.trim();
+  if (!trimmed) return undefined;
+  try {
+    return JSON.parse(trimmed) as unknown;
+  } catch {
+    const firstBrace = trimmed.indexOf('{');
+    const lastBrace = trimmed.lastIndexOf('}');
+    if (firstBrace >= 0 && lastBrace > firstBrace) {
+      const candidate = trimmed.substring(firstBrace, lastBrace + 1);
+      try {
+        return JSON.parse(candidate) as unknown;
+      } catch {
+        return undefined;
+      }
+    }
+    return undefined;
+  }
+};
+
+const extractMessageFromUnknown = (value: unknown, depth = 0): string | undefined => {
+  if (depth > 6 || value === null || value === undefined) {
+    return undefined;
+  }
+
+  if (typeof value === 'string') {
+    const parsed = tryParseJson(value);
+    if (parsed !== undefined) {
+      return extractMessageFromUnknown(parsed, depth + 1);
+    }
+    return value;
+  }
+
+  if (value instanceof Error) {
+    return extractMessageFromUnknown(value.message, depth + 1);
+  }
+
+  if (typeof value === 'object') {
+    const record = value as Record<string, unknown>;
+    const keys = [
+      'errorMessage',
+      'message',
+      'Message',
+      'error',
+      'Error',
+      'responseText',
+      'response',
+      'innerError',
+      '_message',
+      'title',
+      'detail',
+    ];
+
+    for (const key of keys) {
+      if (!Object.prototype.hasOwnProperty.call(record, key)) continue;
+      const nested = extractMessageFromUnknown(record[key], depth + 1);
+      if (nested) return nested;
+    }
+  }
+
+  return undefined;
+};
+
 const normalizeErrorMessage = (message?: string): string | undefined => {
   if (!message) return undefined;
-  return isServerErrorMessage(message) ? TECHNICAL_ERROR_MESSAGE : message;
+
+  const extracted = extractMessageFromUnknown(message) ?? message;
+  const cleaned = stripHtmlAndNormalizeWhitespace(extracted);
+  const normalized = cleaned.toLowerCase();
+
+  if (!cleaned) {
+    return GENERIC_LOAD_ERROR_MESSAGE;
+  }
+
+  if (isServerErrorMessage(normalized)) {
+    return TECHNICAL_ERROR_MESSAGE;
+  }
+
+  if (isBadRequestStyleMessage(normalized) || normalized.includes('<!doctype html') || normalized.includes('<html')) {
+    return BAD_REQUEST_ERROR_MESSAGE;
+  }
+
+  // Hide oversized raw transport payloads from UI banners.
+  if (cleaned.length > 240 || normalized.includes('clientrequestid') || normalized.includes('actionstack')) {
+    return GENERIC_LOAD_ERROR_MESSAGE;
+  }
+
+  return cleaned;
 };
 
 const resolveCustomApiName = (context: ComponentFramework.Context<IInputs>): string => {
@@ -148,7 +254,7 @@ export async function loadGridData(
       items: [],
       totalCount: 0,
       serverDriven: false,
-      errorMessage: normalizeErrorMessage(errText) ?? 'Unable to load results. Please try again.',
+      errorMessage: normalizeErrorMessage(errText) ?? GENERIC_LOAD_ERROR_MESSAGE,
     };
   }
 }

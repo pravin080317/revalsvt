@@ -25,11 +25,13 @@ export interface IGridColumn extends IColumn {
     sortable?: boolean;
     sortBy?: string;
     format?: string;
+    headerTooltip?: string;
 }
 
 export interface ColumnConfig {
     ColName: string;
     ColDisplayName?: string;
+    ColHeaderTooltip?: string;
     ColWidth?: number;
     ColSortable?: boolean;
     ColCellType?: string;

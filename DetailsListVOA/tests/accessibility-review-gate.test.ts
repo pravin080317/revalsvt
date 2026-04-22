@@ -9,11 +9,12 @@ function readRepoFile(relativePath: string): string {
 
 describe('accessibility review gate: inactive controls', () => {
   const gridSource = readRepoFile('DetailsListVOA/Grid.tsx');
+  const assignOverlaySource = readRepoFile('DetailsListVOA/components/Grid/AssignTasksOverlay.tsx');
   const cssSource = readRepoFile('DetailsListVOA/css/DetailsListVOA.css');
 
   test('removes inactive action controls from keyboard navigation with true disabled states', () => {
     expect(gridSource).toContain('disabled={unavailable}');
-    expect(gridSource).toContain('disabled={assignLoading}');
+    expect(assignOverlaySource).toContain('disabled={assignLoading}');
     expect(gridSource).not.toContain('aria-disabled={unavailable || undefined}');
     expect(gridSource).toContain('voa-focusable-disabled-button');
     expect(gridSource).toContain('voa-focusable-disabled-field');

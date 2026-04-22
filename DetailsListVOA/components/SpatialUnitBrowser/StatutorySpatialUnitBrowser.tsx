@@ -243,8 +243,8 @@ export const StatutorySpatialUnitBrowser: React.FC = () => {
     // De-dupe: skip if identical to last applied
     const prev = lastHeaderFiltersRef.current;
     const same = (() => {
-      const aKeys = Object.keys(prev).sort();
-      const bKeys = Object.keys(header).sort();
+      const aKeys = Object.keys(prev).sort((left, right) => left.localeCompare(right));
+      const bKeys = Object.keys(header).sort((left, right) => left.localeCompare(right));
       if (aKeys.length !== bKeys.length) return false;
       for (let i = 0; i < aKeys.length; i++) {
         if (aKeys[i] !== bKeys[i]) return false;
@@ -276,14 +276,15 @@ export const StatutorySpatialUnitBrowser: React.FC = () => {
     const q = buildQueryString(filters, { street: street || undefined, town: town || undefined });
     if (inFlightKeyRef.current === q) return; // de-dupe same query in-flight
     inFlightKeyRef.current = q;
-    void (async () => {
-      try {
-        await fetchResults({ street: street || undefined, town: town || undefined });
-      } finally {
+    fetchResults({ street: street || undefined, town: town || undefined })
+      .finally(() => {
         inFlightKeyRef.current = undefined;
-      }
-    })();
+      });
   }, [buildQueryString, fetchResults, filters, moreResultsAvailable]);
+
+  const handleSearchClick = React.useCallback(async () => {
+    await fetchResults();
+  }, [fetchResults]);
 
   React.useEffect(() => {
     if (error) {
@@ -321,7 +322,7 @@ export const StatutorySpatialUnitBrowser: React.FC = () => {
         />
       </Stack>
       <Stack horizontal tokens={rowStackTokens}>
-        <PrimaryButton text="Search" onClick={() => void fetchResults()} disabled={isLoading} />
+        <PrimaryButton text="Search" onClick={handleSearchClick} disabled={isLoading} />
         <DefaultButton text="Reset" onClick={resetFilters} disabled={isLoading} />
       </Stack>
       {error && !dismissedError && (

@@ -90,14 +90,12 @@ const SALES_COLUMN_FILTERS: Record<string, ColumnFilterConfig> = {
   summaryflag: {
     control: 'multiSelect',
     optionFields: ['summaryflags', 'summaryflag'],
-    selectAllValues: ['ALL'],
     multiLimit: 3,
     minLength: 1,
   },
   summaryflags: {
     control: 'multiSelect',
     optionFields: ['summaryflags', 'summaryflag'],
-    selectAllValues: ['ALL'],
     multiLimit: 3,
     minLength: 1,
   },

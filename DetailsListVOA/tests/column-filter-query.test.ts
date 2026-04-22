@@ -31,6 +31,16 @@ describe('column filter query', () => {
     expect(query).toBe('columnFilter=taskStatus~in~Assigned%2CComplete');
   });
 
+  test('serializes review flags as semicolon-delimited values with trailing semicolon', () => {
+    const query = buildColumnFilterQuery('sales', { reviewFlags: ['Low', 'High'] });
+    expect(query).toBe('columnFilter=reviewFlag~in~Low%3BHigh%3B');
+  });
+
+  test('serializes single review flag with trailing semicolon', () => {
+    const query = buildColumnFilterQuery('sales', { reviewFlags: ['Low'] });
+    expect(query).toBe('columnFilter=reviewFlag~in~Low%3B');
+  });
+
   test('serializes summary flag contains filters with semicolon-separated values', () => {
     const query = buildColumnFilterQuery('sales', {
       summaryFlag: { operator: 'contains', values: ['Potential', 'Review'] },

@@ -27,12 +27,12 @@ const SALES_COLUMNS: ColumnConfig[] = [
    { ColName: 'overallflag',      ColDisplayName: 'Overall Flag',       ColWidth: 220, ColCellType: 'tag', ColHorizontalAlign: 'left', ColVerticalAlign: 'center' },
    { ColName: 'summaryflags',     ColDisplayName: 'Summary Flag',       ColWidth: 170, ColCellType: 'tag', ColHorizontalAlign: 'left', ColVerticalAlign: 'center' },
   { ColName: 'taskstatus',       ColDisplayName: 'Task Status',        ColWidth: 190, ColCellType: 'tag', ColHorizontalAlign: 'left', ColVerticalAlign: 'center' },
-  { ColName: 'assignedto',       ColDisplayName: 'Caseworker Assigned To', ColWidth: 160, ColHorizontalAlign: 'left', ColVerticalAlign: 'center' },
-   { ColName: 'assigneddate',     ColDisplayName: 'Assigned Date',      ColWidth: 160, ColHorizontalAlign: 'left', ColVerticalAlign: 'center', ColFormat: 'date' },
-  { ColName: 'taskcompleteddate',ColDisplayName: 'Task Completed Date',ColWidth: 160, ColHorizontalAlign: 'left', ColVerticalAlign: 'center', ColFormat: 'date' },
-  { ColName: 'qcassignedto',     ColDisplayName: 'QC Assigned To',     ColWidth: 170, ColHorizontalAlign: 'left', ColVerticalAlign: 'center' },
-  { ColName: 'qcassigneddate',   ColDisplayName: 'QC Assigned Date',   ColWidth: 170, ColHorizontalAlign: 'left', ColVerticalAlign: 'center', ColFormat: 'date' },
-  { ColName: 'qccompleteddate',  ColDisplayName: 'QC Completed Date',  ColWidth: 160, ColHorizontalAlign: 'left', ColVerticalAlign: 'center', ColFormat: 'date' }, 
+  { ColName: 'assignedto',       ColDisplayName: 'CW Assigned To', ColHeaderTooltip: 'Caseworker Assigned To', ColWidth: 160, ColHorizontalAlign: 'left', ColVerticalAlign: 'center' },
+   { ColName: 'assigneddate',     ColDisplayName: 'CW Assigned Date', ColHeaderTooltip: 'Caseworker Assigned Date',     ColWidth: 160, ColHorizontalAlign: 'left', ColVerticalAlign: 'center', ColFormat: 'date' },
+  { ColName: 'taskcompleteddate',ColDisplayName: 'CW Completed Date',ColHeaderTooltip: 'Caseworker Completed Date',ColWidth: 160, ColHorizontalAlign: 'left', ColVerticalAlign: 'center', ColFormat: 'date' },
+  { ColName: 'qcassignedto',     ColDisplayName: 'QC Assigned To', ColHeaderTooltip: 'Quality Control Assigned To',    ColWidth: 170, ColHorizontalAlign: 'left', ColVerticalAlign: 'center' },
+  { ColName: 'qcassigneddate',   ColDisplayName: 'QC Assigned Date', ColHeaderTooltip: 'Quality Control Assigned Date',  ColWidth: 170, ColHorizontalAlign: 'left', ColVerticalAlign: 'center', ColFormat: 'date' },
+  { ColName: 'qccompleteddate',  ColDisplayName: 'QC Completed Date', ColHeaderTooltip: 'Quality Control Completed Date', ColWidth: 160, ColHorizontalAlign: 'left', ColVerticalAlign: 'center', ColFormat: 'date' }, 
 ];
 
 export const COLUMN_PROFILES: Record<string, ColumnConfig[]> = {

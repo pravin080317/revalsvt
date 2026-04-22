@@ -27,6 +27,11 @@ const hostSource = fs.readFileSync(
   'utf8',
 );
 
+const gridSource = fs.readFileSync(
+  path.join(repoRoot, 'DetailsListVOA/Grid.tsx'),
+  'utf8',
+);
+
 // ---------------------------------------------------------------------------
 
 describe('getSales API user name mapping', () => {
@@ -125,6 +130,35 @@ describe('getSales API user name mapping', () => {
         expect(o.key).toBe(o.key.toLowerCase());
       });
     });
+
+    test('user options are alphabetically sorted by display name and deduplicated by GUID', () => {
+      const sortedResult = normalizeSearchResponse({
+        sales: [],
+        filters: {
+          assignedToUserList: [
+            { userId: 'ZZZ-999', userName: 'Zara Worker', isActive: true },
+            { userId: 'AAA-111', userName: 'Alice Caseworker', isActive: true },
+            { userId: 'BBB-222', userName: 'Bob Worker', isActive: true },
+            { userId: 'AAA-111', userName: 'Alice Caseworker Duplicate', isActive: true },
+          ],
+          qcAssignedToUserList: [
+            { userId: 'DDD-444', userName: 'Delta QC', isActive: true },
+            { userId: 'CCC-333', userName: 'Charlie QC', isActive: true },
+          ],
+        },
+      });
+
+      expect(sortedResult.userFilterOptions?.['assignedto']).toEqual([
+        { key: 'aaa-111', text: 'Alice Caseworker' },
+        { key: 'bbb-222', text: 'Bob Worker' },
+        { key: 'zzz-999', text: 'Zara Worker' },
+      ]);
+
+      expect(sortedResult.userFilterOptions?.['qcassignedto']).toEqual([
+        { key: 'ccc-333', text: 'Charlie QC' },
+        { key: 'ddd-444', text: 'Delta QC' },
+      ]);
+    });
   });
 
   // -------------------------------------------------------------------------
@@ -196,6 +230,22 @@ describe('getSales API user name mapping', () => {
       expect(result.items[0].assignedToName).toBeUndefined();
       expect(result.items[0].qcAssignedToName).toBeUndefined();
     });
+
+    test('summaryFlags accepts array payloads (sort response contract)', () => {
+      const result = normalizeSearchResponse({
+        sales: [{ summaryFlags: ['Low confidence', 'Review required'] }],
+        filters: {},
+      });
+      expect(result.items[0].summaryFlags).toEqual(['Low confidence', 'Review required']);
+    });
+
+    test('summaryFlags accepts comma/semicolon delimited payloads', () => {
+      const result = normalizeSearchResponse({
+        sales: [{ summaryFlags: 'Low confidence,Review required;Needs check' }],
+        filters: {},
+      });
+      expect(result.items[0].summaryFlags).toEqual(['Low confidence', 'Review required', 'Needs check']);
+    });
   });
 
   // -------------------------------------------------------------------------
@@ -230,6 +280,40 @@ describe('getSales API user name mapping', () => {
     test('preserves assigned/qc assigned ID fields for GUID-backed filtering', () => {
       expect(hostSource).toContain('r.assignedtoid = assignedToIds');
       expect(hostSource).toContain('r.qcassignedtoid = qcAssignedToIds');
+    });
+
+    test('passes APIM filter options into Grid for synchronous column filter menus', () => {
+      expect(hostSource).toContain('columnFilterOptions: displayFilterOptionsRich');
+    });
+
+    test('Grid prefers preloaded APIM column filter options before record-derived distinct values', () => {
+      expect(gridSource).toContain("columnFilterOptions[normalizedField]");
+    });
+
+    test('Grid no longer excludes summary flag from async filter option loading', () => {
+      expect(gridSource).not.toContain('!isSummaryFlagField &&');
+    });
+
+    test('normalizeFilterOptions splits semicolon-delimited multiSelect filter values', () => {
+      // COLUMN_FILTER_VALUE_SEPARATOR is "," but the API returns summaryflags as ";"-delimited.
+      // The condition must use /[;,|]/ not trimmed.includes(',') so that semicolons also trigger the split.
+      expect(hostSource).toContain('/[;,|]/.test(trimmed)');
+      expect(hostSource).toContain('.flatMap((v) => (/[;,|]/.test(v) ? splitDelimitedFilterValue(v) : [v]))');
+    });
+
+    test('summary/review/overall flag dropdown options are alphabetically sorted', () => {
+      expect(gridSource).toContain("normalizedField === 'summaryflags'");
+      expect(gridSource).toContain("normalizedField === 'reviewflags'");
+      expect(gridSource).toContain("normalizedField === 'overallflag'");
+      expect(gridSource).toContain("return aText.localeCompare(bText, undefined, { sensitivity: 'base' });");
+    });
+
+    test('host sort normalizes multi-value strings and arrays to first-word keys', () => {
+      expect(hostSource).toContain('const toFirstWordKey = (value: unknown): string => {');
+      expect(hostSource).toContain("const firstToken = source.split(/[;,|]/)[0] ?? '';");
+      expect(hostSource).toContain("const firstWord = firstToken.trim().toLowerCase().split(/\\s+/)[0] ?? '';");
+      expect(hostSource).toContain('if (Array.isArray(v)) return toFirstWordKey(v);');
+      expect(hostSource).toContain("if (typeof v === 'string') return toFirstWordKey(v);");
     });
   });
 });

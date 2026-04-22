@@ -731,8 +731,8 @@ export const SalesVerificationSection: React.FC<SalesVerificationSectionProps> =
             <div className="voa-sales-verification-row__control">
               <Dropdown
                 id="voa-sale-useful"
-                placeholder="Select whether the sale is useful"
-                selectedKey={isSaleUsefulKey}
+                placeholder="Select a value"
+                selectedKey={isSaleUsefulKey ?? null}
                 options={USEFUL_OPTIONS}
                 disabled={editingDisabled}
                 onChange={(_, option) => {
@@ -762,8 +762,8 @@ export const SalesVerificationSection: React.FC<SalesVerificationSectionProps> =
             <div className="voa-sales-verification-row__control">
               <Dropdown
                 id="voa-why-not-useful"
-                placeholder="Select why the sale is not useful"
-                selectedKey={isNotUseful ? whyNotUsefulKey : undefined}
+                placeholder="Select a value"
+                selectedKey={isNotUseful ? (whyNotUsefulKey ?? null) : null}
                 options={whyNotOptions}
                 disabled={editingDisabled || !isNotUseful}
                 onChange={(_, option) => {

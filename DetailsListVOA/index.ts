@@ -23,6 +23,7 @@ export class DetailsListVOA implements ComponentFramework.ReactControl<IInputs, 
 
   public updateView(context: ComponentFramework.Context<IInputs>): React.ReactElement {
     this.runtime.setContext(context);
+    this.runtime.warmupAccessResolution();
     CONTROL_CONFIG.mdaAppId = this.runtime.getMdaAppId();
 
     try {

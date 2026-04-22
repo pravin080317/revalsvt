@@ -54,7 +54,8 @@ describe('sales useful toggle and reassignment regression checks', () => {
     expect(sectionSource).toContain('setWhyNotUsefulKey(undefined);');
     expect(sectionSource).toContain('setWhyNotUsefulError(undefined);');
     expect(sectionSource).toContain("nextSaleUsefulKey === 'no'");
-    expect(sectionSource).toContain('selectedKey={isNotUseful ? whyNotUsefulKey : undefined}');
+    expect(sectionSource).toContain('selectedKey={isNotUseful ? (whyNotUsefulKey ?? null) : null}');
+    expect(sectionSource).toContain('placeholder="Select a value"');
   });
 
   test('component keeps Is this sale useful editable only when verification edit rule allows it', () => {

@@ -266,3 +266,23 @@ AC, AU, CA, CM, IA, PT, RA, SC, and SI are all directly exercised by the SVT app
 4. **URL sanitisation** — `sanitizeExternalUrl` blocks `javascript:`, `data:`, `ftp:`, and protocol-relative URLs on all external links
 5. **APIM gateway boundary** — Plugins cannot be bypassed; no direct API calls from browser to backend
 6. **TLS end-to-end** — All hops encrypted in transit
+
+---
+
+## Appendix: Application Team Position on AU Controls
+
+The following comments reflect the **application team position** based on repository evidence, current design documentation, and known ownership boundaries between the SVT application, platform services, and operational support teams.
+
+| Control | Application team position | Comment |
+|---------|---------------------------|---------|
+| **AU-5 — Response to Audit Logging Failures** | **Partially met** | The application records logging and integration failures in Dataverse plugin trace logs, including failed APIM calls and exception paths. This provides evidence that audit/logging failures can be detected at the application layer. However, automated alerting to named support personnel, storage-capacity monitoring, and formal incident-response timers are operational controls and are not evidenced in this repository. |
+| **AU-6 — Audit Record Review, Analysis, and Reporting** | **Partially met** | The application generates and exposes audit-relevant records through plugin trace logs, APIM logs, and SQL-backed business audit/action history, which supports review and investigation of unusual activity. Cross-layer reconstruction is feasible for key user journeys such as assignment, QC actions, and audit-history retrieval. Formal review cadence, analyst reporting workflow, and risk-based escalation rules are not defined in application code and require operational evidence outside this repository. |
+| **AU-9 — Protection of Audit Information** | **Partially met** | Access to audit-related functions and supporting data is protected through Dataverse role-based access, controlled Custom API execution, and managed platform boundaries across Dataverse, APIM, and SQL. This supports protection of audit information from general user access at the application layer. Explicit alerting on unauthorised access, modification, or deletion of audit records is not evidenced in the repo and is expected to sit with platform monitoring and operational controls. |
+| **AU-11 — Audit Record Retention** | **Operational evidence required** | The application depends on platform and service retention settings for Dataverse trace logging, APIM logging, and backend SQL audit/action history. No retention-period configuration or retention-policy evidence is stored in this repository. Compliance for this control should therefore be confirmed through environment configuration and records-management evidence from the relevant platform/operations teams. |
+| **AU-12 — Audit Record Generation** | **Met at application layer** | The application generates audit and trace records for key in-scope actions, including access-context resolution, task assignment, QC actions, audit-log retrieval, and plugin-to-APIM interactions. Audit history includes key event metadata and field-level old/new value changes for business events, while plugin trace logs capture execution paths, errors, and integration outcomes. This provides sufficient application-layer evidence that auditable events are generated for the major SVT workflows. |
+
+### Notes for Assessors
+
+- These comments are intentionally scoped to what the **application team can evidence** from code, repository documentation, and known integration design.
+- Controls relating to alert routing, SIEM integration, retention periods, and operational monitoring should be validated with the **platform, infrastructure, or support teams** rather than inferred from application code.
+- Where a control is marked **Partially met**, the application provides supporting data or enforcement points, but end-to-end control compliance depends on operational implementation outside this repository.

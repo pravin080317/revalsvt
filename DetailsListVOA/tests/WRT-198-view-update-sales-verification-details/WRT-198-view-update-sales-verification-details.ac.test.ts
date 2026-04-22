@@ -26,7 +26,7 @@ describe('WRT-198 View and Update Sales Verification Details AC', () => {
   test('AC2: Is this sale useful uses mandatory Yes/No options with no default', () => {
     expect(sectionSource).toContain("{ key: 'yes', text: 'Yes' }");
     expect(sectionSource).toContain("{ key: 'no', text: 'No' }");
-    expect(sectionSource).toContain('placeholder="Select whether the sale is useful"');
+    expect(sectionSource).toContain('placeholder="Select a value"');
     expect(rulesSource).toContain("saleUseful: 'Select whether the sale is useful or not'");
     expect(sectionSource).toContain("renderRequiredLabel('Is this sale useful?', true)");
     expect(sectionSource).toContain('Fields marked with * are required');
@@ -35,7 +35,7 @@ describe('WRT-198 View and Update Sales Verification Details AC', () => {
 
   test('AC3: Why not useful remains visible and is enabled only when useful = No, with required validation', () => {
     expect(sectionSource).toContain("const isNotUseful = isSaleUsefulKey === 'no';");
-    expect(sectionSource).toContain('placeholder="Select why the sale is not useful"');
+    expect(sectionSource).toContain('placeholder="Select a value"');
     expect(sectionSource).toContain('disabled={editingDisabled || !isNotUseful}');
     expect(rulesSource).toContain("whyNotUseful: 'Enter why the sale is not useful'");
     expect(sectionSource).toContain("renderRequiredLabel('Why is the sale not useful?', isNotUseful)");

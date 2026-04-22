@@ -36,7 +36,7 @@ interface SalesApiItem {
   reviewFlags?: string[];
   outlierRatio?: number;
   overallFlag?: string;
-  summaryFlags?: string[];
+  summaryFlags?: string[] | string;
   taskStatus?: string;
   assignedTo?: string[] | string;
   assignedToName?: string;
@@ -200,14 +200,21 @@ const toStringArray = (value: unknown): string[] | undefined => {
 
 const toStringArrayOrEmpty = (value: unknown): string[] => toStringArray(value) ?? [];
 
-const toDelimitedStringArray = (value: unknown, delimiter: string): string[] | undefined => {
+const toSummaryFlagsArray = (value: unknown): string[] => {
+  if (Array.isArray(value)) {
+    return value
+      .map((entry) => toText(entry) ?? '')
+      .flatMap((entry) => entry.split(/[;,|]/))
+      .map((entry) => entry.trim())
+      .filter((entry) => entry !== '');
+  }
+
   const text = toText(value);
-  if (!text) return undefined;
-  const parts = text
-    .split(delimiter)
+  if (!text) return [];
+  return text
+    .split(/[;,|]/)
     .map((entry) => entry.trim())
     .filter((entry) => entry !== '');
-  return parts.length > 0 ? parts : undefined;
 };
 
 const toStringOrArray = (value: unknown): string | string[] | undefined => {
@@ -243,7 +250,7 @@ const normalizeSalesItem = (item: SalesApiItem): TaskSearchItem => {
     reviewFlags: toStringArrayOrEmpty(getNormalizedValue(map, 'reviewFlags', ['reviewFlag'])),
     outlierRatio: toNumber(getNormalizedValue(map, 'outlierRatio')),
     overallFlag: toText(getNormalizedValue(map, 'overallFlag')) ?? undefined,
-    summaryFlags: toDelimitedStringArray(getNormalizedValue(map, 'summaryFlags', ['summaryFlag']), ';') ?? [],
+    summaryFlags: toSummaryFlagsArray(getNormalizedValue(map, 'summaryFlags', ['summaryFlag'])),
     assignedTo,
     assignedToName: toText(getNormalizedValue(map, 'assignedToName', ['assignedtoname'])) ?? undefined,
     assignedDate: toText(getNormalizedValue(map, 'assignedDate')) ?? undefined,
@@ -308,10 +315,23 @@ export const normalizeSearchResponse = (payload: TaskSearchResponse | SalesApiRe
 
     // Build rich {key, text} option arrays for user filter dropdowns.
     const userFilterOptions: Record<string, Array<{ key: string; text: string }>> = {};
-    const buildOptions = (list: SalesApiUserEntry[]): Array<{ key: string; text: string }> =>
-      list
-        .map((u) => ({ key: String(u.userId ?? '').trim().toLowerCase(), text: String(u.userName ?? '').trim() }))
-        .filter((o) => o.key && o.text);
+    const buildOptions = (list: SalesApiUserEntry[]): Array<{ key: string; text: string }> => {
+      const deduped = new Map<string, { key: string; text: string }>();
+
+      list.forEach((u) => {
+        const key = String(u.userId ?? '').trim().toLowerCase();
+        const text = String(u.userName ?? '').trim();
+        if (!key || !text) return;
+        // Keep the first entry per GUID and ensure stable key-to-name mapping.
+        if (!deduped.has(key)) deduped.set(key, { key, text });
+      });
+
+      return Array.from(deduped.values()).sort((a, b) => {
+        const byName = a.text.localeCompare(b.text, undefined, { sensitivity: 'base' });
+        if (byName !== 0) return byName;
+        return a.key.localeCompare(b.key, undefined, { sensitivity: 'base' });
+      });
+    };
 
     if (assignedToUserList.length > 0) userFilterOptions['assignedto'] = buildOptions(assignedToUserList);
     if (qcAssignedToUserList.length > 0) userFilterOptions['qcassignedto'] = buildOptions(qcAssignedToUserList);

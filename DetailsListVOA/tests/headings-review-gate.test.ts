@@ -9,6 +9,7 @@ function readRepoFile(relativePath: string): string {
 
 describe('headings review gate', () => {
   const gridSource = readRepoFile('DetailsListVOA/Grid.tsx');
+  const assignOverlaySource = readRepoFile('DetailsListVOA/components/Grid/AssignTasksOverlay.tsx');
   const legacyGridSource = readRepoFile('DetailsListVOA/grid/Grid.tsx');
   const spatialBrowserSource = readRepoFile('DetailsListVOA/components/SpatialUnitBrowser/StatutorySpatialUnitBrowser.tsx');
 
@@ -18,8 +19,8 @@ describe('headings review gate', () => {
   });
 
   test('uses a screen-level h1 for the assign dialog title and an h2 for the user list section', () => {
-    expect(gridSource).toContain('<Text as="h1" id="assign-screen-title" variant="xLarge" styles={{ root: { marginLeft: 12, fontWeight: 600 } }}>');
-    expect(gridSource).toContain('<Text as="h2" variant="mediumPlus" styles={{ root: { fontWeight: 600 } }}>');
+    expect(assignOverlaySource).toContain('<Text as="h1" id="assign-screen-title" variant="xLarge" styles={{ root: { marginLeft: 12, fontWeight: 600 } }}>');
+    expect(assignOverlaySource).toContain('<Text as="h2" variant="mediumPlus" styles={{ root: { fontWeight: 600 } }}>');
   });
 
   test('keeps the spatial lookup title on a real heading instead of visual text only', () => {

@@ -239,21 +239,22 @@ export const filterItemsByColumnFilters = <T>(
             
             const needles = values.map((v) => String(v).trim().toLowerCase());
             const rawText = textVal.toLowerCase();
+            const hayTokens = splitTokens(raw);
             
             if (operator === 'eq') {
+              if (hayTokens.length > 0) {
+                return needles.some((n) => hayTokens.includes(n));
+              }
               return needles.some((n) => rawText === n);
             }
-            if (operator === 'notContains') {
-              return !needles.some((n) => rawText.includes(n));
+            // contains / notContains — use token array when available (handles both
+            // array-backed fields and semicolon-delimited string fields the same way)
+            if (hayTokens.length > 0) {
+              return operator === 'contains'
+                ? needles.some((n) => hayTokens.includes(n))
+                : !needles.some((n) => hayTokens.includes(n));
             }
-            if (Array.isArray(raw)) {
-              const hay = raw
-                .map((v) => (typeof v === 'string' || typeof v === 'number' || typeof v === 'boolean' ? String(v).trim().toLowerCase() : ''))
-                .filter((s) => s !== '');
-              return operator === 'contains' 
-                ? needles.some((n) => hay.includes(n))
-                : !needles.some((n) => hay.includes(n));
-            }
+            // fallback: substring search on the joined text value
             return operator === 'contains'
               ? needles.some((n) => rawText.includes(n))
               : !needles.some((n) => rawText.includes(n));

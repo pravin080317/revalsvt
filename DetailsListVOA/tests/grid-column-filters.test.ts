@@ -90,6 +90,114 @@ describe('grid column filter engine', () => {
     expect(result[0].qcassignedtoid).toBe(qcAId);
   });
 
+  test('summary flag eq matches token within array-backed summary flags', () => {
+    const items = [
+      { summaryflags: ['composite:banding after txn', 'same solicitor'] },
+      { summaryflags: ['other flag'] },
+    ];
+
+    const result = filterItemsByColumnFilters(
+      items,
+      { summaryflags: { operator: 'eq', values: ['same solicitor'] } },
+      'sales',
+      getFilterableText,
+      (item, field) => item[field as keyof typeof item],
+    );
+
+    expect(result).toHaveLength(1);
+    expect(result[0].summaryflags).toEqual(['composite:banding after txn', 'same solicitor']);
+  });
+
+  test('summary flag eq matches token within semicolon-delimited string summary flags', () => {
+    const items = [
+      { summaryflags: 'composite:banding after txn;same solicitor' },
+      { summaryflags: 'other flag' },
+    ];
+
+    const result = filterItemsByColumnFilters(
+      items,
+      { summaryflags: { operator: 'eq', values: ['same solicitor'] } },
+      'sales',
+      getFilterableText,
+      (item, field) => item[field as keyof typeof item],
+    );
+
+    expect(result).toHaveLength(1);
+    expect(result[0].summaryflags).toBe('composite:banding after txn;same solicitor');
+  });
+
+  test('summary flag contains matches token within array-backed summary flags', () => {
+    const items = [
+      { summaryflags: ['composite:banding after txn', 'same solicitor'] },
+      { summaryflags: ['other flag'] },
+    ];
+
+    const result = filterItemsByColumnFilters(
+      items,
+      { summaryflags: { operator: 'contains', values: ['same solicitor'] } },
+      'sales',
+      getFilterableText,
+      (item, field) => item[field as keyof typeof item],
+    );
+
+    expect(result).toHaveLength(1);
+    expect(result[0].summaryflags).toEqual(['composite:banding after txn', 'same solicitor']);
+  });
+
+  test('summary flag contains matches token within semicolon-delimited string summary flags', () => {
+    const items = [
+      { summaryflags: 'composite:banding after txn;same solicitor' },
+      { summaryflags: 'other flag' },
+    ];
+
+    const result = filterItemsByColumnFilters(
+      items,
+      { summaryflags: { operator: 'contains', values: ['same solicitor'] } },
+      'sales',
+      getFilterableText,
+      (item, field) => item[field as keyof typeof item],
+    );
+
+    expect(result).toHaveLength(1);
+    expect(result[0].summaryflags).toBe('composite:banding after txn;same solicitor');
+  });
+
+  test('summary flag notContains excludes token within array-backed summary flags', () => {
+    const items = [
+      { summaryflags: ['composite:banding after txn', 'same solicitor'] },
+      { summaryflags: ['other flag'] },
+    ];
+
+    const result = filterItemsByColumnFilters(
+      items,
+      { summaryflags: { operator: 'notContains', values: ['same solicitor'] } },
+      'sales',
+      getFilterableText,
+      (item, field) => item[field as keyof typeof item],
+    );
+
+    expect(result).toHaveLength(1);
+    expect(result[0].summaryflags).toEqual(['other flag']);
+  });
+
+  test('summary flag notContains excludes token within semicolon-delimited string summary flags', () => {
+    const items = [
+      { summaryflags: 'composite:banding after txn;same solicitor' },
+      { summaryflags: 'other flag' },
+    ];
+
+    const result = filterItemsByColumnFilters(
+      items,
+      { summaryflags: { operator: 'notContains', values: ['same solicitor'] } },
+      'sales',
+      getFilterableText,
+      (item, field) => item[field as keyof typeof item],
+    );
+
+    expect(result).toHaveLength(1);
+    expect(result[0].summaryflags).toBe('other flag');
+  });
+
   describe('dateRange column filter', () => {
     const items = [
       { transactiondate: '2024-01-10' },

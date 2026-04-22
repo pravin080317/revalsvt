@@ -64,7 +64,12 @@ export interface DetailsListHostProps {
   canCreateManualTask?: boolean;
 }
 
-type ColumnFilterValue = string | string[] | NumericFilter | DateRangeFilter;
+type SummaryFlagFilterValue = {
+  operator: 'contains' | 'notContains' | 'eq';
+  values: string[];
+};
+
+type ColumnFilterValue = string | string[] | NumericFilter | DateRangeFilter | SummaryFlagFilterValue;
 type FilterOptionsMap = Record<string, string[]>;
 
 const MANAGER_ASSIGNMENT_SCREEN_NAME = 'manager assignment';
@@ -239,7 +244,7 @@ const normalizeFilterKey = (value: string): string =>
 
 const splitDelimitedFilterValue = (value: string): string[] =>
   value
-    .split(COLUMN_FILTER_VALUE_SEPARATOR)
+    .split(/[;,|]/)
     .map((part) => part.trim())
     .filter((part) => part !== '');
 
@@ -250,7 +255,15 @@ const normalizeFilterOptions = (table: string, filters?: Record<string, string |
     const lowerKey = normalizeFilterKey(key);
     if (value === undefined || value === null) return;
     if (Array.isArray(value)) {
-      const arr = value.map((v) => String(v ?? '')).filter((v) => v.trim() !== '');
+      const cfg = getColumnFilterConfigFor(table, lowerKey);
+      const isSelectableFilter = cfg?.control === 'multiSelect' || cfg?.control === 'singleSelect';
+      const arr = isSelectableFilter
+        ? value
+          .map((v) => String(v ?? '').trim())
+          .flatMap((v) => (/[;,|]/.test(v) ? splitDelimitedFilterValue(v) : [v]))
+          .map((v) => v.trim())
+          .filter((v) => v !== '')
+        : value.map((v) => String(v ?? '')).filter((v) => v.trim() !== '');
       if (arr.length > 0) normalized[lowerKey] = Array.from(new Set(arr));
       return;
     }
@@ -270,7 +283,7 @@ const normalizeFilterOptions = (table: string, filters?: Record<string, string |
         }
       }
       const cfg = getColumnFilterConfigFor(table, lowerKey);
-      if ((cfg?.control === 'multiSelect' || cfg?.control === 'singleSelect') && trimmed.includes(COLUMN_FILTER_VALUE_SEPARATOR)) {
+      if ((cfg?.control === 'multiSelect' || cfg?.control === 'singleSelect') && /[;,|]/.test(trimmed)) {
         const arr = splitDelimitedFilterValue(trimmed);
         if (arr.length > 0) {
           normalized[lowerKey] = Array.from(new Set(arr));
@@ -284,8 +297,8 @@ const normalizeFilterOptions = (table: string, filters?: Record<string, string |
 };
 
 const areFiltersEqual = (a: Record<string, ColumnFilterValue>, b: Record<string, ColumnFilterValue>): boolean => {
-  const aKeys = Object.keys(a).sort();
-  const bKeys = Object.keys(b).sort();
+  const aKeys = Object.keys(a).sort((left, right) => left.localeCompare(right));
+  const bKeys = Object.keys(b).sort((left, right) => left.localeCompare(right));
   if (aKeys.length !== bKeys.length) return false;
   for (let i = 0; i < aKeys.length; i++) {
     if (aKeys[i] !== bKeys[i]) return false;
@@ -848,13 +861,36 @@ export const DetailsListHost: React.FC<DetailsListHostProps> = ({
         const key = normalizeFilterKey(field);
         if (key !== 'summaryflags' && key !== 'summaryflag') return;
         const current = normalized[field];
-        if (typeof current !== 'string') return;
-        const resolved = resolveSummaryFlagFilterValue(current);
-        if (!resolved) {
+        if (typeof current === 'string') {
+          const resolved = resolveSummaryFlagFilterValue(current);
+          if (!resolved) {
+            delete normalized[field];
+            return;
+          }
+          normalized[field] = resolved;
+          return;
+        }
+
+        if (!current || typeof current !== 'object' || Array.isArray(current)) return;
+        const summary = current as SummaryFlagFilterValue;
+        if (!Array.isArray(summary.values) || summary.values.length === 0) {
           delete normalized[field];
           return;
         }
-        normalized[field] = resolved;
+
+        const resolvedValues = summary.values
+          .map((value) => resolveSummaryFlagFilterValue(String(value ?? '')))
+          .filter((value) => value !== '');
+
+        if (resolvedValues.length === 0) {
+          delete normalized[field];
+          return;
+        }
+
+        normalized[field] = {
+          ...summary,
+          values: resolvedValues,
+        };
       });
       return normalized;
     },
@@ -929,7 +965,6 @@ export const DetailsListHost: React.FC<DetailsListHostProps> = ({
     () => buildColumnFilterQuery(tableKey, apiHeaderFilters, serverClientSort),
     [apiHeaderFilters, serverClientSort, tableKey],
   );
-
   const buildCaseworkerNames = React.useCallback((users: AssignUser[]): string[] => {
     const names = (users ?? [])
       .map((user) => getUserDisplayName(user))
@@ -1381,6 +1416,21 @@ export const DetailsListHost: React.FC<DetailsListHostProps> = ({
     const field = clientSort.name?.toLowerCase?.() ?? '';
     const dateFields = new Set(['transactiondate', 'assigneddate', 'taskcompleteddate', 'qcassigneddate', 'qccompleteddate']);
     const desc = clientSort.sortDirection === 1;
+    const toFirstWordKey = (value: unknown): string => {
+      const toText = (input: unknown): string => {
+        if (typeof input === 'string') return input;
+        if (typeof input === 'number' || typeof input === 'boolean') return String(input);
+        return '';
+      };
+
+      // Align list fields (for example summary flags) with current multi-page behavior: sort by first word.
+      const source = Array.isArray(value)
+        ? value.map((entry) => toText(entry).trim()).find((entry) => entry.length > 0) ?? ''
+        : toText(value);
+      const firstToken = source.split(/[;,|]/)[0] ?? '';
+      const firstWord = firstToken.trim().toLowerCase().split(/\s+/)[0] ?? '';
+      return firstWord;
+    };
     const getVal = (id: string): string => {
       const rec = records[id] as unknown as Record<string, unknown>;
       const v = rec[field];
@@ -1388,9 +1438,10 @@ export const DetailsListHost: React.FC<DetailsListHostProps> = ({
         const raw = typeof v === 'string' || typeof v === 'number' ? String(v) : '';
         return toSortableDateKey(raw);
       }
+      if (Array.isArray(v)) return toFirstWordKey(v);
       if (typeof v === 'number') return String(v);
       if (typeof v === 'boolean') return v ? '1' : '0';
-      if (typeof v === 'string') return v.toLowerCase();
+      if (typeof v === 'string') return toFirstWordKey(v);
       return '';
     };
     const arr = filteredIds.slice();
@@ -2635,6 +2686,7 @@ export const DetailsListHost: React.FC<DetailsListHostProps> = ({
         ),
       );
     },
+    columnFilterOptions: displayFilterOptionsRich,
     onColumnFiltersChange: (f) => {
       const normalizedBase: Record<string, ColumnFilterValue> = {};
       Object.entries(f).forEach(([k, v]) => (normalizedBase[k.toLowerCase()] = v as ColumnFilterValue));

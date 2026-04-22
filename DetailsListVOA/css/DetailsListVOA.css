@@ -331,8 +331,8 @@
 .voa-grid-results__overflow-hint {
   position: absolute;
   right: 14px;
-  bottom: 12px;
-  z-index: 6;
+  bottom: 20px;
+  z-index: 10;
   pointer-events: none;
   padding: 6px 10px;
   border: 1px solid #d6dde5;
@@ -2345,7 +2345,8 @@
 
 .voa-home-tiles-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(min(240px, 100%), 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(240px, 280px));
+  justify-content: center;
   align-items: stretch;
   gap: clamp(10px, 1vw, 14px);
   width: 100%;
@@ -2356,6 +2357,7 @@
 .voa-home-tile-card {
   display: flex;
   min-width: 0;
+  width: min(280px, 100%);
 }
 
 .voa-home-tile-button {
@@ -2363,16 +2365,16 @@
   overflow: hidden;
   width: 100%;
   height: 100%;
-  min-height: clamp(120px, 14vh, 150px);
+  min-height: clamp(94px, 10.5vh, 118px);
   border: 1px solid rgba(7, 92, 84, 0.78);
   border-radius: 8px;
   background: linear-gradient(145deg, var(--voa-home-accent) 0%, var(--voa-home-card-blue) 100%);
   color: #ffffff;
-  padding: clamp(10px, 0.7vw, 14px);
+  padding: clamp(8px, 0.55vw, 11px);
   text-align: left;
   display: flex;
   flex-direction: column;
-  gap: clamp(4px, 0.5vw, 8px);
+  gap: clamp(3px, 0.35vw, 6px);
   cursor: pointer;
   box-shadow: 0 4px 12px rgba(9, 31, 49, 0.14);
   transition:
@@ -2435,6 +2437,10 @@
   opacity: 0.92;
 }
 
+.voa-home-tiles-grid--single {
+  max-width: 280px;
+}
+
 .voa-home-tile-button:disabled {
   cursor: not-allowed;
   transform: none;
@@ -2468,7 +2474,7 @@
 
 .voa-home-tile-title {
   display: block;
-  font-size: clamp(18px, 1.3vw, 22px);
+  font-size: clamp(16px, 1.05vw, 19px);
   font-weight: 700;
   letter-spacing: -0.01em;
   line-height: 1.2;
@@ -2477,8 +2483,8 @@
 
 .voa-home-tile-desc {
   margin-top: auto;
-  font-size: clamp(12.5px, 0.9vw, 14px);
-  line-height: 1.4;
+  font-size: clamp(11px, 0.78vw, 12.5px);
+  line-height: 1.35;
   opacity: 0.97;
   max-width: 34ch;
 }
@@ -2527,6 +2533,7 @@
   }
 
   .voa-home-tiles-grid {
+    grid-template-columns: 1fr;
     max-width: none;
   }
 

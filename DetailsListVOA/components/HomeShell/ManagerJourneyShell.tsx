@@ -575,7 +575,7 @@ export const ManagerJourneyShell: React.FC<ManagerJourneyShellProps> = ({
                 </MessageBar>
               ) : (
                 <div
-                  className={`voa-home-tiles-grid${isTileSelectionDisabled ? ' voa-home-tiles-grid--locked' : ''}`}
+                  className={`voa-home-tiles-grid${isTileSelectionDisabled ? ' voa-home-tiles-grid--locked' : ''}${visibleTiles.length === 1 ? ' voa-home-tiles-grid--single' : ''}`}
                   role="list"
                   aria-live="polite"
                 >

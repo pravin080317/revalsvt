@@ -725,13 +725,11 @@ export const Grid = React.memo((props: GridProps) => {
       const hasControlled = !!(columnFilters[key]) || !!(columnFilters[keyLower]);
       const activeFilter = hasLocal || hasControlled;
       const sort = sorting?.find((s) => s.name === field);
-      const iconName = !sort && activeFilter ? 'Filter' : undefined;
       const columnName = c.name ?? String(field ?? '');
       const sortState = sort ? (Number(sort.sortDirection) === 1 ? 'sorted descending' : 'sorted ascending') : 'not sorted';
       const filterState = activeFilter ? 'filtered' : 'not filtered';
       return {
         ...c,
-        iconName,
         isFiltered: activeFilter,
         isSorted: !!sort,
         isSortedDescending: sort ? Number(sort.sortDirection) === 1 : undefined,

@@ -851,6 +851,57 @@ const isAuditAssigneeField = (rawFieldName: string): boolean => {
     return false;
   }
   return AUDIT_ASSIGNEE_FIELD_KEY_MATCHERS.some((matches) => matches(normalized));
+
+};
+
+const isAuditScoreField = (rawFieldName: string): boolean => {
+  const normalized = normalizeAuditFieldKey(rawFieldName);
+  return normalized.endsWith('score');
+};
+
+const formatAuditDecimalValue = (raw: string): string => {
+  const trimmed = raw.trim();
+  if (!trimmed || trimmed === '-') return trimmed;
+  const num = parseFloat(trimmed);
+  return (!isNaN(num) && isFinite(num)) ? num.toFixed(2) : trimmed;
+};
+
+const AUDIT_ESCAPED_TEXT_PATTERN = /\\r\\n|\\n|\\t|\\u[0-9a-f]{4}/i;
+
+const hasEscapedAuditText = (raw: string): boolean => AUDIT_ESCAPED_TEXT_PATTERN.test(raw);
+
+const decodeAuditEscapedText = (raw: string): string => {
+  const trimmed = raw.trim();
+  if (!trimmed || trimmed === '-') {
+    return trimmed;
+  }
+
+  // Audit payloads may include escaped JSON text (e.g. \n, \t, \u2022).
+  return raw
+    .replace(/\\r\\n/g, '\n')
+    .replace(/\\n/g, '\n')
+    .replace(/\\t/g, '\t')
+    .replace(/\\u2022/gi, '- ');
+};
+
+const formatAuditDisplayValue = (
+  rawFieldName: string,
+  rawValue: string,
+  lookup: Record<string, string>,
+): string => {
+  if (isAuditScoreField(rawFieldName)) {
+    return formatAuditDecimalValue(rawValue);
+  }
+
+  if (isAuditAssigneeField(rawFieldName)) {
+    return resolveAuditUserValue(rawValue, lookup);
+  }
+
+  if (hasEscapedAuditText(rawValue)) {
+    return decodeAuditEscapedText(rawValue);
+  }
+
+  return rawValue;
 };
 
 const resolveAuditUserToken = (value: string, lookup: Record<string, string>): string => {
@@ -907,7 +958,8 @@ const AUDIT_FIELD_LABEL_BY_KEY: Record<string, string> = {
   conditioncategory: 'Condition Category',
   particularnotes: 'Particular Notes',
   particularsnotes: 'Particular Notes',
-  reasonnotes: 'Particular Notes',
+  notes: 'Particular Notes',
+  reasonnotes: 'Notes',
   issaleuseful: 'Is this Sale Useful?',
   isthissaleuseful: 'Is this Sale Useful?',
   whynotuseful: 'Why is the sale not useful?',
@@ -921,6 +973,9 @@ const AUDIT_FIELD_LABEL_BY_KEY: Record<string, string> = {
   qcassignedat: 'QC Assigned Date',
   qcassignedto: 'QC Assigned to',
   qcremarks: 'QC Remarks',
+  qccompletedat: 'QC Completed At',
+  cwremarks: 'CW Remarks',
+  caseworkerremarks: 'CW Remarks',
   outcome: 'Outcome',
   completedat: 'Completed At',
 };
@@ -949,12 +1004,11 @@ const mapAuditFieldChanges = (
     const rawFieldName = getValue(change, 'fieldName');
     const rawOldValue = getValue(change, 'oldValue');
     const rawNewValue = getValue(change, 'newValue');
-    const useAssigneeResolution = isAuditAssigneeField(rawFieldName);
 
     return {
       fieldName: formatValue(toAuditFieldLabel(rawFieldName)),
-      oldValue: formatValue(useAssigneeResolution ? resolveAuditUserValue(rawOldValue, lookup) : rawOldValue),
-      newValue: formatValue(useAssigneeResolution ? resolveAuditUserValue(rawNewValue, lookup) : rawNewValue),
+      oldValue: formatValue(formatAuditDisplayValue(rawFieldName, rawOldValue, lookup)),
+      newValue: formatValue(formatAuditDisplayValue(rawFieldName, rawNewValue, lookup)),
     };
   });
 
@@ -966,9 +1020,8 @@ const mapAuditFieldChanges = (
   const singleField = formatValue(toAuditFieldLabel(singleFieldRaw));
   const singleOldRaw = getValue(record, 'oldValue');
   const singleNewRaw = getValue(record, 'newValue');
-  const useSingleAssigneeResolution = isAuditAssigneeField(singleFieldRaw);
-  const singleOldValue = formatValue(useSingleAssigneeResolution ? resolveAuditUserValue(singleOldRaw, lookup) : singleOldRaw);
-  const singleNewValue = formatValue(useSingleAssigneeResolution ? resolveAuditUserValue(singleNewRaw, lookup) : singleNewRaw);
+  const singleOldValue = formatValue(formatAuditDisplayValue(singleFieldRaw, singleOldRaw, lookup));
+  const singleNewValue = formatValue(formatAuditDisplayValue(singleFieldRaw, singleNewRaw, lookup));
 
   if (singleField !== '-' || singleOldValue !== '-' || singleNewValue !== '-') {
     return [{

@@ -533,7 +533,8 @@ describe('View model field label mapping', () => {
     conditioncategory: 'Condition Category',
     particularnotes: 'Particular Notes',
     particularsnotes: 'Particular Notes',
-    reasonnotes: 'Particular Notes',
+    notes: 'Particular Notes',
+    reasonnotes: 'Notes',
     issaleuseful: 'Is this Sale Useful?',
     isthissaleuseful: 'Is this Sale Useful?',
     whynotuseful: 'Why is the sale not useful?',
@@ -736,15 +737,15 @@ describe('mapAuditFieldChanges', () => {
   test('maps changes array with fieldName, oldValue, newValue', () => {
     expect(viewModelSource).toContain("const rawFieldName = getValue(change, 'fieldName');");
     expect(viewModelSource).toContain("fieldName: formatValue(toAuditFieldLabel(rawFieldName)),");
-    expect(viewModelSource).toContain("oldValue: formatValue(useAssigneeResolution ? resolveAuditUserValue(rawOldValue, lookup) : rawOldValue),");
-    expect(viewModelSource).toContain("newValue: formatValue(useAssigneeResolution ? resolveAuditUserValue(rawNewValue, lookup) : rawNewValue),");
+    expect(viewModelSource).toContain("oldValue: formatValue(formatAuditDisplayValue(rawFieldName, rawOldValue, lookup)),");
+    expect(viewModelSource).toContain("newValue: formatValue(formatAuditDisplayValue(rawFieldName, rawNewValue, lookup)),");
   });
 
   test('falls back to single-field format when changes array is empty', () => {
     expect(viewModelSource).toContain("const singleFieldRaw = getValue(record, 'fieldName');");
     expect(viewModelSource).toContain("const singleField = formatValue(toAuditFieldLabel(singleFieldRaw));");
-    expect(viewModelSource).toContain("const singleOldValue = formatValue(useSingleAssigneeResolution ? resolveAuditUserValue(singleOldRaw, lookup) : singleOldRaw);");
-    expect(viewModelSource).toContain("const singleNewValue = formatValue(useSingleAssigneeResolution ? resolveAuditUserValue(singleNewRaw, lookup) : singleNewRaw);");
+    expect(viewModelSource).toContain("const singleOldValue = formatValue(formatAuditDisplayValue(singleFieldRaw, singleOldRaw, lookup));");
+    expect(viewModelSource).toContain("const singleNewValue = formatValue(formatAuditDisplayValue(singleFieldRaw, singleNewRaw, lookup));");
   });
 });
 

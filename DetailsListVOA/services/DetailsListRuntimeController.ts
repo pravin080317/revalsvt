@@ -101,6 +101,30 @@ export class DetailsListRuntimeController {
     this._context = context;
   }
 
+  public warmupAccessResolution(): void {
+    if (this.hasResolvedCaseworkerAccess || this.caseworkerAccessRequest) {
+      return;
+    }
+
+    this.caseworkerAccessRequest = this.resolveCaseworkerAccess();
+    void this.caseworkerAccessRequest
+      .then((hasCaseworker) => {
+        this.hasCaseworkerAccess = hasCaseworker;
+        this.hasResolvedCaseworkerAccess = true;
+        return hasCaseworker;
+      })
+      .catch((error) => {
+        console.warn('Failed to warm up caseworker access.', error);
+        this.hasCaseworkerAccess = false;
+        this.hasManagerAccess = false;
+        this.hasQaAccess = false;
+      })
+      .finally(() => {
+        this.caseworkerAccessRequest = undefined;
+        this._notifyOutputChanged?.();
+      });
+  }
+
   public getOutputs(): IOutputs {
     return {
       selectedTaskId: this.selectedTaskId,

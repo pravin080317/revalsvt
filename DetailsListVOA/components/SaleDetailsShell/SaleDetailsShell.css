@@ -1638,7 +1638,7 @@
 
 .voa-sales-verification-layout {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 420px), 1fr));
   gap: 10px;
   align-items: start;
 }
@@ -1658,13 +1658,16 @@
 }
 
 .voa-sales-verification-row {
-  display: grid;
-  grid-template-columns: minmax(190px, 260px) minmax(0, 1fr);
-  gap: 8px;
+  display: flex;
+  flex-wrap: wrap;
+  column-gap: 8px;
+  row-gap: 6px;
   align-items: center;
 }
 
 .voa-sales-verification-row__label {
+  flex: 0 1 260px;
+  min-width: 180px;
   color: #1f2937;
   font-size: 15px;
   font-weight: 600;
@@ -1682,6 +1685,10 @@
   color: #5b6575;
   font-size: 13px;
   font-weight: 500;
+}
+
+.voa-sales-verification-row__dropdown {
+  width: 100%;
 }
 
 .voa-sales-verification-row__dropdown .ms-Dropdown-title {
@@ -1712,6 +1719,8 @@
   display: grid;
   gap: 6px;
   align-content: start;
+  flex: 1 1 280px;
+  min-width: 0;
 }
 
 
@@ -1826,10 +1835,6 @@
 }
 
 @media (max-width: 1280px) {
-  .voa-sales-verification-layout {
-    grid-template-columns: minmax(0, 1fr);
-  }
-
   .voa-sales-verification-actions {
     justify-content: stretch;
   }
@@ -1841,8 +1846,12 @@
 
 @media (max-width: 960px) {
   .voa-sales-verification-row {
-    grid-template-columns: minmax(0, 1fr);
-    gap: 6px;
+    align-items: start;
+  }
+
+  .voa-sales-verification-row__label,
+  .voa-sales-verification-row__control {
+    flex-basis: 100%;
   }
 
   .voa-sales-verification-actions {
@@ -2061,6 +2070,7 @@
 
 .voa-audit-entry__table tbody td {
   width: 34%;
+  white-space: pre-line;
 }
 
 .voa-audit-entry__table tbody tr:last-child th,

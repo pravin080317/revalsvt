@@ -9,6 +9,8 @@ import {
   IColumnReorderOptions,
   IContextualMenuItem,
   IDetailsList,
+  IDetailsHeaderProps,
+  IDetailsColumnRenderTooltipProps,
   IDetailsRowProps,
   IObjectWithKey,
   IRefObject,
@@ -156,6 +158,7 @@ export interface GridProps {
   errorMessage?: string;
   showResults?: boolean;
   onLoadFilterOptions?: (field: string, query: string) => Promise<Array<string | { key: string; text: string }>>;
+  columnFilterOptions?: Record<string, Array<string | { key: string; text: string }>>;
   onColumnFiltersChange?: (filters: Record<string, ColumnFilterValue | string | string[]>) => void;
   allowColumnReorder?: boolean;
   columnFilters?: Record<string, ColumnFilterValue>;
@@ -220,6 +223,9 @@ const getColumnFilterField = <T extends ColumnFilterValue = ColumnFilterValue>(
   state: Record<string, ColumnFilterValue>,
   key: string,
 ): T | undefined => (state as unknown as Record<string, ColumnFilterValue>)[key] as T | undefined;
+
+const normalizeColumnFilterOptionKey = (value: string): string =>
+  value.replace(/[^a-z0-9]/gi, '').toLowerCase();
 
 type SearchControlType = 'text' | 'numeric' | 'dateRange' | 'singleSelect' | 'multiSelect' | 'textContains' | 'textPrefix';
 
@@ -553,7 +559,44 @@ const buildValueTooltip = (value: string | undefined, emptyHint?: string): strin
 
 const COMBO_DISAMBIGUATION_HINT = 'Type more or use arrow keys to choose.';
 const SEARCH_BY_RESET_NOTICE = 'Changing Search by cleared the previous search values.';
+const COLUMN_FILTER_RESET_NOTICE = 'New search criteria cleared existing column filters.';
 const PREFILTER_RESET_NOTICE = 'Changing Search by cleared dependent filters.';
+
+const normalizeSignatureText = (value?: string): string => (value ?? '').trim().toLowerCase();
+const normalizeSignatureList = (values?: string[]): string[] =>
+  (values ?? [])
+    .map((value) => value.trim().toLowerCase())
+    .filter((value) => value.length > 0)
+    .sort((left, right) => left.localeCompare(right));
+
+const buildSearchSubmissionSignature = (filters: GridFilterState): string => {
+  const summaryFlag = filters.summaryFlag;
+  const summarySignature = typeof summaryFlag === 'string'
+    ? { type: 'string', value: normalizeSignatureText(summaryFlag) }
+    : summaryFlag && typeof summaryFlag === 'object'
+      ? {
+        type: 'object',
+        operator: summaryFlag.operator,
+        values: normalizeSignatureList(summaryFlag.values),
+      }
+      : undefined;
+
+  return JSON.stringify({
+    searchBy: filters.searchBy,
+    saleId: normalizeSignatureText(filters.saleId),
+    taskId: normalizeSignatureText(filters.taskId),
+    uprn: normalizeSignatureText(filters.uprn),
+    bacode: normalizeSignatureText(filters.bacode),
+    address: normalizeSignatureText(filters.address),
+    buildingNameNumber: normalizeSignatureText(filters.buildingNameNumber),
+    street: normalizeSignatureText(filters.street),
+    townCity: normalizeSignatureText(filters.townCity),
+    postcode: normalizeUkPostcode(filters.postcode ?? '').replace(/\s+/g, ''),
+    billingAuthority: normalizeSignatureList(filters.billingAuthority),
+    source: normalizeSignatureText(filters.source),
+    summaryFlag: summarySignature,
+  });
+};
 
 const getComboDisambiguationHint = (options: IComboBoxOption[], value?: string): string | undefined => {
   const trimmed = (value ?? '').trim();
@@ -791,6 +834,7 @@ export const Grid = React.memo((props: GridProps) => {
     onStatusMessageDismiss,
     showResults,
     onLoadFilterOptions,
+    columnFilterOptions = {},
     onColumnFiltersChange,
   columnFilters,
   disableClientFiltering,
@@ -877,6 +921,7 @@ export const Grid = React.memo((props: GridProps) => {
   const menuOptionsFieldRef = React.useRef<string>('');
   const liveFilterTimer = React.useRef<number | undefined>(undefined);
   const [filters, setFilters] = React.useState<GridFilterState>(searchFilters);
+  const lastSubmittedSearchSignatureRef = React.useRef<string>(buildSearchSubmissionSignature(searchFilters));
   const autoSearchEnabled = false;
   const [billingAuthoritySearch, setBillingAuthoritySearch] = React.useState('');
   const [managerBillingSearch, setManagerBillingSearch] = React.useState('');
@@ -2154,6 +2199,7 @@ export const Grid = React.memo((props: GridProps) => {
 
   React.useEffect(() => {
     setFilters(searchFilters);
+    lastSubmittedSearchSignatureRef.current = buildSearchSubmissionSignature(searchFilters);
   }, [searchFilters]);
 
   React.useEffect(() => {
@@ -2652,6 +2698,24 @@ export const Grid = React.memo((props: GridProps) => {
   );
 
   const handleSearch = React.useCallback(() => {
+    const clearColumnFiltersOnNewSearch = (nextFilters: GridFilterState): boolean => {
+      const nextSignature = buildSearchSubmissionSignature(nextFilters);
+      const previousSignature = lastSubmittedSearchSignatureRef.current;
+      const didSearchChange = previousSignature !== '' && previousSignature !== nextSignature;
+      if (didSearchChange && Object.keys(columnFiltersState).length > 0) {
+        setColumnFilters(() => {
+          const cleared: Record<string, ColumnFilterValue> = {};
+          onColumnFiltersChange?.(cleared);
+          return cleared;
+        });
+        setSearchResetNotice(COLUMN_FILTER_RESET_NOTICE);
+      } else {
+        setSearchResetNotice(undefined);
+      }
+      lastSubmittedSearchSignatureRef.current = nextSignature;
+      return didSearchChange;
+    };
+
     if (isSalesSearch) {
       if (salesSearchHasErrors || !salesSearchCanSearch) {
         return;
@@ -2681,8 +2745,8 @@ export const Grid = React.memo((props: GridProps) => {
         next.townCity = (filters.townCity ?? '').trim() || undefined;
         next.postcode = normalizeUkPostcode(filters.postcode ?? '').trim() || undefined;
       }
+      clearColumnFiltersOnNewSearch(next);
       setFilters(next);
-      setSearchResetNotice(undefined);
       setSalesSearchAttempted(false);
       dismissResultMessages();
       onSearch(next);
@@ -2696,16 +2760,18 @@ export const Grid = React.memo((props: GridProps) => {
     if (sanitized.searchBy === 'uprn' && sanitized.uprn && (sanitized.uprn.length < 8 || sanitized.uprn.length > 10)) {
       return;
     }
+    clearColumnFiltersOnNewSearch(sanitized);
     setFilters(sanitized);
-    setSearchResetNotice(undefined);
     dismissResultMessages();
     onSearch(sanitized);
   }, [
     addressError,
+    columnFiltersState,
     dismissResultMessages,
     filters,
     isSalesSearch,
     normalizeUkPostcode,
+    onColumnFiltersChange,
     onSearch,
     postcodeError,
     saleIdError,
@@ -2724,6 +2790,7 @@ export const Grid = React.memo((props: GridProps) => {
     if (isSalesSearch) {
       resetSalesSearchValidationUi();
     }
+    lastSubmittedSearchSignatureRef.current = buildSearchSubmissionSignature(defaults);
     setFilters(defaults);
     setSearchResetNotice(undefined);
     dismissResultMessages();
@@ -2838,6 +2905,7 @@ export const Grid = React.memo((props: GridProps) => {
         const col: IGridColumn = {
           key: c.name,
           name: resolvedColumnName,
+          headerTooltip: cfg.ColHeaderTooltip,
           fieldName: c.name,
           className: columnClassNames.length > 0 ? columnClassNames.join(' ') : undefined,
           headerClassName,
@@ -3018,7 +3086,6 @@ export const Grid = React.memo((props: GridProps) => {
       const field = c.fieldName ?? c.key;
       const activeFilter = columnFiltersState[(field ?? '').toString()] !== undefined;
       const sort = sorting?.find((s) => s.name === field);
-      const iconName = !sort && activeFilter ? 'Filter' : undefined;
       const columnName = c.name ?? String(field ?? '');
       const sortState = sort ? (Number(sort.sortDirection) === 1 ? 'sorted descending' : 'sorted ascending') : 'not sorted';
       const filterState = activeFilter ? 'filtered' : 'not filtered';
@@ -3032,7 +3099,6 @@ export const Grid = React.memo((props: GridProps) => {
       return {
         ...c,
         headerClassName,
-        iconName,
         isFiltered: activeFilter,
         isSorted: !!sort,
         isSortedDescending: sort ? Number(sort.sortDirection) === 1 : undefined,
@@ -3041,6 +3107,36 @@ export const Grid = React.memo((props: GridProps) => {
       } as IGridColumn;
     });
   }, [columns, columnFiltersState, sorting]);
+
+  const onRenderDetailsHeader = React.useCallback(
+    (
+      headerProps?: IDetailsHeaderProps,
+      defaultRender?: (props?: IDetailsHeaderProps) => JSX.Element | null,
+    ): JSX.Element | null => {
+      if (!headerProps || !defaultRender) {
+        return null;
+      }
+      return defaultRender({
+        ...headerProps,
+        onRenderColumnHeaderTooltip: (tooltipProps?: IDetailsColumnRenderTooltipProps) => {
+          if (!tooltipProps) {
+            return null;
+          }
+          const column = tooltipProps.column as IGridColumn | undefined;
+          const tooltipContent =
+            column?.headerTooltip ||
+            tooltipProps.column?.name ||
+            tooltipProps.tooltipProps?.content;
+          return (
+            <TooltipHost content={tooltipContent}>
+              {tooltipProps.children}
+            </TooltipHost>
+          );
+        },
+      });
+    },
+    [],
+  );
 
   const filteredItems = React.useMemo(() => {
     if (disableClientFiltering) {
@@ -3948,8 +4044,9 @@ export const Grid = React.memo((props: GridProps) => {
 
   const buildColumnFilterOptions = React.useCallback(
     (fieldName: string, cfg?: ColumnFilterConfig): IComboBoxOption[] => {
-    const seen = new Set<string>();
+      const seen = new Set<string>();
       const opts: IComboBoxOption[] = [];
+      const normalizedField = normalizeColumnFilterOptionKey(fieldName);
       const push = (key: string, text?: string) => {
         if (!key) return;
         if (seen.has(key)) return;
@@ -3966,6 +4063,15 @@ export const Grid = React.memo((props: GridProps) => {
       if (cfg?.optionFields) {
         if (menuExtraOptions.length > 0) {
           menuExtraOptions.forEach((o) => {
+            if (o && typeof o === 'object') {
+              push(String(o.key ?? ''), o.text);
+            } else {
+              const s = String(o).trim();
+              if (s) push(s, s);
+            }
+          });
+        } else if ((columnFilterOptions[normalizedField] ?? []).length > 0) {
+          columnFilterOptions[normalizedField].forEach((o) => {
             if (o && typeof o === 'object') {
               push(String(o.key ?? ''), o.text);
             } else {
@@ -4012,9 +4118,26 @@ export const Grid = React.memo((props: GridProps) => {
         .filter((value) => value !== '')
         .forEach((value) => push(value, value));
 
+      if (
+        normalizedField === 'summaryflags'
+        || normalizedField === 'summaryflag'
+        || normalizedField === 'reviewflags'
+        || normalizedField === 'overallflag'
+      ) {
+        opts.sort((a, b) => {
+          const aIsAll = isAllToken(a.key) || isAllToken(a.text ?? a.key);
+          const bIsAll = isAllToken(b.key) || isAllToken(b.text ?? b.key);
+          if (aIsAll && !bIsAll) return -1;
+          if (!aIsAll && bIsAll) return 1;
+          const aText = String(a.text ?? a.key).trim();
+          const bText = String(b.text ?? b.key).trim();
+          return aText.localeCompare(bText, undefined, { sensitivity: 'base' });
+        });
+      }
+
       return opts;
     },
-    [columnFiltersState, getDistinctOptions, menuExtraOptions],
+    [columnFilterOptions, columnFiltersState, getDistinctOptions, menuExtraOptions],
   );
 
   const openMenuForColumn = React.useCallback(
@@ -4027,6 +4150,8 @@ export const Grid = React.memo((props: GridProps) => {
       const cfg = getColumnFilterConfigFor(tableKey, fieldName);
       const normalizedField = String(fieldName ?? '').toLowerCase();
       const isSummaryFlagField = normalizedField === 'summaryflags' || normalizedField === 'summaryflag';
+      const normalizedOptionField = normalizeColumnFilterOptionKey(fieldName);
+      const preloadedOptions = columnFilterOptions[normalizedOptionField] ?? [];
       menuOptionsFieldRef.current = normalizedField;
       const existing = columnFiltersState[fieldName];
       let initialValue: ColumnFilterValue = '';
@@ -4081,7 +4206,7 @@ export const Grid = React.memo((props: GridProps) => {
       comboIgnoreNextChangeRef.current[menuFilterKey] = false;
       delete comboExpectedSelectionRef.current[menuFilterKey];
       setMenuFilterError(undefined);
-      setMenuExtraOptions([]);
+      setMenuExtraOptions(preloadedOptions);
       // Preserve existing operator for summary flags, default to 'contains' for new filters
       let operator: 'contains' | 'notContains' | 'eq' = 'contains';
       if (isSummaryFlagField && typeof existing === 'object' && existing !== null && !Array.isArray(existing) && 'operator' in existing) {
@@ -4092,7 +4217,7 @@ export const Grid = React.memo((props: GridProps) => {
       }
       setMenuSummaryOperator(operator);
       setMenuState({ target, column: gridCol });
-      if (onLoadFilterOptions && !isSummaryFlagField && (cfg?.control === 'singleSelect' || cfg?.control === 'multiSelect')) {
+      if (onLoadFilterOptions && (cfg?.control === 'singleSelect' || cfg?.control === 'multiSelect')) {
         void onLoadFilterOptions(fieldName ?? '', '')
           .then((vals) => {
             if (menuOptionsFieldRef.current !== normalizedField) return;
@@ -4106,7 +4231,7 @@ export const Grid = React.memo((props: GridProps) => {
           });
       }
     },
-    [columnFiltersState, onLoadFilterOptions, tableKey],
+    [columnFilterOptions, columnFiltersState, onLoadFilterOptions, tableKey],
   );
 
   const onColumnHeaderClick = React.useCallback(
@@ -5320,7 +5445,7 @@ export const Grid = React.memo((props: GridProps) => {
                         options={[
                           { key: 'contains', text: 'Contains' },
                           { key: 'notContains', text: 'Does not contain' },
-                          { key: 'eq', text: 'Equal' },
+                          { key: 'eq', text: 'Equals' },
                         ]}
                         selectedKey={menuSummaryOperator}
                         allowFreeform={false}
@@ -6651,33 +6776,40 @@ export const Grid = React.memo((props: GridProps) => {
                 </span>
               )}
               <div
-                id="voa-grid-results"
-                ref={resultsRef}
-                className={joinClassNames(
-                  'voa-grid-results',
-                  horizontalOverflowState.canScrollLeft && 'voa-grid-results--scroll-left',
-                  horizontalOverflowState.canScrollRight && 'voa-grid-results--scroll-right',
-                )}
-                data-is-scrollable="true"
                 style={{
+                  position: 'relative',
                   flex: 1,
                   minHeight: 0,
                   minWidth: 0,
                   width: '100%',
                   maxWidth: '100%',
-                  overflowY: 'scroll',
-                  overflowX: 'auto',
                 }}
-                role="region"
-                aria-label={commonText.aria.resultsScrollRegion}
-                aria-describedby={horizontalOverflowState.hasOverflow ? 'voa-grid-results-scroll-hint' : undefined}
-                tabIndex={0}
               >
                 {horizontalOverflowState.hasOverflow && horizontalOverflowState.canScrollRight && (
                   <div className="voa-grid-results__overflow-hint" aria-hidden="true">
                     {commonText.selectionControls.resultsScrollHintText}
                   </div>
                 )}
+                <div
+                  id="voa-grid-results"
+                  ref={resultsRef}
+                  className={joinClassNames(
+                    'voa-grid-results',
+                    horizontalOverflowState.canScrollLeft && 'voa-grid-results--scroll-left',
+                    horizontalOverflowState.canScrollRight && 'voa-grid-results--scroll-right',
+                  )}
+                  data-is-scrollable="true"
+                  style={{
+                    position: 'absolute',
+                    inset: 0,
+                    overflowY: 'scroll',
+                    overflowX: 'auto',
+                  }}
+                  role="region"
+                  aria-label={commonText.aria.resultsScrollRegion}
+                  aria-describedby={horizontalOverflowState.hasOverflow ? 'voa-grid-results-scroll-hint' : undefined}
+                  tabIndex={0}
+                >
                 <div className="voa-grid-list">
                   <ShimmeredDetailsList
                     className={ClassNames.PowerCATFluentDetailsList}
@@ -6696,6 +6828,7 @@ export const Grid = React.memo((props: GridProps) => {
                     layoutMode={DetailsListLayoutMode.fixedColumns}
                     onColumnHeaderClick={onColumnHeaderClick}
                     onColumnHeaderContextMenu={onColumnHeaderContextMenu}
+                    onRenderDetailsHeader={onRenderDetailsHeader}
                     onItemInvoked={rowInvokeEnabled ? onItemInvoked : undefined}
                     columnReorderOptions={props.allowColumnReorder ? columnReorderOptions : undefined}
                     compact={compact === true || compactViewport}
@@ -6717,6 +6850,7 @@ export const Grid = React.memo((props: GridProps) => {
                     )}
                   </div>
                 )}
+              </div>
               </div>
             </>
           )}

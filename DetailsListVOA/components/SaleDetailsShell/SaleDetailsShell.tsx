@@ -241,6 +241,10 @@ export const SaleDetailsShell: React.FC<SaleDetailsShellProps> = ({
     }
   }, [onOpenQcLog]);
 
+  const handleRefreshClick = React.useCallback(async () => {
+    await Promise.resolve(onRefresh());
+  }, [onRefresh]);
+
   const handleWlttPromote = React.useCallback((record: (typeof model.wlttRecords)[number]) => {
     if (readOnly) {
       return;
@@ -334,7 +338,7 @@ export const SaleDetailsShell: React.FC<SaleDetailsShellProps> = ({
             className="voa-sale-details-shell__header-btn voa-sale-details-shell__header-btn--right"
             text="Refresh"
             iconProps={{ iconName: 'Refresh' }}
-            onClick={() => { void onRefresh(); }}
+            onClick={handleRefreshClick}
             disabled={refreshActionRule.disabled}
             ariaLabel="Refresh sale record details"
           />
