@@ -42,11 +42,11 @@ export class DetailsListVOA implements ComponentFramework.ReactControl<IInputs, 
       // ignore
     }
 
-    const pcfViewSalesEnabled = this.runtime.isPcfViewSalesDetailsEnabledFlag();
-    this.runtime.syncPcfViewSalesEnabled(pcfViewSalesEnabled);
-
     const useManagerJourney = this.runtime.isManagerHomeScreen();
     this.runtime.setManagerJourneyActive(useManagerJourney);
+    this.runtime.syncExternalReadonlyLaunch();
+    const pcfViewSalesEnabled = this.runtime.isPcfViewSalesDetailsEnabledFlag() || this.runtime.isExternalReadonlyLaunchActive;
+    this.runtime.syncPcfViewSalesEnabled(pcfViewSalesEnabled);
     const requestContext = this.runtime.getActiveRequestContext();
     const sharePointCatalogChunks = this.runtime.getSharePointCatalogChunks();
 
@@ -58,6 +58,7 @@ export class DetailsListVOA implements ComponentFramework.ReactControl<IInputs, 
       saleDetailsJson: this.runtime.saleDetailsJson,
       saleDetailsReadOnly: this.runtime.isSaleDetailsReadOnly,
       saleDetailsReadOnlyReason: this.runtime.saleDetailsReadOnlyReason,
+      saleDetailsDisableInternalActions: this.runtime.areInternalSaleDetailsActionsDisabled,
       saleDetailsCanCreateManualTask: this.runtime.canCreateManualTask,
       saleDetailsCanModifyTask: this.runtime.canModifySvtTask,
       saleDetailsCanProgressTask: this.runtime.canProgressSalesVerificationTask,

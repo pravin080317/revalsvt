@@ -62,6 +62,7 @@ export interface QcLogActionRuleInput {
 export interface PromoteToMasterActionRuleInput {
   recordCount: number;
   isCurrentMaster: boolean;
+  hasRecordId: boolean;
   readOnly: boolean;
   hasPromoteHandler: boolean;
 }
@@ -420,10 +421,11 @@ export const getQcLogActionRule = ({
 export const getPromoteToMasterActionRule = ({
   recordCount,
   isCurrentMaster,
+  hasRecordId,
   readOnly,
   hasPromoteHandler,
 }: PromoteToMasterActionRuleInput): ViewSaleActionRule => {
-  if (recordCount <= 0 || isCurrentMaster || readOnly || !hasPromoteHandler) {
+  if (recordCount <= 0 || isCurrentMaster || !hasRecordId || readOnly || !hasPromoteHandler) {
     return { disabled: true };
   }
 

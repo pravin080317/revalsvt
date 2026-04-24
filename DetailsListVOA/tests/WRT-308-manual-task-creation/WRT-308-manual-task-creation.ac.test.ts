@@ -33,7 +33,7 @@ describe('WRT-308 Manual Task Creation AC', () => {
 
   test('AC2: Create Task is disabled when a task ID already exists and without manager+caseworker access', () => {
     expect(sectionSource).toContain('getCreateTaskActionRule({');
-    expect(sectionSource).toContain('const createTaskDisabled = createTaskActionRule.disabled;');
+    expect(sectionSource).toContain('const createTaskDisabled = disableInternalActions || createTaskActionRule.disabled;');
     expect(rulesSource).toContain('export const getCreateTaskActionRule = ({');
     expect(rulesSource).toContain("reason: 'A task ID already exists for this sale record.'");
     expect(rulesSource).toContain("reason: 'Create task is available only to users with both manager and caseworker role/team access.'");

@@ -17,7 +17,18 @@ const normalizeRecordIdentifier = (value: string): string => {
   if (!trimmed || trimmed === '-') {
     return '';
   }
-  return trimmed.replace(/^\{+|\}+$/g, '').toLowerCase();
+
+  let start = 0;
+  let end = trimmed.length;
+
+  while (start < end && trimmed.charCodeAt(start) === 123) {
+    start++;
+  }
+  while (end > start && trimmed.charCodeAt(end - 1) === 125) {
+    end--;
+  }
+
+  return trimmed.slice(start, end).toLowerCase();
 };
 
 const isSameRecordIdentifier = (left: string, right: string): boolean => {
@@ -61,12 +72,14 @@ export const WlttSection: React.FC<WlttSectionProps> = ({
 
   const canPrevious = safeIndex > 0;
   const canNext = safeIndex < records.length - 1;
+  const hasRecordId = normalizeRecordIdentifier(currentRecord.wlttId) !== '';
   const isCurrentMaster = currentMasterRecordId
     ? isSameRecordIdentifier(currentRecord.wlttId, currentMasterRecordId)
     : false;
   const promoteActionRule = getPromoteToMasterActionRule({
     recordCount: records.length,
     isCurrentMaster,
+    hasRecordId,
     readOnly,
     hasPromoteHandler: Boolean(onPromoteRecord),
   });

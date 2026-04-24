@@ -715,6 +715,18 @@ export const SalesVerificationSection: React.FC<SalesVerificationSectionProps> =
     </div>
   ), []);
 
+  const handleConfirmCompleteClick = React.useCallback(() => {
+    handleConfirmComplete().catch(() => undefined);
+  }, [handleConfirmComplete]);
+
+  const handleConfirmQcOutcomeClick = React.useCallback(() => {
+    handleConfirmQcOutcome().catch(() => undefined);
+  }, [handleConfirmQcOutcome]);
+
+  const handleConfirmSubmitForQcClick = React.useCallback(() => {
+    handleConfirmSubmitForQc().catch(() => undefined);
+  }, [handleConfirmSubmitForQc]);
+
   return (
     <section className="voa-sale-details-card voa-sales-verification-card" aria-labelledby="sales-verification-heading">
       <div className="voa-sale-details-card__header">
@@ -851,7 +863,7 @@ export const SalesVerificationSection: React.FC<SalesVerificationSectionProps> =
             className="voa-sales-verification-action-btn"
             disabled={submitForQcActionRule.disabled}
             title={submitForQcActionRule.reason}
-            onClick={() => { void handleSubmitForQc(); }}
+            onClick={handleSubmitForQc}
           />
           {(busyAction === 'complete' || busyAction === 'submit') && (
             <div role="status" aria-live="polite" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
@@ -974,7 +986,7 @@ export const SalesVerificationSection: React.FC<SalesVerificationSectionProps> =
               text={busyAction === 'complete' ? 'Completing...' : 'Complete'}
               ariaLabel="Confirm complete sales verification task"
               disabled={busyAction === 'complete'}
-              onClick={() => { void handleConfirmComplete(); }}
+              onClick={handleConfirmCompleteClick}
             />
             <DefaultButton
               text="Cancel"
@@ -1022,7 +1034,7 @@ export const SalesVerificationSection: React.FC<SalesVerificationSectionProps> =
               text={busyAction === 'qcsubmit' ? 'Submitting...' : 'Confirm'}
               ariaLabel="Confirm QC outcome submission"
               disabled={busyAction === 'qcsubmit'}
-              onClick={() => { void handleConfirmQcOutcome(); }}
+              onClick={handleConfirmQcOutcomeClick}
             />
             <DefaultButton
               text="Cancel"
@@ -1092,7 +1104,7 @@ export const SalesVerificationSection: React.FC<SalesVerificationSectionProps> =
               text={busyAction === 'submit' ? 'Submitting...' : 'Submit for QC'}
               ariaLabel="Submit sales verification task for quality control"
               disabled={busyAction === 'submit'}
-              onClick={() => { void handleConfirmSubmitForQc(); }}
+              onClick={handleConfirmSubmitForQcClick}
             />
             <DefaultButton
               text="Cancel"

@@ -14,6 +14,7 @@ describe('WRT-400 Modify SVT Task AC', () => {
   const runtimeSource = readRepoFile('DetailsListVOA/services/DetailsListRuntimeController.ts');
   const saleDetailsSource = readRepoFile('DetailsListVOA/services/runtime/sale-details.ts');
   const configSource = readRepoFile('DetailsListVOA/config/ControlConfig.ts');
+  const searchFieldConfigsSource = readRepoFile('DetailsListVOA/config/SearchFieldConfigs.ts');
   const indexSource = readRepoFile('DetailsListVOA/index.ts');
   const gridSource = readRepoFile('DetailsListVOA/Grid.tsx');
 
@@ -26,8 +27,9 @@ describe('WRT-400 Modify SVT Task AC', () => {
   });
 
   test('AC2: Modify button remains disabled for users without caseworker permissions', () => {
-    expect(taskSectionSource).toContain('disabled={modifyTaskActionRule.disabled}');
-    expect(taskSectionSource).toContain("title={modifyTaskActionRule.disabled");
+    expect(taskSectionSource).toContain('const modifyTaskDisabled = disableInternalActions || modifyTaskActionRule.disabled;');
+    expect(taskSectionSource).toContain('disabled={modifyTaskDisabled}');
+    expect(taskSectionSource).toContain('title={modifyTaskDisabled');
     expect(rulesSource).toContain("reason: 'Modify task is available only to caseworker role/team.'");
   });
 
@@ -77,7 +79,7 @@ describe('WRT-400 Modify SVT Task AC', () => {
     expect(runtimeSource).toContain("taskStatus: 'Assigned'");
     expect(runtimeSource).toContain('taskList: JSON.stringify([normalizedTaskId])');
     expect(runtimeSource).toContain('this._saleDetails = mergeModifyTaskDetails(this._saleDetails, {');
-    expect(runtimeSource).toContain('this.saleDetailsReadOnly = access.readOnly;');
+    expect(runtimeSource).toContain('this.applySaleDetailsAccess(this._saleDetails);');
     expect(saleDetailsSource).toContain('next.assignedDate = assignedDateIso;');
     expect(saleDetailsSource).toContain('next.caseworkerAssignedDate = assignedDateIso;');
     expect(saleDetailsSource).toContain('next.taskCompletedDate = null;');
@@ -97,10 +99,10 @@ describe('WRT-400 Modify SVT Task AC', () => {
   });
 
   test('AC8: Sales Record Search still supports Sale ID, Address, Billing Authority and UPRN lookup paths', () => {
-    expect(gridSource).toContain("label: 'Sale ID'");
-    expect(gridSource).toContain("label: 'Address'");
-    expect(gridSource).toContain("label: 'Billing Authority'");
-    expect(gridSource).toContain("label: 'UPRN'");
+    expect(searchFieldConfigsSource).toContain("label: 'Sale ID'");
+    expect(searchFieldConfigsSource).toContain("label: 'Address'");
+    expect(searchFieldConfigsSource).toContain("label: 'Billing Authority'");
+    expect(searchFieldConfigsSource).toContain("label: 'UPRN'");
     expect(gridSource).toContain("searchBy: 'address'");
   });
 });

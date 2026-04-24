@@ -64,10 +64,10 @@ export interface DetailsListHostProps {
   canCreateManualTask?: boolean;
 }
 
-type SummaryFlagFilterValue = {
+interface SummaryFlagFilterValue {
   operator: 'contains' | 'notContains' | 'eq';
   values: string[];
-};
+}
 
 type ColumnFilterValue = string | string[] | NumericFilter | DateRangeFilter | SummaryFlagFilterValue;
 type FilterOptionsMap = Record<string, string[]>;
@@ -639,7 +639,7 @@ export const DetailsListHost: React.FC<DetailsListHostProps> = ({
     }
 
     setCurrentUserEntraLoading(true);
-    void (async () => {
+    const loadCurrentUserEntra = async (): Promise<void> => {
       try {
         const rawPayload = await executeUnboundCustomApi<unknown>(
           context,
@@ -657,7 +657,9 @@ export const DetailsListHost: React.FC<DetailsListHostProps> = ({
           setCurrentUserEntraLoading(false);
         }
       }
-    })();
+    };
+
+    loadCurrentUserEntra().catch(() => undefined);
 
     return () => {
       active = false;
@@ -1643,7 +1645,7 @@ export const DetailsListHost: React.FC<DetailsListHostProps> = ({
       inFlightGridLoadKeyRef.current = loadRequestKey;
     setLoadErrorMessage(undefined);
     setApimLoading(true);
-    void (async () => {
+    const loadGrid = async (): Promise<void> => {
       try {
         console.debug('[Prefilter] host load start', {
           screen: screenKind,
@@ -1687,7 +1689,9 @@ export const DetailsListHost: React.FC<DetailsListHostProps> = ({
           inFlightGridLoadKeyRef.current = '';
         }
       }
-    })();
+    };
+
+    loadGrid().catch(() => undefined);
   }, [context, tableKey, sourceCode, searchFilters, currentPage, pageSize, clientSort, userSortActive, clientSideEligible, searchNonce, hasLoadedApim, apimLoading, currentUserEntraLoading, prefilters, prefilterApplied, isCaseworkerView, currentUserId, isPrefilterScreen, isQcView, isSalesSearch, normalizePrefilterStateUserIds, requiresCurrentUserEntra, salesSearchApplied, prefilterStorageKey, screenKind, columnFilterQuery, mapSearchFiltersForApi, resetHostResultsState, country, listYear, contextScopeKey, restoredGridStateKey, screenInstanceKey, restoredSalesSearchKey, salesSearchStorageKey]);
 
   React.useEffect(() => {
@@ -1724,7 +1728,7 @@ export const DetailsListHost: React.FC<DetailsListHostProps> = ({
     setAssignUsersError(undefined);
     setAssignUsersInfo(undefined);
 
-    void (async () => {
+    const loadAssignableUsers = async (): Promise<void> => {
       try {
         const response = await executeUnboundCustomApi<{ Result?: string; result?: string }>(
           context,
@@ -1775,7 +1779,9 @@ export const DetailsListHost: React.FC<DetailsListHostProps> = ({
           setAssignUsersLoading(false);
         }
       }
-    })();
+    };
+
+    loadAssignableUsers().catch(() => undefined);
   }, [
     assignPanelOpen,
     assignmentContextKey,
@@ -1847,7 +1853,7 @@ export const DetailsListHost: React.FC<DetailsListHostProps> = ({
       setQcUserOptionsError(undefined);
     }
 
-    void (async () => {
+    const loadCaseworkerOptions = async (): Promise<void> => {
       try {
         const response = await executeUnboundCustomApi<{ Result?: string; result?: string }>(
           context,
@@ -1940,7 +1946,9 @@ export const DetailsListHost: React.FC<DetailsListHostProps> = ({
           setQcUserOptionsLoading(false);
         }
       }
-    })();
+    };
+
+    loadCaseworkerOptions().catch(() => undefined);
   }, [
     assignmentContextKey,
     buildCaseworkerNames,
@@ -2005,7 +2013,7 @@ export const DetailsListHost: React.FC<DetailsListHostProps> = ({
     }
     assignableUsersCacheLoadKeyRef.current = cacheContextKey;
 
-    void (async () => {
+    const loadUserMappings = async (): Promise<void> => {
       try {
         const response = await executeUnboundCustomApi<{ Result?: string; result?: string }>(
           context,
@@ -2027,7 +2035,9 @@ export const DetailsListHost: React.FC<DetailsListHostProps> = ({
       } catch {
         // ignore assignable users cache load failures
       }
-    })();
+    };
+
+    loadUserMappings().catch(() => undefined);
   }, [
     context,
     hasGuidAssignments,
@@ -2198,7 +2208,7 @@ export const DetailsListHost: React.FC<DetailsListHostProps> = ({
     setBillingAuthorityOptionsLoading(true);
     setBillingAuthorityOptionsError(undefined);
 
-    void (async () => {
+    const loadBillingAuthorityMetadata = async (): Promise<void> => {
       try {
         const metadataParams: Record<string, string> = {};
         if (includeCountryListYearApiParams) {
@@ -2266,7 +2276,9 @@ export const DetailsListHost: React.FC<DetailsListHostProps> = ({
           setBillingAuthorityOptionsLoading(false);
         }
       }
-    })();
+    };
+
+    loadBillingAuthorityMetadata().catch(() => undefined);
 
     return () => {
       active = false;
@@ -2423,7 +2435,7 @@ export const DetailsListHost: React.FC<DetailsListHostProps> = ({
         setSearchNonce((n) => n + 1);
         return false;
       }
-      const assignedCount = uniqueTaskIds.length;
+      const assignedCount = taskIds.length;
       const rawUserName = [user.firstName, user.lastName].map((v) => (v ?? '').trim()).filter((v) => v !== '');
       const userName = rawUserName.length > 0 ? rawUserName.join(' ') : 'selected user';
       const formatTemplate = (template: string): string =>

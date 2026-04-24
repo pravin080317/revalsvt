@@ -42,7 +42,18 @@ const normalizeIdentityToken = (value: unknown): string => {
   if (typeof value !== 'string' && typeof value !== 'number' && typeof value !== 'boolean') return '';
   const collapsed = String(value).trim().replace(/\s+/g, ' ');
   if (!collapsed) return '';
-  return collapsed.replace(/^\{+|\}+$/g, '').toLowerCase();
+
+  let start = 0;
+  let end = collapsed.length;
+
+  while (start < end && collapsed.charCodeAt(start) === 123) {
+    start++;
+  }
+  while (end > start && collapsed.charCodeAt(end - 1) === 125) {
+    end--;
+  }
+
+  return collapsed.slice(start, end).toLowerCase();
 };
 
 const addToken = (set: Set<string>, value: unknown): void => {

@@ -278,7 +278,7 @@ export const ManagerJourneyShell: React.FC<ManagerJourneyShellProps> = ({
     setUserContextLoading(true);
     setUserContextError(undefined);
 
-    void (async () => {
+    const loadUserContext = async (): Promise<void> => {
       try {
         const payload = await executeUnboundCustomApi<unknown>(
           context,
@@ -307,7 +307,9 @@ export const ManagerJourneyShell: React.FC<ManagerJourneyShellProps> = ({
           setUserContextLoading(false);
         }
       }
-    })();
+    };
+
+    loadUserContext().catch(() => undefined);
 
     return () => {
       active = false;

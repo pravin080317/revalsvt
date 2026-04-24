@@ -12,6 +12,8 @@ This document is the single source of truth for `DetailsListVOA` manifest parame
 | `tableKey` | SingleLine.Text | No | `""` | Optional table/profile override (`sales`, `manager`, `myassignment`, `qaassign`, `qaview`). |
 | `country` | SingleLine.Text | No | `""` | Global country context sent to SVT APIs. |
 | `listYear` | SingleLine.Text | No | `""` | Global list-year context sent to SVT APIs. |
+| `externalSaleId` | SingleLine.Text | No | `""` | Optional external launch sale ID. Used with `externalOpenMode=vt-readonly` to open sale details directly. |
+| `externalOpenMode` | SingleLine.Text | No | `""` | Optional external launch mode. Supported value: `vt-readonly`. |
 | `fxEnvironmentUrl` | SingleLine.Text | No | `""` | Dataverse environment URL used to build Sale Details hereditament links (`Address` in Hereditament and Banding Details). |
 | `sharePointOptionsJson` | SingleLine.Text | No | `{}` | Chunked SharePoint options payload for Sales Particulars. |
 | `sharePointRecordsJson1` | SingleLine.Text | No | `[]` | Chunk 1 of SharePoint reference records. |
@@ -37,6 +39,23 @@ This document is the single source of truth for `DetailsListVOA` manifest parame
 | `searchTrigger` | SingleLine.Text | No | `""` | External trigger token to refresh search. |
 | `allowColumnReorder` | TwoOptions | No | `false` | Enables column drag-reorder. |
 | `perfLogsEnabled` | TwoOptions | No | `false` | Enables performance logging in console. |
+
+### External Launch Null Handling
+
+For VT -> SVT readonly launch (`externalSaleId` + `externalOpenMode=vt-readonly`):
+
+- `externalSaleId` blank/null: external readonly launch is not activated.
+- `externalOpenMode` blank/null: external readonly launch is not activated.
+- `country` and `listYear` blank/null: accepted; normal fallback context is used.
+
+Recommended host formula mapping:
+
+```powerfx
+externalSaleId: Coalesce(Param("saleId"), "")
+externalOpenMode: Coalesce(Param("openMode"), "")
+country: Coalesce(Param("country"), "")
+listYear: Coalesce(Param("listYear"), "")
+```
 
 ## Outputs
 

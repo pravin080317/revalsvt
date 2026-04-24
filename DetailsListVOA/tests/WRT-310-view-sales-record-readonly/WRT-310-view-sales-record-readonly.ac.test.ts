@@ -42,7 +42,7 @@ describe('WRT-310 View Sales Record via Manager Assignment AC', () => {
     expect(runtimeSource).toContain('private isSaleRecordUnassigned(detailsPayload: string): boolean');
     expect(runtimeSource).toContain("'This task is unassigned. Manager Assignment is view-only. Assign it to yourself to take ownership.'");
     expect(runtimeSource).toContain('const access = this.resolveSaleDetailsAccess(detailsPayload);');
-    expect(runtimeSource).toContain('this.saleDetailsReadOnly = access.readOnly;');
+    expect(runtimeSource).toContain('this.saleDetailsReadOnly = this.externalReadOnlyMode || access.readOnly;');
   });
 
   test('AC4: sale details shell shows the hint only when runtime supplies a read-only reason and passes persona permissions', () => {
@@ -61,7 +61,7 @@ describe('WRT-310 View Sales Record via Manager Assignment AC', () => {
     expect(salesVerificationSectionSource).toContain('getSalesVerificationEditRule({ busy, readOnly, canProgressTask })');
     expect(salesVerificationSectionSource).toContain('const editingDisabled = salesVerificationEditRule.disabled;');
     expect(taskSectionSource).toContain('getCreateTaskActionRule({');
-    expect(taskSectionSource).toContain('const createTaskDisabled = createTaskActionRule.disabled;');
+    expect(taskSectionSource).toContain('const createTaskDisabled = disableInternalActions || createTaskActionRule.disabled;');
     expect(salesParticularSectionSource).toContain('getSalesParticularCalculateActionRule({ readOnly, reviewStatusKey })');
     expect(rulesSource).toContain("reason: 'Modify task is available only to caseworker role/team.'");
     expect(padSectionSource).toContain('disabled={readOnly}');

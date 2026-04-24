@@ -165,7 +165,18 @@ const normalizeRecordIdentifier = (value: string): string => {
   if (!trimmed || trimmed === '-') {
     return '';
   }
-  return trimmed.replace(/^\{+|\}+$/g, '').toLowerCase();
+
+  let start = 0;
+  let end = trimmed.length;
+
+  while (start < end && trimmed.charCodeAt(start) === 123) {
+    start++;
+  }
+  while (end > start && trimmed.charCodeAt(end - 1) === 125) {
+    end--;
+  }
+
+  return trimmed.slice(start, end).toLowerCase();
 };
 
 const isSameRecordIdentifier = (left: string, right: string): boolean => {
@@ -977,7 +988,7 @@ const AUDIT_FIELD_LABEL_BY_KEY: Record<string, string> = {
   cwremarks: 'CW Remarks',
   caseworkerremarks: 'CW Remarks',
   outcome: 'Outcome',
-  completedat: 'Completed At',
+  completedat: 'CW Completed At',
 };
 
 const toAuditFieldLabel = (value: string): string => {

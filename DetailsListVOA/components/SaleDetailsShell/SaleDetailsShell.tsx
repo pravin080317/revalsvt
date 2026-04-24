@@ -28,6 +28,7 @@ export const SaleDetailsShell: React.FC<SaleDetailsShellProps> = ({
   vmsBaseUrl,
   readOnly = false,
   readOnlyReason,
+  disableInternalActions = false,
   canCreateManualTask = false,
   canModifyTask = false,
   canProgressTask = false,
@@ -56,6 +57,7 @@ export const SaleDetailsShell: React.FC<SaleDetailsShellProps> = ({
   const sectionsDisabled = noTaskId || noTaskStatus;
   const isQcWorkspace = activeWorkspaceName.trim().toLowerCase() === 'qc view';
   const refreshActionRule = React.useMemo(() => getRefreshActionRule({ loading }), [loading]);
+  const internalActionsDisabledReason = 'Internal SVT actions are disabled when opened from VT.';
   const [salesParticularDraft, setSalesParticularDraft] = React.useState<SalesParticularDraftPayload>({
     reviewStatusKey: model.salesParticular.reviewStatusKey,
     linkParticulars: model.salesParticular.linkParticulars,
@@ -214,6 +216,9 @@ export const SaleDetailsShell: React.FC<SaleDetailsShellProps> = ({
   }, []);
 
   const openMainAuditHistory = React.useCallback(async () => {
+    if (disableInternalActions) {
+      return;
+    }
     setActiveAuditView('main');
     if (!onOpenAuditHistory) {
       return;
@@ -225,9 +230,12 @@ export const SaleDetailsShell: React.FC<SaleDetailsShellProps> = ({
     } finally {
       setAuditHistoryLoading(false);
     }
-  }, [onOpenAuditHistory]);
+  }, [disableInternalActions, onOpenAuditHistory]);
 
   const openQcAuditHistory = React.useCallback(async () => {
+    if (disableInternalActions) {
+      return;
+    }
     setActiveAuditView('qc');
     if (!onOpenQcLog) {
       return;
@@ -239,11 +247,16 @@ export const SaleDetailsShell: React.FC<SaleDetailsShellProps> = ({
     } finally {
       setAuditHistoryLoading(false);
     }
-  }, [onOpenQcLog]);
+  }, [disableInternalActions, onOpenQcLog]);
 
-  const handleRefreshClick = React.useCallback(async () => {
-    await Promise.resolve(onRefresh());
-  }, [onRefresh]);
+  const handleRefreshClick = React.useCallback((): void => {
+    if (disableInternalActions) {
+      return;
+    }
+    Promise.resolve(onRefresh()).catch(() => {
+      // Refresh errors are handled in the host view model state.
+    });
+  }, [disableInternalActions, onRefresh]);
 
   const handleWlttPromote = React.useCallback((record: (typeof model.wlttRecords)[number]) => {
     if (readOnly) {
@@ -339,8 +352,9 @@ export const SaleDetailsShell: React.FC<SaleDetailsShellProps> = ({
             text="Refresh"
             iconProps={{ iconName: 'Refresh' }}
             onClick={handleRefreshClick}
-            disabled={refreshActionRule.disabled}
-            ariaLabel="Refresh sale record details"
+            disabled={disableInternalActions || refreshActionRule.disabled}
+            title={disableInternalActions ? internalActionsDisabledReason : undefined}
+            ariaLabel={disableInternalActions ? internalActionsDisabledReason : 'Refresh sale record details'}
           />
         </header>
 
@@ -377,6 +391,7 @@ export const SaleDetailsShell: React.FC<SaleDetailsShellProps> = ({
             qcAssignedTo={model.qcAssignedTo}
             onOpenAuditHistory={openMainAuditHistory}
             onOpenQcLog={openQcAuditHistory}
+            disableInternalActions={disableInternalActions}
             canCreateTask={canCreateManualTask}
             canModifyTask={canModifyTask}
             onCreateTask={onCreateManualTask

@@ -58,6 +58,8 @@ const MODIFY_TASK_API_STATUS_MAP: Record<string, string> = {
 };
 const PRE_QC_STATUSES = new Set(['assigned', 'complete']);
 const ENABLE_COUNTRY_LIST_YEAR_API_PARAMS = CONTROL_CONFIG.enableCountryListYearApiParams === true;
+const EXTERNAL_OPEN_MODE_VT_READONLY = 'vt-readonly';
+const EXTERNAL_READONLY_REASON = 'Opened from VT in readonly mode. Internal SVT actions are disabled.';
 
 export class DetailsListRuntimeController {
   private _notifyOutputChanged!: () => void;
@@ -82,6 +84,10 @@ export class DetailsListRuntimeController {
   private selectedTableKey?: string;
   private saleDetailsReadOnly = false;
   private saleDetailsReadOnlyMessage?: string;
+  private disableInternalDetailsActions = false;
+  private externalReadOnlyMode = false;
+  private externalLaunchKey?: string;
+  private externalLaunchInFlight = false;
   private hasCaseworkerAccess = false;
   private hasManagerAccess = false;
   private hasQaAccess = false;
@@ -153,11 +159,22 @@ export class DetailsListRuntimeController {
   }
 
   public get isSaleDetailsReadOnly(): boolean {
-    return this.saleDetailsReadOnly;
+    return this.externalReadOnlyMode || this.saleDetailsReadOnly;
   }
 
   public get saleDetailsReadOnlyReason(): string | undefined {
+    if (this.externalReadOnlyMode) {
+      return EXTERNAL_READONLY_REASON;
+    }
     return this.saleDetailsReadOnlyMessage;
+  }
+
+  public get areInternalSaleDetailsActionsDisabled(): boolean {
+    return this.disableInternalDetailsActions;
+  }
+
+  public get isExternalReadonlyLaunchActive(): boolean {
+    return this.externalReadOnlyMode;
   }
 
   public get submitSuccessMessage(): string | undefined {
@@ -224,6 +241,48 @@ export class DetailsListRuntimeController {
     if (!enabled && this.showPcfSaleDetails) {
       this.showPcfSaleDetails = false;
     }
+  }
+
+  public syncExternalReadonlyLaunch(): void {
+    const contextParams = this._context.parameters as unknown as Record<string, { raw?: string }>;
+    const externalSaleId = normalizeTextValue(contextParams.externalSaleId?.raw);
+    const externalOpenMode = normalizeTextValue(contextParams.externalOpenMode?.raw).toLowerCase();
+    const isExternalReadonlyLaunch = hasDisplayText(externalSaleId) && externalOpenMode === EXTERNAL_OPEN_MODE_VT_READONLY;
+
+    this.externalReadOnlyMode = isExternalReadonlyLaunch;
+    this.disableInternalDetailsActions = isExternalReadonlyLaunch;
+
+    if (!isExternalReadonlyLaunch) {
+      this.externalLaunchKey = undefined;
+      this.externalLaunchInFlight = false;
+      return;
+    }
+
+    const requestContext = this.getActiveRequestContext();
+    const launchKey = [
+      externalOpenMode,
+      externalSaleId.toLowerCase(),
+      normalizeTextValue(requestContext.country).toLowerCase(),
+      normalizeTextValue(requestContext.listYear).toLowerCase(),
+    ].join('|');
+
+    if (this.externalLaunchKey === launchKey || this.externalLaunchInFlight) {
+      return;
+    }
+
+    this.externalLaunchKey = launchKey;
+    this.externalLaunchInFlight = true;
+    this.selectedSaleId = externalSaleId;
+    this.selectedTaskId = undefined;
+
+    void this.onTaskClick(undefined, externalSaleId)
+      .catch((error) => {
+        console.warn('Failed to launch external readonly sale details.', error);
+      })
+      .finally(() => {
+        this.externalLaunchInFlight = false;
+        this._notifyOutputChanged?.();
+      });
   }
 
   public isManagerHomeScreen(): boolean {
@@ -487,9 +546,7 @@ export class DetailsListRuntimeController {
       this.selectedSaleId = normalizedSaleId;
     }
     this.selectedTaskId = normalizeTextValue(existingTaskId) || this.selectedTaskId;
-    const access = this.resolveSaleDetailsAccess(this._saleDetails);
-    this.saleDetailsReadOnly = access.readOnly;
-    this.saleDetailsReadOnlyMessage = access.reason;
+    this.applySaleDetailsAccess(this._saleDetails);
     const qcAccess = this.resolveQcSectionAccess(this._saleDetails);
     this.saleDetailsCanSubmitQcOutcome = qcAccess.canSubmit;
     this.saleDetailsShowQcSection = qcAccess.showSection;
@@ -662,9 +719,7 @@ export class DetailsListRuntimeController {
   }
 
   private updateSaleDetailsAccessState(): void {
-    const access = this.resolveSaleDetailsAccess(this._saleDetails);
-    this.saleDetailsReadOnly = access.readOnly;
-    this.saleDetailsReadOnlyMessage = access.reason;
+    this.applySaleDetailsAccess(this._saleDetails);
     const qcAccess = this.resolveQcSectionAccess(this._saleDetails);
     this.saleDetailsCanSubmitQcOutcome = qcAccess.canSubmit;
     this.saleDetailsShowQcSection = qcAccess.showSection;
@@ -680,7 +735,7 @@ export class DetailsListRuntimeController {
 
   private async onTaskClick(taskId?: string, saleId?: string): Promise<void> {
     svtDebug.log('Runtime', 'onTaskClick', { taskId, saleId });
-    const pcfViewSalesEnabled = isPcfViewSalesDetailsEnabled(this._context);
+    const pcfViewSalesEnabled = isPcfViewSalesDetailsEnabled(this._context) || this.externalReadOnlyMode;
     const emitViewAction = !(pcfViewSalesEnabled && this.showPcfSaleDetails);
     const requestId = this.beginViewSaleRequest({ retainSaleDetails: pcfViewSalesEnabled && this.showPcfSaleDetails });
 
@@ -763,11 +818,11 @@ export class DetailsListRuntimeController {
     }
     svtDebug.log('Runtime', 'finishViewSaleRequest', { requestId, showPcfDetails, emitViewAction, payloadLength: detailsPayload.length });
     this._saleDetails = preserveQcOutcomeDetails(detailsPayload, this._saleDetails);
+    this.selectedSaleId = normalizeTextValue(resolveCurrentSaleIdFromDetails(this._saleDetails, this.selectedSaleId));
+    this.selectedTaskId = normalizeTextValue(resolveCurrentTaskIdFromDetails(this._saleDetails, this.selectedTaskId));
     this.viewSalePending = false;
     this.showPcfSaleDetails = showPcfDetails;
-    const access = this.resolveSaleDetailsAccess(detailsPayload);
-    this.saleDetailsReadOnly = access.readOnly;
-    this.saleDetailsReadOnlyMessage = access.reason;
+    this.applySaleDetailsAccess(detailsPayload);
     const qcAccess = this.resolveQcSectionAccess(detailsPayload);
     this.saleDetailsCanSubmitQcOutcome = qcAccess.canSubmit;
     this.saleDetailsShowQcSection = qcAccess.showSection;
@@ -1298,7 +1353,17 @@ export class DetailsListRuntimeController {
       return '';
     }
 
-    return normalized.replace(/^\{+|\}+$/g, '');
+    let start = 0;
+    let end = normalized.length;
+
+    while (start < end && normalized.charCodeAt(start) === 123) {
+      start++;
+    }
+    while (end > start && normalized.charCodeAt(end - 1) === 125) {
+      end--;
+    }
+
+    return normalized.slice(start, end);
   }
 
   private parseSaleRecordRoot(detailsPayload: string): Record<string, unknown> {
@@ -1355,6 +1420,12 @@ export class DetailsListRuntimeController {
         ? 'This task is unassigned. Manager Assignment is view-only. Assign it to yourself to take ownership.'
         : undefined,
     };
+  }
+
+  private applySaleDetailsAccess(detailsPayload: string): void {
+    const access = this.resolveSaleDetailsAccess(detailsPayload);
+    this.saleDetailsReadOnly = this.externalReadOnlyMode || access.readOnly;
+    this.saleDetailsReadOnlyMessage = this.externalReadOnlyMode ? EXTERNAL_READONLY_REASON : access.reason;
   }
 
 

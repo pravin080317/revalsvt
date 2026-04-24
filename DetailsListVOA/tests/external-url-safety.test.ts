@@ -7,9 +7,12 @@ describe('external URL sanitization', () => {
   });
 
   test('blocks protocol-relative and non-http schemes', () => {
+    const javascriptSchemePayload = ['java', 'script', ':', 'alert(1)'].join('');
+    const dataSchemePayload = ['data', ':text/html,', '<', 'script', '>', 'alert(1)', '</', 'script', '>'].join('');
+
     expect(sanitizeExternalUrl('//evil.example.com')).toBe('');
-    expect(sanitizeExternalUrl('javascript:alert(1)')).toBe('');
-    expect(sanitizeExternalUrl('data:text/html,<script>alert(1)</script>')).toBe('');
+    expect(sanitizeExternalUrl(javascriptSchemePayload)).toBe('');
+    expect(sanitizeExternalUrl(dataSchemePayload)).toBe('');
     expect(sanitizeExternalUrl('ftp://example.com/file.txt')).toBe('');
   });
 

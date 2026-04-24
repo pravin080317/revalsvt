@@ -276,14 +276,29 @@ export const StatutorySpatialUnitBrowser: React.FC = () => {
     const q = buildQueryString(filters, { street: street || undefined, town: town || undefined });
     if (inFlightKeyRef.current === q) return; // de-dupe same query in-flight
     inFlightKeyRef.current = q;
-    fetchResults({ street: street || undefined, town: town || undefined })
+    return fetchResults({ street: street || undefined, town: town || undefined })
+      .catch(() => {
+        // fetchResults already handles user-facing error state.
+      })
       .finally(() => {
         inFlightKeyRef.current = undefined;
       });
   }, [buildQueryString, fetchResults, filters, moreResultsAvailable]);
 
-  const handleSearchClick = React.useCallback(async () => {
-    await fetchResults();
+  const handleHeaderFiltersApply = React.useCallback((header: Record<string, string | string[]>): void => {
+    const pending = onHeaderFiltersApply(header);
+    if (!pending) {
+      return;
+    }
+    pending.catch(() => {
+      // onHeaderFiltersApply already handles state cleanup and user-facing errors.
+    });
+  }, [onHeaderFiltersApply]);
+
+  const handleSearchClick = React.useCallback((): void => {
+    fetchResults().catch(() => {
+      // fetchResults already handles user-facing error state.
+    });
   }, [fetchResults]);
 
   React.useEffect(() => {
@@ -344,7 +359,7 @@ export const StatutorySpatialUnitBrowser: React.FC = () => {
             <DetailsListHost
               context={context}
               externalItems={items}
-              onColumnFiltersApply={onHeaderFiltersApply}
+              onColumnFiltersApply={handleHeaderFiltersApply}
             />
           ) : null}
         </Stack>

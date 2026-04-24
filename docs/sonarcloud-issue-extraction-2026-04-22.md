@@ -1,58 +1,22 @@
-# SonarCloud Issue Extraction And File Cross-Check (2026-04-22)
+# SonarCloud Issue Tracker (2026-04-22)
 
-## Scope
+| ID | Source | Rule / Concern | Screenshot Ref | Current Status | Evidence In Repo | Action |
+| --- | --- | --- | --- | --- | --- | --- |
+| 1 | Screenshot | Provide compare function for deterministic alpha sort | `StatutorySpatialUnitBrowser.tsx` L246/L247 | Fixed | `DetailsListVOA/components/SpatialUnitBrowser/StatutorySpatialUnitBrowser.tsx:246`, `DetailsListVOA/components/SpatialUnitBrowser/StatutorySpatialUnitBrowser.tsx:247` now use `sort((left, right) => left.localeCompare(right))` | Keep as-is |
+| 2 | Screenshot | Cognitive complexity too high | `Filters.ts` L100 | In progress | `DetailsListVOA/Filters.ts` `sanitizeFilters` now delegates repeated logic into focused helpers `trimToUndefined` (`DetailsListVOA/Filters.ts:105`), `sanitizeDateRange` (`DetailsListVOA/Filters.ts:110`), and `applySanitizedStringField` (`DetailsListVOA/Filters.ts:117`) while consolidating repeated assignments via grouped field maps (`DetailsListVOA/Filters.ts:143`, `DetailsListVOA/Filters.ts:227`) | Re-run Sonar to confirm complexity score reduction |
+| 3 | Screenshot | Cognitive complexity too high | `Grid.tsx` L743 | In progress | `DetailsListVOA/Grid.tsx` large component with deep conditional/callback flow; cleanup extracted shared ComboBox style constants (`DetailsListVOA/Grid.tsx:111`, `DetailsListVOA/Grid.tsx:117`), removed inline JSX callback wrappers throughout the file, and expanded prefilter helper decomposition with `hasPrefilterExpectedUser` (`DetailsListVOA/Grid.tsx:1476`), `isUserScopedPrefilterDefault` (`DetailsListVOA/Grid.tsx:1487`), `isUnassignedPrefilterDefault` (`DetailsListVOA/Grid.tsx:1500`), `getPrefilterWorkThatOptions` (`DetailsListVOA/Grid.tsx:2100`), `shouldRetainPrefilterCompletedDates` (`DetailsListVOA/Grid.tsx:2113`), and `getPrefilterClearDefaults` (`DetailsListVOA/Grid.tsx:2125`) | Continue extracting large conditional flows into focused helpers/hooks |
+| 4 | Screenshot | Cognitive complexity too high | `Grid.tsx` L1381 | In progress | `DetailsListVOA/Grid.tsx:1504` (`isPrefilterDefault`) now delegates branch-specific checks to `hasPrefilterExpectedUser` (`DetailsListVOA/Grid.tsx:1476`), `isUserScopedPrefilterDefault` (`DetailsListVOA/Grid.tsx:1487`), and `isUnassignedPrefilterDefault` (`DetailsListVOA/Grid.tsx:1500`) | Continue reducing remaining branch logic and re-run Sonar |
+| 5 | Screenshot | Cognitive complexity too high | `Grid.tsx` L2059 | In progress | `DetailsListVOA/Grid.tsx` `handlePrefilterSearch` now separates normalize/persist/reset responsibilities into dedicated helpers (`normalizePrefiltersForApply`, `persistAppliedPrefilters`, `resetPrefilterComboTracking`) and reuses focused prefilter helpers around work-that/date-retention/clear-default paths (`DetailsListVOA/Grid.tsx:2100`, `DetailsListVOA/Grid.tsx:2113`, `DetailsListVOA/Grid.tsx:2125`) | Continue lifting remaining responsibilities into focused helpers and re-run Sonar |
+| 6 | Screenshot | Function nesting depth > 4 | `Grid.tsx` L5426 | In progress | `DetailsListVOA/Grid.tsx` menu-filter renderer now removes IIFE wrappers and uses direct case blocks for `singleSelect` and `multiSelect` (`DetailsListVOA/Grid.tsx:5373`, `DetailsListVOA/Grid.tsx:5470`); latest passes extract nested callback bodies into local helpers (`DetailsListVOA/Grid.tsx:5497`, `DetailsListVOA/Grid.tsx:5500`, `DetailsListVOA/Grid.tsx:5506`, `DetailsListVOA/Grid.tsx:5517`), move exact-match option highlighting into a reusable helper (`DetailsListVOA/Grid.tsx:123`, `DetailsListVOA/Grid.tsx:5529`), extract multi-select selection/value logic into `getNextMultiSelectValues` (`DetailsListVOA/Grid.tsx:157`) and `resolveMenuMultiSelectValue` (`DetailsListVOA/Grid.tsx:185`) used by `handleMenuFilterMultiChange` (`DetailsListVOA/Grid.tsx:5539`), flatten prefilter/search ComboBox clusters via dedicated handlers (`DetailsListVOA/Grid.tsx:2334`, `DetailsListVOA/Grid.tsx:2439`, `DetailsListVOA/Grid.tsx:2460`, `DetailsListVOA/Grid.tsx:4986`, `DetailsListVOA/Grid.tsx:5020`), replace menu numeric/date inline handlers with named callbacks (`DetailsListVOA/Grid.tsx:6084`, `DetailsListVOA/Grid.tsx:6159`), and finish the sweep by wiring all remaining `Grid.tsx` JSX event props to named handlers rather than inline callback wrappers (for example `DetailsListVOA/Grid.tsx:3797`, `DetailsListVOA/Grid.tsx:4004`, `DetailsListVOA/Grid.tsx:4177`, `DetailsListVOA/Grid.tsx:6045`, `DetailsListVOA/Grid.tsx:6756`, `DetailsListVOA/Grid.tsx:6888`, `DetailsListVOA/Grid.tsx:7055`, `DetailsListVOA/Grid.tsx:7178`) | Re-run Sonar to confirm nesting warning is cleared |
+| 7 | Screenshot | Remove `void` operator usage | `Grid.tsx` L6844 | Fixed (line drift) | `DetailsListVOA/Grid.tsx` no longer has non-test `void` call-expression usage after async-handler refactor | Keep as-is |
+| 8 | Screenshot | Cognitive complexity too high | `DetailsListHost.tsx` L247 | Pending (line drift) | `DetailsListVOA/components/DetailsListHost/DetailsListHost.tsx` has complexity moved from old line reference | Re-run Sonar and map to new line numbers |
+| 9 | Screenshot | Cognitive complexity too high | `DetailsListHost.tsx` L284 | Pending (line drift) | `DetailsListVOA/components/DetailsListHost/DetailsListHost.tsx` line reference has moved | Re-run Sonar and map to new line numbers |
+| 10 | Screenshot | Cognitive complexity too high | `ManagerJourneyShell.tsx` L186 | Pending | `DetailsListVOA/components/HomeShell/ManagerJourneyShell.tsx:186` is component entry; complexity likely in body | Split into state/use-case hooks |
+| 11 | Screenshot | Remove `void` operator usage | `SaleDetailsShell.tsx` L337 | Fixed | `DetailsListVOA/components/SaleDetailsShell/SaleDetailsShell.tsx:341` now uses `onClick={handleRefreshClick}` | Keep as-is |
+| 12 | Similar (repo scan) | Provide compare function for deterministic alpha sort | `DetailsListHost.tsx` key sorting | Fixed | `DetailsListVOA/components/DetailsListHost/DetailsListHost.tsx:300`, `DetailsListVOA/components/DetailsListHost/DetailsListHost.tsx:301` now use explicit `localeCompare` comparator | Keep as-is |
+| 13 | Repo-wide validation (non-test files) | `sort()` without comparator | `DetailsListVOA/**/*.ts,tsx` | Fixed (no source hits) | Non-test scan result: `SORT_NO_COMPARATOR_TOTAL=0`; remaining matches are test-only assertions | Keep guard in code review/lint checks |
+| 14 | Repo-wide validation (non-test files) | `void` operator call expression usage | `DetailsListVOA/**/*.ts,tsx` | Fixed | Latest non-test scan result: `VOID_TOTAL=0` | Keep guard in code review/lint checks |
+| 15 | Repo-wide validation (non-test files) | Complexity hotspots by size | Large TS/TSX modules | Pending | `DetailsListVOA/Grid.tsx` (7022 lines), `DetailsListVOA/components/DetailsListHost/DetailsListHost.tsx` (2770 lines), `DetailsListVOA/components/HomeShell/ManagerJourneyShell.tsx` (666 lines), `DetailsListVOA/Filters.ts` (277 lines) | Break large modules into domain hooks/helpers |
+| 16 | Repo-wide validation (tooling) | Lint baseline after fixes | `npm run lint` | Fixed | Lint baseline cleared after replacing `type` with `interface` in `DetailsListVOA/components/DetailsListHost/DetailsListHost.tsx:67` | Keep lint check in regression workflow |
 
-- Source: attached SonarCloud screenshots from branch `feature/welsh-reform/svt/devbase`.
-- Goal: extract issue themes and verify whether matching code is present in this workspace.
-- Checked area: `DetailsListVOA/**`.
-
-## Screenshot Issues Mapped To Current Files
-
-| Screenshot item | Sonar rule text (short) | Screenshot ref | Current code check | Evidence |
-| --- | --- | --- | --- | --- |
-| 1 | Provide compare function based on `String.localeCompare` | `StatutorySpatialUnitBrowser.tsx` L246/L247 | Present | `DetailsListVOA/components/SpatialUnitBrowser/StatutorySpatialUnitBrowser.tsx:246` and `DetailsListVOA/components/SpatialUnitBrowser/StatutorySpatialUnitBrowser.tsx:247` use `Object.keys(...).sort()` without explicit comparator. |
-| 2 | Reduce cognitive complexity 80 to 15 | `Filters.ts` L100 | Likely present | `DetailsListVOA/Filters.ts:100` starts `sanitizeFilters(...)`, a large multi-branch function. |
-| 3 | Reduce cognitive complexity 156 to 15 | `Grid.tsx` L743 | Likely present (line drift) | `DetailsListVOA/Grid.tsx` remains a large component with many nested callbacks and conditional branches. |
-| 4 | Reduce cognitive complexity 35 to 15 | `Grid.tsx` L1381 | Likely present | `DetailsListVOA/Grid.tsx:1382` is `isPrefilterDefault(...)` with multi-branch persona logic. |
-| 5 | Reduce cognitive complexity 34 to 15 | `Grid.tsx` L2059 | Likely present | `DetailsListVOA/Grid.tsx:2040` to `DetailsListVOA/Grid.tsx:2078` (`handlePrefilterSearch`) combines state normalization, storage write, and UI state updates. |
-| 6 | Refactor to not nest functions more than 4 levels | `Grid.tsx` L5426 | Present | `DetailsListVOA/Grid.tsx:5426` is inside a deep callback chain in menu multi-select handling. |
-| 7 | Remove use of `void` operator | `Grid.tsx` L6844 | Present in file (line drift) | Current `void` uses include `DetailsListVOA/Grid.tsx:6754` and `DetailsListVOA/Grid.tsx:6991`. |
-| 8 | Reduce cognitive complexity 27 to 15 | `DetailsListHost.tsx` L247 | Not directly reproducible at same line | `DetailsListVOA/components/DetailsListHost/DetailsListHost.tsx:247` is now simple delimiter split logic; likely line drift from previous scan snapshot. |
-| 9 | Reduce cognitive complexity 23 to 15 | `DetailsListHost.tsx` L284 | Not directly reproducible at same line | `DetailsListVOA/components/DetailsListHost/DetailsListHost.tsx:284` is branch handling in filter normalization; may have moved since screenshot scan. |
-| 10 | Reduce cognitive complexity 23 to 15 | `ManagerJourneyShell.tsx` L186 | Likely present (line drift) | `DetailsListVOA/components/HomeShell/ManagerJourneyShell.tsx:186` is the main component entry; complexity likely attributed to the full component body. |
-| 11 | Remove use of `void` operator | `SaleDetailsShell.tsx` L337 | Present (exact) | `DetailsListVOA/components/SaleDetailsShell/SaleDetailsShell.tsx:337` has `onClick={() => { void onRefresh(); }}`. |
-
-## Similar Issues Found In The Same Rule Families
-
-### `sort()` without comparator (same reliability theme)
-
-- `DetailsListVOA/components/SpatialUnitBrowser/StatutorySpatialUnitBrowser.tsx:246`
-- `DetailsListVOA/components/SpatialUnitBrowser/StatutorySpatialUnitBrowser.tsx:247`
-- `DetailsListVOA/components/DetailsListHost/DetailsListHost.tsx:300`
-- `DetailsListVOA/components/DetailsListHost/DetailsListHost.tsx:301`
-
-### `void` operator expression use (same intentionality theme)
-
-- `DetailsListVOA/components/SaleDetailsShell/SaleDetailsShell.tsx:337`
-- `DetailsListVOA/components/SpatialUnitBrowser/StatutorySpatialUnitBrowser.tsx:279`
-- `DetailsListVOA/components/SpatialUnitBrowser/StatutorySpatialUnitBrowser.tsx:324`
-- `DetailsListVOA/Grid.tsx:2966`
-- `DetailsListVOA/Grid.tsx:4013`
-- `DetailsListVOA/Grid.tsx:4021`
-- `DetailsListVOA/Grid.tsx:4027`
-- `DetailsListVOA/Grid.tsx:4221`
-- `DetailsListVOA/Grid.tsx:5036`
-- `DetailsListVOA/Grid.tsx:6754`
-- `DetailsListVOA/Grid.tsx:6991`
-- `DetailsListVOA/components/DetailsListHost/DetailsListHost.tsx:642`
-- `DetailsListVOA/components/DetailsListHost/DetailsListHost.tsx:1646`
-- `DetailsListVOA/components/DetailsListHost/DetailsListHost.tsx:1727`
-- `DetailsListVOA/components/DetailsListHost/DetailsListHost.tsx:1850`
-- `DetailsListVOA/components/DetailsListHost/DetailsListHost.tsx:2008`
-- `DetailsListVOA/components/DetailsListHost/DetailsListHost.tsx:2201`
-- `DetailsListVOA/components/DetailsListHost/DetailsListHost.tsx:2722`
-
-## Notes
-
-- The screenshot line numbers and current workspace lines are not fully identical in all files; several issues appear to be line-drifted rather than removed.
-- Cognitive complexity values cannot be recalculated exactly from static grep checks alone; those entries are marked as likely-present where the same high-risk function structure still exists.
+Notes: screenshot line numbers and current file lines have drifted in several files. Complexity items above are tracked as pending until Sonar is re-run and exact current line mappings are refreshed.

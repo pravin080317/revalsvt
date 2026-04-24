@@ -1689,11 +1689,31 @@
 
 .voa-sales-verification-row__dropdown {
   width: 100%;
+  min-width: 0;
+  max-width: 100%;
+}
+
+.voa-sales-verification-row__dropdown .ms-Dropdown,
+.voa-sales-verification-row__dropdown .ms-Dropdown-container {
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
 }
 
 .voa-sales-verification-row__dropdown .ms-Dropdown-title {
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
   min-height: 36px;
   border-radius: 8px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.voa-sales-verification-row__dropdown .ms-Dropdown-titleText {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .voa-sales-verification-row__dropdown--error .ms-Dropdown-title,

@@ -9,6 +9,7 @@ function readRepoFile(relativePath: string): string {
 
 describe('security review gate: Grid UI surface', () => {
   const source = readRepoFile('DetailsListVOA/Grid.tsx');
+  const searchFieldConfigsSource = readRepoFile('DetailsListVOA/config/SearchFieldConfigs.ts');
 
   test('does not use dangerous HTML/script injection APIs', () => {
     expect(source).not.toMatch(/\bdangerouslySetInnerHTML\b/);
@@ -18,8 +19,8 @@ describe('security review gate: Grid UI surface', () => {
   });
 
   test('keeps input sanitizers wired for key search fields', () => {
-    expect(source).toContain('sanitizeAlphaNumHyphen(v, ID_FIELD_MAX_LENGTH)');
-    expect(source).toContain('sanitizeTaskIdInput(v, ID_FIELD_MAX_LENGTH)');
-    expect(source).toContain('sanitizeDigits(v, UPRN_MAX_LENGTH)');
+    expect(searchFieldConfigsSource).toContain('sanitizeAlphaNumHyphen(v, ID_FIELD_MAX_LENGTH)');
+    expect(searchFieldConfigsSource).toContain('sanitizeTaskIdInput(v, ID_FIELD_MAX_LENGTH)');
+    expect(searchFieldConfigsSource).toContain('sanitizeDigits(v, UPRN_MAX_LENGTH)');
   });
 });

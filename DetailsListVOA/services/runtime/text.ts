@@ -15,5 +15,21 @@ export const hasDisplayText = (value: unknown): boolean => {
   return normalized !== '' && normalized !== '-';
 };
 
-export const normalizeGuidValue = (value?: string): string =>
-  normalizeTextValue(value).replace(/^\{+|\}+$/g, '');
+export const normalizeGuidValue = (value?: string): string => {
+  const normalized = normalizeTextValue(value);
+  if (!normalized) {
+    return '';
+  }
+
+  let start = 0;
+  let end = normalized.length;
+
+  while (start < end && normalized.charCodeAt(start) === 123) {
+    start++;
+  }
+  while (end > start && normalized.charCodeAt(end - 1) === 125) {
+    end--;
+  }
+
+  return normalized.slice(start, end);
+};

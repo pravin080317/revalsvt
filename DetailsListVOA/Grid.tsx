@@ -51,11 +51,36 @@ import { IGridColumn, ColumnConfig, AssignUser } from './Component.types';
 import { AssignTasksOverlay } from './components/Grid/AssignTasksOverlay';
 import { ColumnFilterContextMenu } from './components/Grid/ColumnFilterContextMenu';
 import { CreateTaskDialog } from './components/Grid/CreateTaskDialog';
+import { FocusableActionButton, renderLabelWithRequired } from './components/Grid/GridSharedControls';
+import { BulkSelectionField } from './components/Grid/BulkSelectionField';
+import { CompactClearSelectionButton } from './components/Grid/CompactClearSelectionButton';
+import { GenericDateRangeSearchControl } from './components/Grid/GenericDateRangeSearchControl';
+import { GenericMultiSelectControl } from './components/Grid/GenericMultiSelectControl';
+import { GenericNumericSearchControl } from './components/Grid/GenericNumericSearchControl';
+import { GenericSingleSelectControl } from './components/Grid/GenericSingleSelectControl';
+import { GenericTextSearchControl } from './components/Grid/GenericTextSearchControl';
+import { PrefilterActionsRow } from './components/Grid/PrefilterActionsRow';
+import { PrefilterCompletedDateFields } from './components/Grid/PrefilterCompletedDateFields';
+import { PrefilterMultiSelectComboField } from './components/Grid/PrefilterMultiSelectComboField';
+import { SalesAddressSearchControl } from './components/Grid/SalesAddressSearchControl';
+import { SalesBillingAuthoritySearchControl } from './components/Grid/SalesBillingAuthoritySearchControl';
+import { SalesIdentifierSearchControl } from './components/Grid/SalesIdentifierSearchControl';
+import { SalesSearchActionsRow } from './components/Grid/SalesSearchActionsRow';
+import { SearchByComboField } from './components/Grid/SearchByComboField';
 import { GridCell } from '../DetailsListVOA/grid/GridCell';
 import { ClassNames } from '../DetailsListVOA/grid/Grid.styles';
 import { GridFilterState, NumericFilter, NumericFilterMode, createDefaultGridFilters, sanitizeFilters, SearchByOption, DateRangeFilter, isValidUkPostcode, normalizeUkPostcode } from './Filters';
 import { filterItemsByColumnFilters, type ColumnFilterValue } from './utils/GridColumnFilters';
+import {
+  buildExactMatchHighlightedOptions,
+  comboBoxStyles240x200,
+  comboBoxStyles240x240,
+  resolveMenuMultiSelectValue,
+} from './utils/GridComboUtils';
+import { buildAriaDescribedBy, formatRequiredAriaLabel, joinClassNames } from './utils/GridUiUtils';
+import { buildSortMenuItems, buildDividerMenuItem, computeDateRangeFilterError, computeDateRangeIncompleteText } from './utils/GridColumnMenuHelpers';
 import { getSearchByOptionsFor, getColumnFilterConfigFor, isLookupFieldFor, isViewSalesRecordEnabledFor, ColumnFilterConfig } from '../DetailsListVOA/config/TableConfigs';
+import { SALES_SEARCH_OPTIONS, SEARCH_FIELD_CONFIGS, type SearchFieldConfig } from './config/SearchFieldConfigs';
 import {
   ADDRESS_FIELD_MAX_LENGTH,
   ID_FIELD_MAX_LENGTH,
@@ -108,6 +133,7 @@ import {
 
 type DataSet = ComponentFramework.PropertyHelper.DataSetApi.EntityRecord & IObjectWithKey;
 const ASSIGN_LOADING_ROW_ID = '__loading__';
+
 export type GridScreenKind = ScreenKind;
 
 export interface GridProps {
@@ -227,25 +253,6 @@ const getColumnFilterField = <T extends ColumnFilterValue = ColumnFilterValue>(
 const normalizeColumnFilterOptionKey = (value: string): string =>
   value.replace(/[^a-z0-9]/gi, '').toLowerCase();
 
-type SearchControlType = 'text' | 'numeric' | 'dateRange' | 'singleSelect' | 'multiSelect' | 'textContains' | 'textPrefix';
-
-interface SearchFieldConfig {
-  key: SearchByOption;
-  label: string;
-  control: SearchControlType;
-  stateKey: keyof GridFilterState;
-  minLength?: number;
-  placeholder?: string;
-  tooltip?: string;
-  inputMode?: 'numeric';
-  transform?: (value?: string) => string;
-  optionFields?: string[];
-  options?: IDropdownOption[];
-  selectAll?: boolean;
-  selectAllValues?: string[];
-  multiLimit?: number;
-}
-
 interface PrefilterTooltips {
   searchBy?: string;
   billingAuthority?: string;
@@ -262,7 +269,6 @@ interface ViewportMetrics {
   zoomPercent: number;
 }
 
-const SALES_SEARCH_OPTIONS: SearchByOption[] = ['address', 'saleId', 'taskId', 'uprn', 'billingAuthority'];
 const BILLING_AUTHORITY_ALL_KEY = '__all__';
 const CASEWORKER_ALL_KEY = '__all__';
 const SELECT_ALL_KEY = '__select_all__';
@@ -290,116 +296,6 @@ const resolveAllOptionKey = (options: IComboBoxOption[]): string | undefined => 
   const match = options.find((opt) => isAllToken(opt.key) || isAllToken(opt.text ?? opt.key));
   return match ? String(match.key) : undefined;
 };
-const buildAriaDescribedBy = (...ids: (string | undefined)[]): string | undefined => {
-  const values = ids.filter((id): id is string => typeof id === 'string' && id.trim().length > 0);
-  return values.length > 0 ? values.join(' ') : undefined;
-};
-const joinClassNames = (...classNames: (string | undefined | false)[]): string | undefined => {
-  const values = classNames.filter((className): className is string => typeof className === 'string' && className.trim().length > 0);
-  return values.length > 0 ? values.join(' ') : undefined;
-};
-const formatRequiredAriaLabel = (label: string, required?: boolean): string => (
-  required ? `${label}, required` : label
-);
-
-interface FocusableActionButtonProps {
-  ariaCurrent?: 'page';
-  ariaDescribedBy?: string;
-  ariaLabel: string;
-  buttonType?: 'default' | 'primary';
-  children?: React.ReactNode;
-  className?: string;
-  iconProps?: { iconName: string };
-  onClick: () => void;
-  onUnavailableClick?: () => void;
-  styles?: IButtonStyles;
-  dataTestId?: string;
-  text?: string;
-  title?: string;
-  unavailable?: boolean;
-  unavailableReason?: string;
-  unavailableReasonId?: string;
-}
-
-const FocusableActionButton = ({
-  ariaCurrent,
-  ariaDescribedBy,
-  ariaLabel,
-  buttonType = 'default',
-  children,
-  className,
-  iconProps,
-  onClick,
-  onUnavailableClick,
-  styles,
-  dataTestId,
-  text,
-  title,
-  unavailable = false,
-  unavailableReason,
-  unavailableReasonId,
-}: FocusableActionButtonProps) => {
-  const ButtonComponent = buttonType === 'primary' ? PrimaryButton : DefaultButton;
-  const handleClick = React.useCallback((event?: React.MouseEvent<unknown>) => {
-    if (unavailable) {
-      onUnavailableClick?.();
-      event?.preventDefault();
-      event?.stopPropagation();
-      return;
-    }
-    onClick();
-  }, [onClick, onUnavailableClick, unavailable]);
-  const describedBy = buildAriaDescribedBy(
-    ariaDescribedBy,
-    unavailable && unavailableReason ? unavailableReasonId : undefined,
-  );
-
-  return (
-    <>
-      {unavailable && unavailableReason && unavailableReasonId && (
-        <span id={unavailableReasonId} className="voa-sr-only">
-          {unavailableReason}
-        </span>
-      )}
-      <ButtonComponent
-        disabled={unavailable}
-        text={text}
-        iconProps={iconProps}
-        onClick={handleClick}
-        data-testid={dataTestId}
-        aria-describedby={describedBy}
-        ariaLabel={ariaLabel}
-        aria-current={ariaCurrent}
-        className={joinClassNames(className, unavailable ? 'voa-focusable-disabled-button' : undefined)}
-        styles={styles}
-        title={unavailable ? unavailableReason ?? title : title}
-      >
-        {children}
-      </ButtonComponent>
-    </>
-  );
-};
-
-const renderLabelWithRequired = (
-  text: string,
-  options?: {
-    htmlFor?: string;
-    id?: string;
-    className?: string;
-    required?: boolean;
-  },
-) => (
-  <Label htmlFor={options?.htmlFor} id={options?.id} className={options?.className}>
-    <span>{text}</span>
-    {options?.required && (
-      <>
-        <span className="voa-required-indicator" aria-hidden="true"> *</span>
-        <span className="voa-sr-only"> required</span>
-      </>
-    )}
-  </Label>
-);
-
 type SalesSearchFieldKey =
   | 'buildingNameNumber'
   | 'street'
@@ -604,179 +500,6 @@ const getComboDisambiguationHint = (options: IComboBoxOption[], value?: string):
   if (resolveComboOptionKey(options, trimmed)) return undefined;
   const filtered = filterComboOptions(options, trimmed).filter((opt) => !opt.disabled);
   return filtered.length > 1 ? COMBO_DISAMBIGUATION_HINT : undefined;
-};
-
-const SEARCH_FIELD_CONFIGS: Record<SearchByOption, SearchFieldConfig> = {
-  manualCheck: {
-    key: 'manualCheck',
-    label: 'Manual check',
-    control: 'singleSelect',
-    stateKey: 'manualCheck',
-    options: [
-      { key: 'all', text: 'All' },
-      { key: 'yes', text: 'Yes' },
-      { key: 'no', text: 'No' },
-    ],
-  },
-  street: { key: 'street', label: 'Street', control: 'textContains', stateKey: 'street', minLength: 1 },
-  town: { key: 'town', label: 'Town/City', control: 'textContains', stateKey: 'townCity', minLength: 1 },
-  source: { key: 'source', label: 'Source', control: 'textContains', stateKey: 'source', minLength: 1 },
-  outlierKeySale: {
-    key: 'outlierKeySale',
-    label: 'Outlier / Key sale',
-    control: 'multiSelect',
-    stateKey: 'outlierKeySale',
-    options: [
-      { key: 'Outlier', text: 'Outlier' },
-      { key: 'Key sale', text: 'Key sale' },
-    ],
-    selectAll: true,
-    selectAllValues: ['Outlier', 'Key sale'],
-  },
-  saleId: {
-    key: 'saleId',
-    label: 'Sale ID',
-    control: 'text',
-    stateKey: 'saleId',
-    placeholder: 'S-1000001',
-    tooltip: 'Format: S-1234567.',
-    transform: (v) => sanitizeAlphaNumHyphen(v, ID_FIELD_MAX_LENGTH),
-  },
-  taskId: {
-    key: 'taskId',
-    label: 'Task ID',
-    control: 'text',
-    stateKey: 'taskId',
-    placeholder: 'A-1000001 or 1000001',
-    minLength: TASK_ID_MIN_LENGTH,
-    tooltip: 'Use A- or M- prefix (e.g. A-1000001) or numbers only.',
-    transform: (v) => sanitizeTaskIdInput(v, ID_FIELD_MAX_LENGTH),
-  },
-  uprn: {
-    key: 'uprn',
-    label: 'UPRN',
-    control: 'text',
-    stateKey: 'uprn',
-    placeholder: '12345678',
-    tooltip: 'Digits only.',
-    inputMode: 'numeric',
-    transform: (v) => sanitizeDigits(v, UPRN_MAX_LENGTH),
-  },
-  address: {
-    key: 'address',
-    label: 'Address',
-    control: 'textContains',
-    stateKey: 'address',
-    minLength: 3,
-    placeholder: 'Enter address',
-    tooltip: 'Enter at least 3 characters.',
-  },
-  postcode: {
-    key: 'postcode',
-    label: 'Post code',
-    control: 'textPrefix',
-    stateKey: 'postcode',
-    minLength: 2,
-    placeholder: 'CF10 1AA',
-    tooltip: 'Enter a full or partial UK postcode.',
-    transform: (v) => (v ?? '').toUpperCase(),
-  },
-  billingAuthority: {
-    key: 'billingAuthority',
-    label: 'Billing Authority',
-    control: 'multiSelect',
-    stateKey: 'billingAuthority',
-    optionFields: ['billingauthority'],
-    multiLimit: 3,
-  },
-  transactionDate: { key: 'transactionDate', label: 'Transaction Date', control: 'dateRange', stateKey: 'transactionDate' },
-  salePrice: { key: 'salePrice', label: 'Sale Price', control: 'numeric', stateKey: 'salePrice' },
-  ratio: { key: 'ratio', label: 'Ratio', control: 'numeric', stateKey: 'ratio' },
-  dwellingType: {
-    key: 'dwellingType',
-    label: 'Dwelling Type',
-    control: 'multiSelect',
-    stateKey: 'dwellingType',
-    optionFields: ['dwellingtype'],
-    selectAll: true,
-  },
-  flaggedForReview: {
-    key: 'flaggedForReview',
-    label: 'Flagged for review',
-    control: 'singleSelect',
-    stateKey: 'flaggedForReview',
-    options: [
-      { key: 'true', text: 'Yes' },
-      { key: 'false', text: 'No' },
-    ],
-  },
-  reviewFlags: {
-    key: 'reviewFlags',
-    label: 'Review Flags',
-    control: 'multiSelect',
-    stateKey: 'reviewFlags',
-    optionFields: ['reviewflags'],
-    selectAll: true,
-  },
-  outlierRatio: { key: 'outlierRatio', label: 'Outlier Ratio', control: 'numeric', stateKey: 'outlierRatio' },
-  overallFlag: {
-    key: 'overallFlag',
-    label: 'Overall flag',
-    control: 'multiSelect',
-    stateKey: 'overallFlag',
-    options: [
-      { key: 'Exclude', text: 'Exclude' },
-      { key: 'Exclude potential false', text: 'Exclude potential false' },
-      { key: 'Investigate can use', text: 'Investigate can use' },
-      { key: 'Investigate do not use', text: 'Investigate do not use' },
-      { key: 'No flag', text: 'No flag' },
-      { key: 'Not fully HPI adjusted', text: 'Not fully HPI adjusted' },
-      { key: 'Remove', text: 'Remove' },
-    ],
-    selectAll: true,
-    selectAllValues: [
-      'Exclude',
-      'Exclude potential false',
-      'Investigate can use',
-      'Investigate do not use',
-      'No flag',
-      'Not fully HPI adjusted',
-      'Remove',
-    ],
-  },
-  summaryFlag: {
-    key: 'summaryFlag',
-    label: 'Summary flag',
-    control: 'textContains',
-    stateKey: 'summaryFlag',
-    minLength: 3,
-  },
-  taskStatus: {
-    key: 'taskStatus',
-    label: 'Task status',
-    control: 'multiSelect',
-    stateKey: 'taskStatus',
-    optionFields: ['taskstatus', 'status', 'statuscode'],
-    selectAll: true,
-  },
-  assignedTo: {
-    key: 'assignedTo',
-    label: 'Assigned to',
-    control: 'singleSelect',
-    stateKey: 'assignedTo',
-    optionFields: ['assignedto'],
-  },
-  assignedDate: { key: 'assignedDate', label: 'Assigned date', control: 'dateRange', stateKey: 'assignedDate' },
-  taskCompletedDate: { key: 'taskCompletedDate', label: 'Task completed date', control: 'dateRange', stateKey: 'taskCompletedDate' },
-  qcAssignedTo: {
-    key: 'qcAssignedTo',
-    label: 'QC Assigned to',
-    control: 'singleSelect',
-    stateKey: 'qcAssignedTo',
-    optionFields: ['qcassignedto'],
-  },
-  qcAssignedDate: { key: 'qcAssignedDate', label: 'QC Assigned date', control: 'dateRange', stateKey: 'qcAssignedDate' },
-  qcCompletedDate: { key: 'qcCompletedDate', label: 'QC Completed date', control: 'dateRange', stateKey: 'qcCompletedDate' },
 };
 
 export function getRecordKey(record: ComponentFramework.PropertyHelper.DataSetApi.EntityRecord): string {
@@ -1379,46 +1102,50 @@ export const Grid = React.memo((props: GridProps) => {
     }
   }, [columnFilters]);
 
-  const isPrefilterDefault = React.useCallback((state: ManagerPrefilterState): boolean => {
-    if (isCaseworkerView) {
-      const expectedUser = (currentUserId ?? '').trim();
-      const hasExpectedUser = expectedUser
-        ? state.caseworkers.length === 1 && state.caseworkers[0] === expectedUser
-        : state.caseworkers.length === 0;
-      return state.searchBy === 'caseworker'
-        && state.billingAuthorities.length === 0
-        && hasExpectedUser
-        && state.workThat === CASEWORKER_PREFILTER_DEFAULT.workThat
-        && !state.completedFrom
-        && !state.completedTo;
+  const hasPrefilterExpectedUser = React.useCallback((selectedUsers: string[], expectedUser: string): boolean => {
+    if (!expectedUser) {
+      return selectedUsers.length === 0;
     }
-    if (isQcView) {
-      const expectedUser = (currentUserId ?? '').trim();
-      const hasExpectedUser = expectedUser
-        ? state.caseworkers.length === 1 && state.caseworkers[0] === expectedUser
-        : state.caseworkers.length === 0;
-      return state.searchBy === 'qcUser'
-        && state.billingAuthorities.length === 0
-        && hasExpectedUser
-        && state.workThat === QC_VIEW_PREFILTER_DEFAULT.workThat
-        && !state.completedFrom
-        && !state.completedTo;
-    }
-    if (isQcAssign) {
-      return state.searchBy === QC_PREFILTER_DEFAULT.searchBy
-        && state.billingAuthorities.length === 0
-        && state.caseworkers.length === 0
-        && !state.workThat
-        && !state.completedFrom
-        && !state.completedTo;
-    }
-    return state.searchBy === 'billingAuthority'
+    return selectedUsers.length === 1 && selectedUsers[0] === expectedUser;
+  }, []);
+
+  const hasNoPrefilterDateRange = React.useCallback((state: ManagerPrefilterState): boolean => {
+    return !state.completedFrom && !state.completedTo;
+  }, []);
+
+  const isUserScopedPrefilterDefault = React.useCallback((
+    state: ManagerPrefilterState,
+    searchBy: ManagerSearchBy,
+    workThat: ManagerWorkThat | undefined,
+  ): boolean => {
+    const expectedUser = (currentUserId ?? '').trim();
+    return state.searchBy === searchBy
+      && state.billingAuthorities.length === 0
+      && hasPrefilterExpectedUser(state.caseworkers, expectedUser)
+      && state.workThat === workThat
+      && hasNoPrefilterDateRange(state);
+  }, [currentUserId, hasNoPrefilterDateRange, hasPrefilterExpectedUser]);
+
+  const isUnassignedPrefilterDefault = React.useCallback((state: ManagerPrefilterState, searchBy: ManagerSearchBy): boolean => {
+    return state.searchBy === searchBy
       && state.billingAuthorities.length === 0
       && state.caseworkers.length === 0
       && !state.workThat
-      && !state.completedFrom
-      && !state.completedTo;
-  }, [currentUserId, isCaseworkerView, isQcAssign, isQcView]);
+      && hasNoPrefilterDateRange(state);
+  }, [hasNoPrefilterDateRange]);
+
+  const isPrefilterDefault = React.useCallback((state: ManagerPrefilterState): boolean => {
+    if (isCaseworkerView) {
+      return isUserScopedPrefilterDefault(state, 'caseworker', CASEWORKER_PREFILTER_DEFAULT.workThat);
+    }
+    if (isQcView) {
+      return isUserScopedPrefilterDefault(state, 'qcUser', QC_VIEW_PREFILTER_DEFAULT.workThat);
+    }
+    if (isQcAssign) {
+      return isUnassignedPrefilterDefault(state, QC_PREFILTER_DEFAULT.searchBy);
+    }
+    return isUnassignedPrefilterDefault(state, 'billingAuthority');
+  }, [isCaseworkerView, isQcAssign, isQcView, isUnassignedPrefilterDefault, isUserScopedPrefilterDefault]);
   const markPrefilterDirty = React.useCallback(() => {
     if (prefilterHydratingRef.current || prefilterAutoApplyInFlightRef.current) return;
     prefilterDirtyRef.current = true;
@@ -1999,20 +1726,50 @@ export const Grid = React.memo((props: GridProps) => {
     [markPrefilterDirty],
   );
 
+  const getPrefilterWorkThatOptions = React.useCallback((): IComboBoxOption[] => {
+    if (isCaseworkerView) {
+      return CASEWORKER_WORKTHAT_SELF_OPTIONS as IComboBoxOption[];
+    }
+    if (isQcView) {
+      return QC_WORKTHAT_SELF_OPTIONS as IComboBoxOption[];
+    }
+    if (isQcAssign) {
+      return getQcWorkThatOptions(prefilters.searchBy as QcSearchBy) as IComboBoxOption[];
+    }
+    return getManagerWorkThatOptions(prefilters.searchBy) as IComboBoxOption[];
+  }, [isCaseworkerView, isQcAssign, isQcView, prefilters.searchBy]);
+
+  const shouldRetainPrefilterCompletedDates = React.useCallback((workThat: ManagerWorkThat | undefined): boolean => {
+    return (isQcAssign || isQcView)
+      ? isQcCompletedWorkThat(workThat)
+      : isManagerCompletedWorkThat(workThat);
+  }, [isQcAssign, isQcView]);
+
+  const resetPrefilterComboTracking = React.useCallback((): void => {
+    comboIgnoreNextInputRef.current = {};
+    comboIgnoreNextChangeRef.current = {};
+    comboExpectedSelectionRef.current = {};
+  }, []);
+
+  const getPrefilterClearDefaults = React.useCallback((): ManagerPrefilterState => {
+    if (isCaseworkerView) {
+      return caseworkerPrefilterDefaults;
+    }
+    if (isQcView) {
+      return qcViewPrefilterDefaults;
+    }
+    if (isQcAssign) {
+      return QC_PREFILTER_DEFAULT;
+    }
+    return MANAGER_PREFILTER_DEFAULT;
+  }, [caseworkerPrefilterDefaults, isCaseworkerView, isQcAssign, isQcView, qcViewPrefilterDefaults]);
+
   const onPrefilterWorkThatChange = React.useCallback(
     (_: React.FormEvent<IComboBox>, option?: IComboBoxOption, _index?: number, value?: string) => {
-      const options = (
-        isCaseworkerView
-          ? CASEWORKER_WORKTHAT_SELF_OPTIONS
-          : isQcView
-            ? QC_WORKTHAT_SELF_OPTIONS
-          : isQcAssign
-            ? getQcWorkThatOptions(prefilters.searchBy as QcSearchBy)
-            : getManagerWorkThatOptions(prefilters.searchBy)
-      ) as IComboBoxOption[];
+      const options = getPrefilterWorkThatOptions();
       const resolvedKey = option?.key ?? resolveComboOptionKey(options, value);
       const nextWork = resolvedKey as ManagerWorkThat | undefined;
-      const needsCompleted = (isQcAssign || isQcView) ? isQcCompletedWorkThat(nextWork) : isManagerCompletedWorkThat(nextWork);
+      const needsCompleted = shouldRetainPrefilterCompletedDates(nextWork);
       setPrefilterResetNotice(undefined);
       setPrefilters((prev) => ({
         ...prev,
@@ -2022,7 +1779,7 @@ export const Grid = React.memo((props: GridProps) => {
       }));
       markPrefilterDirty();
     },
-    [isCaseworkerView, isQcAssign, isQcView, markPrefilterDirty, prefilters.searchBy],
+    [getPrefilterWorkThatOptions, markPrefilterDirty, shouldRetainPrefilterCompletedDates],
   );
 
   const onPrefilterFromDateChange = React.useCallback(
@@ -2042,34 +1799,39 @@ export const Grid = React.memo((props: GridProps) => {
 
   const handlePrefilterSearch = React.useCallback(() => {
     if (!onPrefilterApply) return;
-    const needsCompleted = (isQcAssign || isQcView)
-      ? isQcCompletedWorkThat(prefilters.workThat)
-      : isManagerCompletedWorkThat(prefilters.workThat);
-    const normalized: ManagerPrefilterState = {
-      ...prefilters,
-      completedFrom: needsCompleted ? prefilters.completedFrom : undefined,
-      completedTo: needsCompleted ? prefilters.completedTo : undefined,
+
+    const normalizePrefiltersForApply = (state: ManagerPrefilterState): ManagerPrefilterState => {
+      const needsCompleted = shouldRetainPrefilterCompletedDates(state.workThat);
+      return {
+        ...state,
+        completedFrom: needsCompleted ? state.completedFrom : undefined,
+        completedTo: needsCompleted ? state.completedTo : undefined,
+      };
     };
+
+    const persistAppliedPrefilters = (state: ManagerPrefilterState): void => {
+      try {
+        const storedPrefilters = getPrefiltersForStorage(state);
+        const payload: StoredPrefilterState = { ...storedPrefilters, applied: true };
+        localStorage.setItem(prefilterStorageKey, JSON.stringify(payload));
+      } catch {
+        // ignore storage failures
+      }
+    };
+
+    const normalized = normalizePrefiltersForApply(prefilters);
     dismissResultMessages();
     prefilterManualApplyRef.current = true;
-    try {
-      const storedPrefilters = getPrefiltersForStorage(normalized);
-      const payload: StoredPrefilterState = { ...storedPrefilters, applied: true };
-      localStorage.setItem(prefilterStorageKey, JSON.stringify(payload));
-    } catch {
-      // ignore storage failures
-    }
+    persistAppliedPrefilters(normalized);
     onPrefilterApply(normalized, { source: 'user' });
     setPrefilterResetNotice(undefined);
     prefilterDirtyRef.current = false;
     clearAutoApplyInFlight();
-    comboIgnoreNextInputRef.current = {};
-    comboIgnoreNextChangeRef.current = {};
-    comboExpectedSelectionRef.current = {};
+    resetPrefilterComboTracking();
     if (isPrefilterNarrow) {
       setPrefilterExpanded(false);
     }
-  }, [clearAutoApplyInFlight, dismissResultMessages, isPrefilterNarrow, onPrefilterApply, prefilters]);
+  }, [clearAutoApplyInFlight, dismissResultMessages, getPrefiltersForStorage, isPrefilterNarrow, onPrefilterApply, prefilterStorageKey, prefilters, resetPrefilterComboTracking, shouldRetainPrefilterCompletedDates]);
 
   const handlePrefilterClear = React.useCallback(() => {
     dismissResultMessages();
@@ -2077,18 +1839,8 @@ export const Grid = React.memo((props: GridProps) => {
     prefilterDirtyRef.current = true;
     prefilterClearedRef.current = true;
     clearAutoApplyInFlight();
-    comboIgnoreNextInputRef.current = {};
-    comboIgnoreNextChangeRef.current = {};
-    comboExpectedSelectionRef.current = {};
-    if (isCaseworkerView) {
-      setPrefilters(caseworkerPrefilterDefaults);
-    } else if (isQcView) {
-      setPrefilters(qcViewPrefilterDefaults);
-    } else if (isQcAssign) {
-      setPrefilters(QC_PREFILTER_DEFAULT);
-    } else {
-      setPrefilters(MANAGER_PREFILTER_DEFAULT);
-    }
+    resetPrefilterComboTracking();
+    setPrefilters(getPrefilterClearDefaults());
     setComboEditingFor('prefilterSearchBy', false);
     setComboEditingFor('prefilterWorkThat', false);
     setPrefilterSearchBySearch('');
@@ -2097,14 +1849,11 @@ export const Grid = React.memo((props: GridProps) => {
     setCaseworkerSearch('');
     onPrefilterClear?.();
   }, [
-    caseworkerPrefilterDefaults,
     clearAutoApplyInFlight,
     dismissResultMessages,
-    isCaseworkerView,
-    isQcAssign,
-    isQcView,
+    getPrefilterClearDefaults,
     onPrefilterClear,
-    qcViewPrefilterDefaults,
+    resetPrefilterComboTracking,
     setComboEditingFor,
   ]);
 
@@ -2226,6 +1975,76 @@ export const Grid = React.memo((props: GridProps) => {
     searchByOptions as IComboBoxOption[],
     isSalesSearch ? salesSearchText.searchPanel.searchByLabel : commonText.labels.searchBy,
   );
+  const resolveSearchByOptions = (searchValue: string): IComboBoxOption[] => {
+    return filterComboOptions(searchByOptions as IComboBoxOption[], searchValue);
+  };
+  const commitSearchBySingleSelect = (event: React.KeyboardEvent<IComboBox>, inputValue: string): void => {
+    const resolvedOptions = resolveSearchByOptions(inputValue);
+    commitComboSingleSelect(event, inputValue, resolvedOptions, filters.searchBy, (opt) => {
+      onSearchByChange(event as unknown as React.FormEvent<IComboBox>, opt);
+      setComboEditingFor('searchBy', false);
+      setSearchBySearch('');
+    }, 'searchBy');
+  };
+  const handleSearchByComboChange = (
+    event: React.FormEvent<IComboBox>,
+    option?: IComboBoxOption,
+    _index?: number,
+    value?: string,
+  ): void => {
+    if (consumeComboIgnoreNextChange('searchBy', option)) return;
+    if (shouldIgnoreComboChange('searchBy', option)) return;
+    const searchValue = typeof value === 'string' ? value : searchBySearch;
+    const resolvedOptions = resolveSearchByOptions(searchValue);
+    const resolvedKey = option?.key ?? resolveComboKeyFromSearch(resolvedOptions, searchValue, filters.searchBy);
+    if (!resolvedKey) return;
+    setComboCancelNextDismiss('searchBy');
+    onSearchByChange(event, { key: resolvedKey } as IComboBoxOption);
+    setComboEditingFor('searchBy', false);
+    setSearchBySearch('');
+  };
+  const handleSearchByComboKeyDownCapture = (event: React.KeyboardEvent<IComboBox>): void => {
+    if (event.key === 'Escape') {
+      setComboCancelNextDismiss('searchBy');
+      return;
+    }
+    const isEnter = event.key === 'Enter' || event.key === 'NumpadEnter';
+    if (!isEnter) return;
+    const inputValue = getComboInputValue(event) || searchBySearch;
+    if (!inputValue.trim()) return;
+    commitSearchBySingleSelect(event, inputValue);
+  };
+  const handleSearchByComboInputValueChange = (value: string): void => {
+    const next = normalizeSingleSelectSearchText(
+      value,
+      searchByOptions as IComboBoxOption[],
+    );
+    if (!next) {
+      setComboEditingFor('searchBy', false);
+      setSearchBySearch('');
+      return;
+    }
+    setComboEditingFor('searchBy', true);
+    setSearchBySearch(next);
+  };
+  const handleSearchByComboKeyDown = (event: React.KeyboardEvent<IComboBox>): void => {
+    if (event.defaultPrevented) return;
+    const inputValue = getComboInputValue(event) || searchBySearch;
+    if (!inputValue.trim()) return;
+    commitSearchBySingleSelect(event, inputValue);
+  };
+  const handleSearchByComboDismissed = (): void => {
+    if (!consumeComboCancelNextDismiss('searchBy')) {
+      commitComboSingleSelectOnDismiss(
+        searchBySearch,
+        searchByOptions as IComboBoxOption[],
+        filters.searchBy,
+        (opt) => onSearchByChange({} as React.FormEvent<IComboBox>, opt),
+      );
+    }
+    setComboEditingFor('searchBy', false);
+    setSearchBySearch('');
+  };
 
   const lengthErrors = React.useMemo(() => getLengthErrors(filters), [filters, getLengthErrors]);
   const addressError = lengthErrors.address;
@@ -2342,6 +2161,86 @@ export const Grid = React.memo((props: GridProps) => {
     prefilterSearchByOptions as IComboBoxOption[],
     prefilterTooltips.searchBy,
   );
+  const resolvePrefilterSearchByOptions = (searchValue: string): IComboBoxOption[] => {
+    return filterComboOptions(
+      prefilterSearchByOptions as IComboBoxOption[],
+      searchValue,
+    );
+  };
+  const commitPrefilterSearchBySingleSelect = (event: React.KeyboardEvent<IComboBox>, inputValue: string): void => {
+    const resolvedOptions = resolvePrefilterSearchByOptions(inputValue);
+    commitComboSingleSelect(
+      event,
+      inputValue,
+      resolvedOptions,
+      prefilters.searchBy,
+      (opt) => {
+        onPrefilterSearchByChange(event as unknown as React.FormEvent<IComboBox>, opt);
+        setComboEditingFor('prefilterSearchBy', false);
+        setPrefilterSearchBySearch('');
+      },
+      'prefilterSearchBy',
+    );
+  };
+  const handlePrefilterSearchByComboChange = (
+    event: React.FormEvent<IComboBox>,
+    option?: IComboBoxOption,
+    _index?: number,
+    value?: string,
+  ): void => {
+    if (consumeComboIgnoreNextChange('prefilterSearchBy', option)) return;
+    if (shouldIgnoreComboChange('prefilterSearchBy', option)) return;
+    const searchValue = typeof value === 'string' ? value : prefilterSearchBySearch;
+    const resolvedOptions = resolvePrefilterSearchByOptions(searchValue);
+    const resolvedKey = option?.key ?? resolveComboKeyFromSearch(resolvedOptions, searchValue, prefilters.searchBy);
+    if (!resolvedKey) return;
+    setComboCancelNextDismiss('prefilterSearchBy');
+    onPrefilterSearchByChange(event, { key: resolvedKey } as IComboBoxOption);
+    setComboEditingFor('prefilterSearchBy', false);
+    setPrefilterSearchBySearch('');
+  };
+  const handlePrefilterSearchByComboKeyDownCapture = (event: React.KeyboardEvent<IComboBox>): void => {
+    if (event.key === 'Escape') {
+      setComboCancelNextDismiss('prefilterSearchBy');
+      return;
+    }
+    const isEnter = event.key === 'Enter' || event.key === 'NumpadEnter';
+    if (!isEnter) return;
+    const inputValue = getComboInputValue(event) || prefilterSearchBySearch;
+    if (!inputValue.trim()) return;
+    commitPrefilterSearchBySingleSelect(event, inputValue);
+  };
+  const handlePrefilterSearchByComboInputValueChange = (value: string): void => {
+    const next = normalizeSingleSelectSearchText(
+      value,
+      prefilterSearchByOptions as IComboBoxOption[],
+    );
+    if (!next) {
+      setComboEditingFor('prefilterSearchBy', false);
+      setPrefilterSearchBySearch('');
+      return;
+    }
+    setComboEditingFor('prefilterSearchBy', true);
+    setPrefilterSearchBySearch(next);
+  };
+  const handlePrefilterSearchByComboKeyDown = (event: React.KeyboardEvent<IComboBox>): void => {
+    if (event.defaultPrevented) return;
+    const inputValue = getComboInputValue(event) || prefilterSearchBySearch;
+    if (!inputValue.trim()) return;
+    commitPrefilterSearchBySingleSelect(event, inputValue);
+  };
+  const handlePrefilterSearchByComboDismissed = (): void => {
+    if (!consumeComboCancelNextDismiss('prefilterSearchBy')) {
+      commitComboSingleSelectOnDismiss(
+        prefilterSearchBySearch,
+        prefilterSearchByOptions as IComboBoxOption[],
+        prefilters.searchBy,
+        (opt) => onPrefilterSearchByChange({} as React.FormEvent<IComboBox>, opt),
+      );
+    }
+    setComboEditingFor('prefilterSearchBy', false);
+    setPrefilterSearchBySearch('');
+  };
 
   const managerBillingSelectedKeys = React.useMemo<string[]>(() => {
     const selected = prefilters.billingAuthorities ?? [];
@@ -3235,6 +3134,28 @@ export const Grid = React.memo((props: GridProps) => {
       return cleared;
     });
   }, [onColumnFiltersChange]);
+  const handleClearAllColumnFiltersClick = React.useCallback(() => {
+    clearAllColumnFilters();
+  }, [clearAllColumnFilters]);
+  const handleDismissColumnConfigMessage = React.useCallback(() => {
+    setDismissedColumnConfigMessage(true);
+  }, []);
+  const handleDismissErrorMessage = React.useCallback(() => {
+    setDismissedErrorMessage(true);
+  }, []);
+  const shouldVirtualizeResults = React.useCallback(() => true, []);
+  const handleDismissColumnFilterMenu = React.useCallback(() => {
+    setMenuState(undefined);
+  }, []);
+  const handleDismissAssignUsersInfo = React.useCallback(() => {
+    setDismissedAssignUsersInfo(true);
+  }, []);
+  const handleDismissAssignUsersError = React.useCallback(() => {
+    setDismissedAssignUsersError(true);
+  }, []);
+  const handleDismissCreateTaskInfo = React.useCallback(() => {
+    setDismissedCreateTaskInfo(true);
+  }, []);
 
   const getDistinctOptions = React.useCallback(
     (candidates: string[]): IDropdownOption[] => {
@@ -3295,6 +3216,17 @@ export const Grid = React.memo((props: GridProps) => {
     [commonText.selectionControls.selectAllText, getDistinctOptions],
   );
 
+  const renderComboHint = (hint?: string, hintId?: string): React.ReactNode => {
+    if (!hint) {
+      return null;
+    }
+    return (
+      <Text id={hintId} variant="small" styles={{ root: { marginTop: 4 } }}>
+        {hint}
+      </Text>
+    );
+  };
+
   const renderSearchControl = React.useCallback(() => {
     const cfg = SEARCH_FIELD_CONFIGS[filters.searchBy];
     if (!cfg) return null;
@@ -3305,60 +3237,39 @@ export const Grid = React.memo((props: GridProps) => {
         const streetTitle = buildValueTooltip(filters.street, salesSearchText.tooltips?.street);
         const townTitle = buildValueTooltip(filters.townCity, salesSearchText.tooltips?.townCity);
         const postcodeTitle = buildValueTooltip(filters.postcode, salesSearchText.tooltips?.postcode);
+        const handleSalesBuildingNameChange = (_event: React.FormEvent<HTMLInputElement | HTMLTextAreaElement>, value?: string): void => {
+          updateFilters('buildingNameNumber', (value ?? '').slice(0, ADDRESS_FIELD_MAX_LENGTH));
+        };
+        const handleSalesStreetChange = (_event: React.FormEvent<HTMLInputElement | HTMLTextAreaElement>, value?: string): void => {
+          updateFilters('street', (value ?? '').slice(0, ADDRESS_FIELD_MAX_LENGTH));
+        };
+        const handleSalesTownCityChange = (_event: React.FormEvent<HTMLInputElement | HTMLTextAreaElement>, value?: string): void => {
+          updateFilters('townCity', (value ?? '').slice(0, ADDRESS_FIELD_MAX_LENGTH));
+        };
+        const handleSalesPostcodeChange = (_event: React.FormEvent<HTMLInputElement | HTMLTextAreaElement>, value?: string): void => {
+          updateFilters('postcode', (value ?? '').toUpperCase().slice(0, 12));
+        };
         return (
-          <>
-            <Stack.Item styles={{ root: { minWidth: 220 } }}>
-              <TextField
-                id="sales-buildingnamenumber"
-                label={salesSearchText.fields.buildingNameNumber}
-                placeholder={salesSearchText.placeholders.buildingNameNumber}
-                title={buildingTitle}
-                value={filters.buildingNameNumber ?? ''}
-                onChange={(_, v) => updateFilters('buildingNameNumber', (v ?? '').slice(0, ADDRESS_FIELD_MAX_LENGTH))}
-                errorMessage={addressError}
-                maxLength={ADDRESS_FIELD_MAX_LENGTH}
-              />
-            </Stack.Item>
-            <Stack.Item styles={{ root: { minWidth: 220 } }}>
-              <TextField
-                id="sales-street"
-                label={salesSearchText.fields.street}
-                placeholder={salesSearchText.placeholders.street}
-                title={streetTitle}
-                value={filters.street ?? ''}
-                onChange={(_, v) => updateFilters('street', (v ?? '').slice(0, ADDRESS_FIELD_MAX_LENGTH))}
-                errorMessage={streetError}
-                maxLength={ADDRESS_FIELD_MAX_LENGTH}
-              />
-            </Stack.Item>
-            <Stack.Item styles={{ root: { minWidth: 220 } }}>
-              <TextField
-                id="sales-towncity"
-                label={salesSearchText.fields.townCity}
-                placeholder={salesSearchText.placeholders.townCity}
-                title={townTitle}
-                value={filters.townCity ?? ''}
-                onChange={(_, v) => updateFilters('townCity', (v ?? '').slice(0, ADDRESS_FIELD_MAX_LENGTH))}
-                errorMessage={townError}
-                maxLength={ADDRESS_FIELD_MAX_LENGTH}
-              />
-            </Stack.Item>
-            <Stack.Item styles={{ root: { minWidth: 200 } }}>
-              <TextField
-                id="sales-postcode"
-                label={salesSearchText.fields.postcode}
-                placeholder={salesSearchText.placeholders.postcode}
-                title={postcodeTitle}
-                value={filters.postcode ?? ''}
-                onChange={(_, v) => {
-                  const next = (v ?? '').toUpperCase().slice(0, 12);
-                  updateFilters('postcode', next);
-                }}
-                errorMessage={postcodeError}
-                maxLength={12}
-              />
-            </Stack.Item>
-          </>
+          <SalesAddressSearchControl
+            salesSearchText={salesSearchText}
+            buildingTitle={buildingTitle}
+            streetTitle={streetTitle}
+            townTitle={townTitle}
+            postcodeTitle={postcodeTitle}
+            buildingValue={filters.buildingNameNumber ?? ''}
+            streetValue={filters.street ?? ''}
+            townValue={filters.townCity ?? ''}
+            postcodeValue={filters.postcode ?? ''}
+            addressError={addressError}
+            streetError={streetError}
+            townError={townError}
+            postcodeError={postcodeError}
+            addressFieldMaxLength={ADDRESS_FIELD_MAX_LENGTH}
+            onBuildingNameChange={handleSalesBuildingNameChange}
+            onStreetChange={handleSalesStreetChange}
+            onTownCityChange={handleSalesTownCityChange}
+            onPostcodeChange={handleSalesPostcodeChange}
+          />
         );
       }
 
@@ -3368,190 +3279,215 @@ export const Grid = React.memo((props: GridProps) => {
           ? getComboDisambiguationHint(filteredBillingAuthorityOptionsList, billingAuthoritySearch)
           : undefined;
         const billingAuthorityHintId = 'voa-sales-billingauthority-hint';
+        const billingAuthorityControlKey = 'salesBillingAuthority';
+        const applyBillingAuthoritySelection = (resolvedKey: unknown, closeEditor = true): void => {
+          if (
+            resolvedKey === null
+            || resolvedKey === undefined
+            || resolvedKey === ''
+            || resolvedKey === '__loading__'
+            || resolvedKey === '__error__'
+          ) {
+            return;
+          }
+          if (typeof resolvedKey !== 'string' && typeof resolvedKey !== 'number' && typeof resolvedKey !== 'boolean') {
+            return;
+          }
+          const next = String(resolvedKey);
+          updateFilters('billingAuthority', next ? [next] : undefined);
+          if (closeEditor) {
+            setComboEditingFor(billingAuthorityControlKey, false);
+            setBillingAuthoritySearch('');
+          }
+        };
+        const commitBillingAuthoritySelection = (
+          opt: IComboBoxOption | undefined,
+          searchValue: string,
+          selectedKey: string,
+          shouldSetDismissFlag = false,
+        ): void => {
+          const resolvedOptions = filterComboOptions(billingAuthorityOptionsList, searchValue);
+          const resolvedKey = opt?.key ?? resolveComboKeyFromSearch(resolvedOptions, searchValue, selectedKey);
+          if (!resolvedKey || resolvedKey === '__loading__' || resolvedKey === '__error__') {
+            return;
+          }
+          if (shouldSetDismissFlag) {
+            setComboCancelNextDismiss(billingAuthorityControlKey);
+          }
+          applyBillingAuthoritySelection(resolvedKey);
+        };
+        const handleBillingAuthorityComboChange = (
+          _event: React.FormEvent<IComboBox>,
+          opt?: IComboBoxOption,
+          _index?: number,
+          value?: string,
+        ): void => {
+          if (consumeComboIgnoreNextChange(billingAuthorityControlKey, opt)) return;
+          if (shouldIgnoreComboChange(billingAuthorityControlKey, opt)) return;
+          const searchValue = typeof value === 'string' ? value : billingAuthoritySearch;
+          commitBillingAuthoritySelection(opt, searchValue, authority, true);
+        };
+        const handleBillingAuthorityComboKeyDownCapture = (event: React.KeyboardEvent<IComboBox>): void => {
+          if (event.key === 'Escape') {
+            setComboCancelNextDismiss(billingAuthorityControlKey);
+            return;
+          }
+          const isEnter = event.key === 'Enter' || event.key === 'NumpadEnter';
+          if (!isEnter) return;
+          const inputValue = getComboInputValue(event) || billingAuthoritySearch;
+          if (!inputValue.trim()) return;
+          const resolvedOptions = filterComboOptions(billingAuthorityOptionsList, inputValue);
+          commitComboSingleSelect(
+            event,
+            inputValue,
+            resolvedOptions,
+            authority,
+            (opt) => applyBillingAuthoritySelection(opt?.key),
+            billingAuthorityControlKey,
+          );
+        };
+        const handleBillingAuthorityComboInputValueChange = (value: string): void => {
+          const next = normalizeSingleSelectSearchText(value, billingAuthorityOptionsList);
+          if (!next) {
+            setComboEditingFor(billingAuthorityControlKey, false);
+            setBillingAuthoritySearch('');
+            return;
+          }
+          setComboEditingFor(billingAuthorityControlKey, true);
+          setBillingAuthoritySearch(next);
+        };
+        const handleBillingAuthorityComboKeyDown = (event: React.KeyboardEvent<IComboBox>): void => {
+          if (event.defaultPrevented) return;
+          const inputValue = getComboInputValue(event) || billingAuthoritySearch;
+          if (!inputValue.trim()) return;
+          const resolvedOptions = filterComboOptions(billingAuthorityOptionsList, inputValue);
+          commitComboSingleSelect(
+            event,
+            inputValue,
+            resolvedOptions,
+            authority,
+            (opt) => applyBillingAuthoritySelection(opt?.key),
+            billingAuthorityControlKey,
+          );
+        };
+        const handleBillingAuthorityComboDismissed = (): void => {
+          if (!consumeComboCancelNextDismiss(billingAuthorityControlKey)) {
+            commitComboSingleSelectOnDismiss(
+              billingAuthoritySearch,
+              billingAuthorityOptionsList,
+              authority,
+              (opt) => applyBillingAuthoritySelection(opt?.key, false),
+            );
+          }
+          setComboEditingFor(billingAuthorityControlKey, false);
+          setBillingAuthoritySearch('');
+        };
+        const handleBillingAuthorityBlur = (): void => {
+          markSalesSearchFieldTouched('billingAuthority');
+        };
         const billingAuthorityTitle = buildSelectedTooltip(
           authority ? [authority] : [],
           billingAuthorityOptionsList,
           salesSearchText.tooltips?.billingAuthority,
         );
         const billingAuthorityRefTitle = buildValueTooltip(filters.bacode, salesSearchText.tooltips?.billingAuthorityReference);
+        const renderBillingAuthorityRequiredLabel = (): JSX.Element => renderSalesSearchLabel(salesSearchText.fields.billingAuthority, true);
+        const renderBillingAuthorityReferenceRequiredLabel = (): JSX.Element => renderSalesSearchLabel(salesSearchText.fields.billingAuthorityReference, true);
+        const handleBillingAuthorityReferenceChange = (_event: React.FormEvent<HTMLInputElement | HTMLTextAreaElement>, value?: string): void => {
+          updateFilters('bacode', (value ?? '').slice(0, ADDRESS_FIELD_MAX_LENGTH));
+        };
+        const handleBillingAuthorityReferenceBlur = (): void => {
+          markSalesSearchFieldTouched('bacode');
+        };
         return (
-          <>
-            <Stack.Item styles={{ root: { minWidth: 240 } }}>
-              <ComboBox
-                id="sales-billingauthority"
-                label={salesSearchText.fields.billingAuthority}
-                ariaLabel={formatRequiredAriaLabel(salesSearchText.fields.billingAuthority, true)}
-                aria-describedby={buildAriaDescribedBy(billingAuthorityHint ? billingAuthorityHintId : undefined)}
-                placeholder={salesSearchText.placeholders.billingAuthority}
-                title={billingAuthorityTitle}
-                onRenderLabel={() => renderSalesSearchLabel(salesSearchText.fields.billingAuthority, true)}
-                options={filteredBillingAuthorityOptionsList}
-                selectedKey={comboEditing.salesBillingAuthority ? null : authority}
-                allowFreeform={false}
-                allowFreeInput
-                autoComplete="off"
-                text={comboEditing.salesBillingAuthority ? billingAuthoritySearch : undefined}
-                onChange={(event, opt, _index, value) => {
-                  if (consumeComboIgnoreNextChange('salesBillingAuthority', opt)) return;
-                  if (shouldIgnoreComboChange('salesBillingAuthority', opt)) return;
-                  const searchValue = typeof value === 'string' ? value : billingAuthoritySearch;
-                  const resolvedOptions = filterComboOptions(billingAuthorityOptionsList, searchValue);
-                  const resolvedKey = opt?.key ?? resolveComboKeyFromSearch(resolvedOptions, searchValue, authority);
-                  if (!resolvedKey || resolvedKey === '__loading__' || resolvedKey === '__error__') return;
-                  const next = String(resolvedKey ?? '');
-                  setComboCancelNextDismiss('salesBillingAuthority');
-                  updateFilters('billingAuthority', next ? [next] : undefined);
-                  setComboEditingFor('salesBillingAuthority', false);
-                  setBillingAuthoritySearch('');
-                }}
-                onKeyDownCapture={(event) => {
-                  if (event.key === 'Escape') {
-                    setComboCancelNextDismiss('salesBillingAuthority');
-                    return;
-                  }
-                  const isEnter = event.key === 'Enter' || event.key === 'NumpadEnter';
-                  if (!isEnter) return;
-                  const inputValue = getComboInputValue(event) || billingAuthoritySearch;
-                  if (!inputValue.trim()) return;
-                  const resolvedOptions = filterComboOptions(billingAuthorityOptionsList, inputValue);
-                  commitComboSingleSelect(
-                    event,
-                    inputValue,
-                    resolvedOptions,
-                    authority,
-                    (opt) => {
-                      if (!opt || opt.key === '__loading__' || opt.key === '__error__') return;
-                      const next = String(opt.key ?? '');
-                      updateFilters('billingAuthority', next ? [next] : undefined);
-                      setComboEditingFor('salesBillingAuthority', false);
-                      setBillingAuthoritySearch('');
-                    },
-                    'salesBillingAuthority',
-                  );
-                }}
-                onInputValueChange={(value) => {
-                  const next = normalizeSingleSelectSearchText(value, billingAuthorityOptionsList);
-                  if (!next) {
-                    setComboEditingFor('salesBillingAuthority', false);
-                    setBillingAuthoritySearch('');
-                    return;
-                  }
-                  setComboEditingFor('salesBillingAuthority', true);
-                  setBillingAuthoritySearch(next);
-                }}
-                onKeyDown={(event) => {
-                  if (event.defaultPrevented) return;
-                  const inputValue = getComboInputValue(event) || billingAuthoritySearch;
-                  if (!inputValue.trim()) return;
-                  const resolvedOptions = filterComboOptions(billingAuthorityOptionsList, inputValue);
-                  commitComboSingleSelect(
-                    event,
-                    inputValue,
-                    resolvedOptions,
-                    authority,
-                    (opt) => {
-                      if (!opt || opt.key === '__loading__' || opt.key === '__error__') return;
-                      const next = String(opt.key ?? '');
-                      updateFilters('billingAuthority', next ? [next] : undefined);
-                      setComboEditingFor('salesBillingAuthority', false);
-                      setBillingAuthoritySearch('');
-                    },
-                    'salesBillingAuthority',
-                  );
-                }}
-                onMenuDismissed={() => {
-                  if (!consumeComboCancelNextDismiss('salesBillingAuthority')) {
-                    commitComboSingleSelectOnDismiss(
-                      billingAuthoritySearch,
-                      billingAuthorityOptionsList,
-                      authority,
-                      (opt) => {
-                        if (!opt || opt.key === '__loading__' || opt.key === '__error__') return;
-                        const next = String(opt.key ?? '');
-                        updateFilters('billingAuthority', next ? [next] : undefined);
-                      },
-                    );
-                  }
-                  setComboEditingFor('salesBillingAuthority', false);
-                  setBillingAuthoritySearch('');
-                }}
-                onBlur={() => markSalesSearchFieldTouched('billingAuthority')}
-                errorMessage={displayBillingAuthorityError}
-                styles={{
-                  root: { width: '100%' },
-                  callout: { minWidth: 240 },
-                  optionsContainer: { minWidth: 240 },
-                }}
-              />
-              {billingAuthorityHint && (
-                <Text id={billingAuthorityHintId} variant="small" styles={{ root: { marginTop: 4 } }}>
-                  {billingAuthorityHint}
-                </Text>
-              )}
-            </Stack.Item>
-            <Stack.Item styles={{ root: { minWidth: 240 } }}>
-              <TextField
-                id="sales-bacode"
-                label={salesSearchText.fields.billingAuthorityReference}
-                ariaLabel={formatRequiredAriaLabel(salesSearchText.fields.billingAuthorityReference, true)}
-                placeholder={salesSearchText.placeholders.billingAuthorityReference}
-                title={billingAuthorityRefTitle}
-                onRenderLabel={() => renderSalesSearchLabel(salesSearchText.fields.billingAuthorityReference, true)}
-                value={filters.bacode ?? ''}
-                onChange={(_, v) => updateFilters('bacode', (v ?? '').slice(0, ADDRESS_FIELD_MAX_LENGTH))}
-                onBlur={() => markSalesSearchFieldTouched('bacode')}
-                errorMessage={displayBillingAuthorityRefError}
-                maxLength={ADDRESS_FIELD_MAX_LENGTH}
-              />
-            </Stack.Item>
-          </>
+          <SalesBillingAuthoritySearchControl
+            salesSearchText={salesSearchText}
+            billingAuthorityHint={billingAuthorityHint}
+            billingAuthorityHintId={billingAuthorityHintId}
+            billingAuthorityTitle={billingAuthorityTitle}
+            billingAuthorityRefTitle={billingAuthorityRefTitle}
+            filteredBillingAuthorityOptionsList={filteredBillingAuthorityOptionsList}
+            comboEditingSalesBillingAuthority={comboEditing.salesBillingAuthority}
+            authority={authority}
+            billingAuthoritySearch={billingAuthoritySearch}
+            bacodeValue={filters.bacode ?? ''}
+            displayBillingAuthorityError={displayBillingAuthorityError}
+            displayBillingAuthorityRefError={displayBillingAuthorityRefError}
+            addressFieldMaxLength={ADDRESS_FIELD_MAX_LENGTH}
+            onRenderBillingAuthorityRequiredLabel={renderBillingAuthorityRequiredLabel}
+            onRenderBillingAuthorityReferenceRequiredLabel={renderBillingAuthorityReferenceRequiredLabel}
+            onBillingAuthorityComboChange={handleBillingAuthorityComboChange}
+            onBillingAuthorityComboKeyDownCapture={handleBillingAuthorityComboKeyDownCapture}
+            onBillingAuthorityComboInputValueChange={handleBillingAuthorityComboInputValueChange}
+            onBillingAuthorityComboKeyDown={handleBillingAuthorityComboKeyDown}
+            onBillingAuthorityComboDismissed={handleBillingAuthorityComboDismissed}
+            onBillingAuthorityBlur={handleBillingAuthorityBlur}
+            onBillingAuthorityReferenceChange={handleBillingAuthorityReferenceChange}
+            onBillingAuthorityReferenceBlur={handleBillingAuthorityReferenceBlur}
+            hintNode={renderComboHint(billingAuthorityHint, billingAuthorityHintId)}
+          />
         );
       }
 
       if (filters.searchBy === 'saleId') {
         const saleIdTitle = buildValueTooltip(filters.saleId, salesSearchText.tooltips?.saleId);
+        const renderSaleIdRequiredLabel = (): JSX.Element => renderSalesSearchLabel(salesSearchText.fields.saleId, true);
+        const handleSaleIdChange = (_event: React.FormEvent<HTMLInputElement | HTMLTextAreaElement>, value?: string): void => {
+          updateFilters('saleId', sanitizeAlphaNumHyphen(value, ID_FIELD_MAX_LENGTH));
+        };
+        const handleSaleIdBlur = (): void => {
+          markSalesSearchFieldTouched('saleId');
+        };
         return (
-          <Stack.Item styles={{ root: { minWidth: 260 } }}>
-            <TextField
-              id="sales-saleid"
-              label={salesSearchText.fields.saleId}
-              ariaLabel={formatRequiredAriaLabel(salesSearchText.fields.saleId, true)}
-              placeholder={salesSearchText.placeholders.saleId}
-              title={saleIdTitle}
-              onRenderLabel={() => renderSalesSearchLabel(salesSearchText.fields.saleId, true)}
-              value={filters.saleId ?? ''}
-              onChange={(_, v) => updateFilters('saleId', sanitizeAlphaNumHyphen(v, ID_FIELD_MAX_LENGTH))}
-              onBlur={() => markSalesSearchFieldTouched('saleId')}
-              errorMessage={displaySaleIdError}
-              maxLength={ID_FIELD_MAX_LENGTH}
-            />
-          </Stack.Item>
+          <SalesIdentifierSearchControl
+            id="sales-saleid"
+            label={salesSearchText.fields.saleId}
+            placeholder={salesSearchText.placeholders.saleId}
+            title={saleIdTitle}
+            value={filters.saleId ?? ''}
+            errorMessage={displaySaleIdError}
+            maxLength={ID_FIELD_MAX_LENGTH}
+            onRenderRequiredLabel={renderSaleIdRequiredLabel}
+            onChange={handleSaleIdChange}
+            onBlur={handleSaleIdBlur}
+          />
         );
       }
 
       if (filters.searchBy === 'taskId') {
         const taskIdTitle = buildValueTooltip(filters.taskId, salesSearchText.tooltips?.taskId);
+        const renderTaskIdRequiredLabel = (): JSX.Element => renderSalesSearchLabel(salesSearchText.fields.taskId, true);
+        const handleTaskIdChange = (_event: React.FormEvent<HTMLInputElement | HTMLTextAreaElement>, value?: string): void => {
+          updateFilters('taskId', sanitizeTaskIdInput(value, ID_FIELD_MAX_LENGTH));
+        };
+        const handleTaskIdBlur = (): void => {
+          markSalesSearchFieldTouched('taskId');
+        };
         return (
-          <Stack.Item styles={{ root: { minWidth: 260 } }}>
-            <TextField
-              id="sales-taskid"
-              label={salesSearchText.fields.taskId}
-              ariaLabel={formatRequiredAriaLabel(salesSearchText.fields.taskId, true)}
-              placeholder={salesSearchText.placeholders.taskId}
-              title={taskIdTitle}
-              onRenderLabel={() => renderSalesSearchLabel(salesSearchText.fields.taskId, true)}
-              value={filters.taskId ?? ''}
-              onChange={(_, v) => updateFilters('taskId', sanitizeTaskIdInput(v, ID_FIELD_MAX_LENGTH))}
-              onBlur={() => markSalesSearchFieldTouched('taskId')}
-              errorMessage={displayTaskIdError}
-              maxLength={ID_FIELD_MAX_LENGTH}
-            />
-          </Stack.Item>
+          <SalesIdentifierSearchControl
+            id="sales-taskid"
+            label={salesSearchText.fields.taskId}
+            placeholder={salesSearchText.placeholders.taskId}
+            title={taskIdTitle}
+            value={filters.taskId ?? ''}
+            errorMessage={displayTaskIdError}
+            maxLength={ID_FIELD_MAX_LENGTH}
+            onRenderRequiredLabel={renderTaskIdRequiredLabel}
+            onChange={handleTaskIdChange}
+            onBlur={handleTaskIdBlur}
+          />
         );
       }
 
       if (filters.searchBy === 'uprn') {
         const uprnTitle = buildValueTooltip(filters.uprn, salesSearchText.tooltips?.uprn);
+        const renderUprnRequiredLabel = (): JSX.Element => renderSalesSearchLabel(salesSearchText.fields.uprn, true);
+        const handleUprnChange = (_event: React.FormEvent<HTMLInputElement | HTMLTextAreaElement>, value?: string): void => {
+          updateFilters('uprn', sanitizeDigits(value, UPRN_MAX_LENGTH));
+        };
+        const handleUprnBlur = (): void => {
+          markSalesSearchFieldTouched('uprn');
+        };
         return (
           <Stack.Item styles={{ root: { minWidth: 260 } }}>
             <>
@@ -3561,10 +3497,10 @@ export const Grid = React.memo((props: GridProps) => {
                 ariaLabel={formatRequiredAriaLabel(salesSearchText.fields.uprn, true)}
                 placeholder={salesSearchText.placeholders.uprn}
                 title={uprnTitle}
-                onRenderLabel={() => renderSalesSearchLabel(salesSearchText.fields.uprn, true)}
+                onRenderLabel={renderUprnRequiredLabel}
                 value={filters.uprn ?? ''}
-                onChange={(_, v) => updateFilters('uprn', sanitizeDigits(v, UPRN_MAX_LENGTH))}
-                onBlur={() => markSalesSearchFieldTouched('uprn')}
+                onChange={handleUprnChange}
+                onBlur={handleUprnBlur}
                 errorMessage={displayUprnError}
                 inputMode="numeric"
                 maxLength={UPRN_MAX_LENGTH}
@@ -3603,29 +3539,26 @@ export const Grid = React.memo((props: GridProps) => {
       const value = typeof val === 'string' ? val : '';
       const hintText = cfg.tooltip ?? cfg.placeholder ?? cfg.label;
       const tooltip = buildValueTooltip(value, hintText);
+      const handleTextFilterChange = (_event: React.FormEvent<HTMLInputElement | HTMLTextAreaElement>, inputValue?: string): void => {
+        const next = cfg.transform ? cfg.transform(inputValue) : inputValue ?? '';
+        updateFilters(cfg.stateKey, next);
+        if (cfg.key === 'taskId' || cfg.key === 'postcode') {
+          scheduleSearch();
+        }
+      };
       return (
-        <Stack.Item styles={{ root: { minWidth: cfg.control === 'textContains' ? 260 : 200 } }}>
-          <TextField
-            label={cfg.label}
-            placeholder={cfg.placeholder}
-            title={tooltip}
-            value={value}
-            onChange={(_, v) => {
-              const next = cfg.transform ? cfg.transform(v) : v ?? '';
-              updateFilters(cfg.stateKey, next);
-              if (cfg.key === 'taskId' || cfg.key === 'postcode') {
-                scheduleSearch();
-              }
-            }}
-            errorMessage={textError}
-            inputMode={cfg.inputMode}
-          />
-          {cfg.key === 'postcode' && showPostcodeHint && (
-            <Text variant="small" styles={{ root: { marginTop: 4 } }}>
-              {commonText.hints.postcodePartial}
-            </Text>
-          )}
-        </Stack.Item>
+        <GenericTextSearchControl
+          label={cfg.label}
+          placeholder={cfg.placeholder}
+          title={tooltip}
+          value={value}
+          onChange={handleTextFilterChange}
+          errorMessage={textError}
+          inputMode={cfg.inputMode}
+          controlType={cfg.control}
+          showPostcodeHint={cfg.key === 'postcode' && showPostcodeHint}
+          postcodeHintText={commonText.hints.postcodePartial}
+        />
       );
     }
 
@@ -3644,47 +3577,32 @@ export const Grid = React.memo((props: GridProps) => {
       const minLabel = mode === '<=' ? commonText.labels.max : commonText.labels.min;
       const minTitle = buildValueTooltip(minValue === undefined ? '' : String(minValue), minLabel);
       const maxTitle = buildValueTooltip(maxValue === undefined ? '' : String(maxValue), commonText.labels.max);
+      const handleNumericModeChange = (_event: React.FormEvent<IComboBox>, option?: IComboBoxOption): void => {
+        updateNumericFilter(numericKey, 'mode', typeof option?.key === 'string' ? option.key : mode);
+      };
+      const handleNumericPrimaryValueChange = (_event: React.FormEvent<HTMLInputElement | HTMLTextAreaElement>, value?: string): void => {
+        updateNumericFilter(numericKey, mode === '<=' ? 'max' : 'min', value ?? '');
+      };
+      const handleNumericMaxValueChange = (_event: React.FormEvent<HTMLInputElement | HTMLTextAreaElement>, value?: string): void => {
+        updateNumericFilter(numericKey, 'max', value ?? '');
+      };
       return (
-        <Stack horizontal wrap tokens={{ childrenGap: 8 }}>
-          <Stack.Item styles={{ root: { minWidth: 140 } }}>
-            <ComboBox
-              label={commonText.labels.options}
-              options={numericModeOptions}
-              title={modeTitle}
-              selectedKey={mode}
-              allowFreeform={false}
-              autoComplete="off"
-              onChange={(_, o) =>
-                updateNumericFilter(numericKey, 'mode', typeof o?.key === 'string' ? o.key : mode)
-              }
-              styles={{
-                root: { width: '100%' },
-                callout: { minWidth: 240 },
-                optionsContainer: { minWidth: 200 },
-              }}
-            />
-          </Stack.Item>
-          <Stack.Item styles={{ root: { minWidth: 140 } }}>
-            <TextField
-              label={minLabel}
-              type="number"
-              title={minTitle}
-              value={String(minValue ?? '')}
-              onChange={(_, v) => updateNumericFilter(numericKey, mode === '<=' ? 'max' : 'min', v ?? '')}
-            />
-          </Stack.Item>
-          {mode === 'between' && (
-            <Stack.Item styles={{ root: { minWidth: 140 } }}>
-              <TextField
-                label={commonText.labels.max}
-                type="number"
-                title={maxTitle}
-                value={String(maxValue ?? '')}
-                onChange={(_, v) => updateNumericFilter(numericKey, 'max', v ?? '')}
-              />
-            </Stack.Item>
-          )}
-        </Stack>
+        <GenericNumericSearchControl
+          optionsLabel={commonText.labels.options}
+          options={numericModeOptions}
+          modeTitle={modeTitle}
+          selectedMode={mode}
+          minLabel={minLabel}
+          minTitle={minTitle}
+          minValue={String(minValue ?? '')}
+          maxLabel={commonText.labels.max}
+          maxTitle={maxTitle}
+          maxValue={String(maxValue ?? '')}
+          showMaxInput={mode === 'between'}
+          onModeChange={handleNumericModeChange}
+          onMinChange={handleNumericPrimaryValueChange}
+          onMaxChange={handleNumericMaxValueChange}
+        />
       );
     }
 
@@ -3695,41 +3613,28 @@ export const Grid = React.memo((props: GridProps) => {
       const isDateRangeInvalidOrder = Boolean(from && to && to < from);
       const fromTitle = buildValueTooltip(from ? formatDisplayDate(from) : '', `${cfg.label} start`);
       const toTitle = buildValueTooltip(to ? formatDisplayDate(to) : '', `${cfg.label} end`);
+      const handleDateRangeFromSelect = (date: Date | null | undefined): void => {
+        updateDateRange(cfg.stateKey as DateFilterKey, 'from', date);
+      };
+      const handleDateRangeToSelect = (date: Date | null | undefined): void => {
+        updateDateRange(cfg.stateKey as DateFilterKey, 'to', date);
+      };
       return (
-        <Stack horizontal tokens={{ childrenGap: 8 }} wrap>
-          <Stack.Item styles={{ root: { minWidth: 160 } }}>
-            <DatePicker
-              label={`${cfg.label} start`}
-              firstDayOfWeek={DayOfWeek.Monday}
-              strings={dateStrings}
-              value={from}
-              formatDate={formatDisplayDate}
-              allowTextInput
-              parseDateFromString={parseDateInput}
-              title={fromTitle}
-              onSelectDate={(d) => updateDateRange(cfg.stateKey as DateFilterKey, 'from', d)}
-            />
-          </Stack.Item>
-          <Stack.Item styles={{ root: { minWidth: 160 } }}>
-            <DatePicker
-              label={`${cfg.label} end`}
-              firstDayOfWeek={DayOfWeek.Monday}
-              strings={dateStrings}
-              value={to}
-              formatDate={formatDisplayDate}
-              allowTextInput
-              parseDateFromString={parseDateInput}
-              minDate={from}
-              title={toTitle}
-              onSelectDate={(d) => updateDateRange(cfg.stateKey as DateFilterKey, 'to', d)}
-            />
-            {isDateRangeInvalidOrder && (
-              <Text variant="small" styles={{ root: { marginTop: 6, color: '#d4351c' } }} role="alert">
-                End date must be on or after start date.
-              </Text>
-            )}
-          </Stack.Item>
-        </Stack>
+        <GenericDateRangeSearchControl
+          startLabel={`${cfg.label} start`}
+          endLabel={`${cfg.label} end`}
+          from={from}
+          to={to}
+          fromTitle={fromTitle}
+          toTitle={toTitle}
+          dateStrings={dateStrings}
+          formatDate={formatDisplayDate}
+          parseDateFromString={(dateStr) => parseDateInput(dateStr)}
+          invalidOrder={isDateRangeInvalidOrder}
+          invalidOrderMessage="End date must be on or after start date."
+          onFromSelect={handleDateRangeFromSelect}
+          onToSelect={handleDateRangeToSelect}
+        />
       );
     }
 
@@ -3749,93 +3654,88 @@ export const Grid = React.memo((props: GridProps) => {
         options,
         cfg.tooltip ?? cfg.placeholder ?? cfg.label,
       );
+      const commitSearchSingleSelect = (event: React.KeyboardEvent<IComboBox>, inputValue: string): void => {
+        const resolvedOptions = filterComboOptions(options, inputValue);
+        commitComboSingleSelect(event, inputValue, resolvedOptions, selectedKey, (opt) => {
+          updateSingleSelect(cfg.stateKey, opt);
+          setComboEditingFor(cfg.key, false);
+          setComboSearchTextFor(cfg.key, '');
+        }, cfg.key);
+      };
+      const handleSearchSingleSelectChange = (
+        event: React.FormEvent<IComboBox>,
+        opt?: IComboBoxOption,
+        _index?: number,
+        value?: string,
+      ): void => {
+        if (consumeComboIgnoreNextChange(cfg.key, opt)) return;
+        if (shouldIgnoreComboChange(cfg.key, opt)) return;
+        const searchValue = typeof value === 'string' ? value : searchText;
+        const resolvedOptions = filterComboOptions(options, searchValue);
+        const resolvedKey = opt?.key ?? resolveComboKeyFromSearch(resolvedOptions, searchValue, selectedKey);
+        if (!resolvedKey) return;
+        setComboCancelNextDismiss(cfg.key);
+        updateFilters(cfg.stateKey, String(resolvedKey));
+        setComboEditingFor(cfg.key, false);
+        setComboSearchTextFor(cfg.key, '');
+      };
+      const handleSearchSingleSelectKeyDownCapture = (event: React.KeyboardEvent<IComboBox>): void => {
+        if (event.key === 'Escape') {
+          setComboCancelNextDismiss(cfg.key);
+          return;
+        }
+        const isEnter = event.key === 'Enter' || event.key === 'NumpadEnter';
+        if (!isEnter) return;
+        const inputValue = getComboInputValue(event) || searchText;
+        if (!inputValue.trim()) return;
+        commitSearchSingleSelect(event, inputValue);
+      };
+      const handleSearchSingleSelectInputValueChange = (value: string): void => {
+        const next = normalizeSingleSelectSearchText(value, options);
+        if (!next) {
+          setComboEditingFor(cfg.key, false);
+          setComboSearchTextFor(cfg.key, '');
+          return;
+        }
+        setComboEditingFor(cfg.key, true);
+        setComboSearchTextFor(cfg.key, next);
+      };
+      const handleSearchSingleSelectKeyDown = (event: React.KeyboardEvent<IComboBox>): void => {
+        if (event.defaultPrevented) return;
+        const inputValue = getComboInputValue(event) || searchText;
+        if (!inputValue.trim()) return;
+        commitSearchSingleSelect(event, inputValue);
+      };
+      const handleSearchSingleSelectDismissed = (): void => {
+        if (!consumeComboCancelNextDismiss(cfg.key)) {
+          commitComboSingleSelectOnDismiss(
+            searchText,
+            options,
+            selectedKey,
+            (opt) => {
+              updateSingleSelect(cfg.stateKey, opt);
+            },
+          );
+        }
+        setComboEditingFor(cfg.key, false);
+        setComboSearchTextFor(cfg.key, '');
+      };
       return (
-        <Stack.Item styles={{ root: { minWidth: 200 } }}>
-          <ComboBox
-            label={cfg.label}
-            aria-describedby={buildAriaDescribedBy(disambiguationHint ? hintId : undefined)}
-            title={singleSelectTitle}
-            options={filteredOptions}
-            selectedKey={isEditing ? null : selectedKey}
-            allowFreeform={false}
-            allowFreeInput
-            autoComplete="off"
-            text={isEditing ? searchText : undefined}
-            onChange={(event, opt, _index, value) => {
-              if (consumeComboIgnoreNextChange(cfg.key, opt)) return;
-              if (shouldIgnoreComboChange(cfg.key, opt)) return;
-              const searchValue = typeof value === 'string' ? value : searchText;
-              const resolvedOptions = filterComboOptions(options, searchValue);
-              const resolvedKey = opt?.key ?? resolveComboKeyFromSearch(resolvedOptions, searchValue, selectedKey);
-              if (!resolvedKey) return;
-              setComboCancelNextDismiss(cfg.key);
-              updateFilters(cfg.stateKey, String(resolvedKey));
-              setComboEditingFor(cfg.key, false);
-              setComboSearchTextFor(cfg.key, '');
-            }}
-            onKeyDownCapture={(event) => {
-              if (event.key === 'Escape') {
-                setComboCancelNextDismiss(cfg.key);
-                return;
-              }
-              const isEnter = event.key === 'Enter' || event.key === 'NumpadEnter';
-              if (!isEnter) return;
-              const inputValue = getComboInputValue(event) || searchText;
-              if (!inputValue.trim()) return;
-              const resolvedOptions = filterComboOptions(options, inputValue);
-              commitComboSingleSelect(event, inputValue, resolvedOptions, selectedKey, (opt) => {
-                updateSingleSelect(cfg.stateKey, opt);
-                setComboEditingFor(cfg.key, false);
-                setComboSearchTextFor(cfg.key, '');
-              }, cfg.key);
-            }}
-            onInputValueChange={(value) => {
-              const next = normalizeSingleSelectSearchText(value, options);
-              if (!next) {
-                setComboEditingFor(cfg.key, false);
-                setComboSearchTextFor(cfg.key, '');
-                return;
-              }
-              setComboEditingFor(cfg.key, true);
-              setComboSearchTextFor(cfg.key, next);
-            }}
-            onKeyDown={(event) => {
-              if (event.defaultPrevented) return;
-              const inputValue = getComboInputValue(event) || searchText;
-              if (!inputValue.trim()) return;
-              const resolvedOptions = filterComboOptions(options, inputValue);
-              commitComboSingleSelect(event, inputValue, resolvedOptions, selectedKey, (opt) => {
-                updateSingleSelect(cfg.stateKey, opt);
-                setComboEditingFor(cfg.key, false);
-                setComboSearchTextFor(cfg.key, '');
-              }, cfg.key);
-            }}
-            onMenuDismissed={() => {
-              if (!consumeComboCancelNextDismiss(cfg.key)) {
-                commitComboSingleSelectOnDismiss(
-                  searchText,
-                  options,
-                  selectedKey,
-                  (opt) => {
-                    updateSingleSelect(cfg.stateKey, opt);
-                  },
-                );
-              }
-              setComboEditingFor(cfg.key, false);
-              setComboSearchTextFor(cfg.key, '');
-            }}
-            styles={{
-              root: { width: '100%' },
-              callout: { minWidth: 240 },
-              optionsContainer: { minWidth: 200 },
-            }}
-          />
-          {disambiguationHint && (
-            <Text id={hintId} variant="small" styles={{ root: { marginTop: 4 } }}>
-              {disambiguationHint}
-            </Text>
-          )}
-        </Stack.Item>
+        <GenericSingleSelectControl
+          label={cfg.label}
+          title={singleSelectTitle}
+          ariaDescribedBy={buildAriaDescribedBy(disambiguationHint ? hintId : undefined)}
+          options={filteredOptions}
+          selectedKey={isEditing ? null : selectedKey}
+          isEditing={isEditing}
+          searchText={searchText}
+          disambiguationHint={disambiguationHint}
+          onChange={handleSearchSingleSelectChange}
+          onKeyDownCapture={handleSearchSingleSelectKeyDownCapture}
+          onInputValueChange={handleSearchSingleSelectInputValueChange}
+          onKeyDown={handleSearchSingleSelectKeyDown}
+          onMenuDismissed={handleSearchSingleSelectDismissed}
+        />
       );
     }
 
@@ -3872,59 +3772,52 @@ export const Grid = React.memo((props: GridProps) => {
         setComboIgnoreNextInput(cfg.key);
         setComboSearchTextFor(cfg.key, '');
       };
+      const handleSearchMultiSelectChange = (_event: React.FormEvent<IComboBox>, opt?: IComboBoxOption): void => {
+        handleMultiSelectChange(opt);
+      };
+      const handleSearchMultiInputValueChange = (value: string): void => {
+        if (consumeComboIgnoreNextInput(cfg.key)) {
+          return;
+        }
+        setComboSearchTextFor(
+          cfg.key,
+          normalizeMultiSelectSearchText(
+            value,
+            options,
+            selectedKeys,
+          ),
+        );
+      };
+      const handleSearchMultiKeyDown = (event: React.KeyboardEvent<IComboBox>): void => {
+        if (!searchText.trim()) return;
+        commitPrefilterMultiSelect(
+          event,
+          searchText,
+          filteredOptions,
+          selectedKeys,
+          (_event, opt) => handleMultiSelectChange(opt),
+          cfg.key,
+          (value) => setComboSearchTextFor(cfg.key, value),
+        );
+      };
+      const handleSearchMultiMenuDismissed = (): void => {
+        setComboSearchTextFor(cfg.key, '');
+      };
       return (
-        <Stack.Item styles={{ root: { minWidth: 200 } }}>
-          <ComboBox
-            label={cfg.label}
-            aria-describedby={buildAriaDescribedBy(disambiguationHint ? hintId : undefined)}
-            multiSelect
-            allowFreeform={false}
-            allowFreeInput
-            autoComplete="on"
-            text={searchText.trim() ? searchText : undefined}
-            persistMenu
-            options={filteredOptions}
-            selectedKey={selectedKeys}
-            title={multiSelectTitle}
-            onChange={(_, opt) => handleMultiSelectChange(opt)}
-            onInputValueChange={(value) => {
-              if (consumeComboIgnoreNextInput(cfg.key)) {
-                return;
-              }
-              setComboSearchTextFor(
-                cfg.key,
-                normalizeMultiSelectSearchText(
-                  value,
-                  options,
-                  selectedKeys,
-                ),
-              );
-            }}
-            onKeyDown={(event) => {
-              if (!searchText.trim()) return;
-              commitPrefilterMultiSelect(
-                event,
-                searchText,
-                filteredOptions,
-                selectedKeys,
-                (_, opt) => handleMultiSelectChange(opt),
-                cfg.key,
-                (value) => setComboSearchTextFor(cfg.key, value),
-              );
-            }}
-            onMenuDismissed={() => setComboSearchTextFor(cfg.key, '')}
-            styles={{
-              root: { width: '100%' },
-              callout: { minWidth: 240 },
-              optionsContainer: { minWidth: 200 },
-            }}
-          />
-          {disambiguationHint && (
-            <Text id={hintId} variant="small" styles={{ root: { marginTop: 4 } }}>
-              {disambiguationHint}
-            </Text>
-          )}
-        </Stack.Item>
+        <GenericMultiSelectControl
+          label={cfg.label}
+          ariaDescribedBy={buildAriaDescribedBy(disambiguationHint ? hintId : undefined)}
+          title={multiSelectTitle}
+          options={filteredOptions}
+          selectedKeys={selectedKeys}
+          searchText={searchText}
+          disambiguationHint={disambiguationHint}
+          hintId={hintId}
+          onChange={handleSearchMultiSelectChange}
+          onInputValueChange={handleSearchMultiInputValueChange}
+          onKeyDown={handleSearchMultiKeyDown}
+          onMenuDismissed={handleSearchMultiMenuDismissed}
+        />
       );
     }
 
@@ -4632,6 +4525,50 @@ export const Grid = React.memo((props: GridProps) => {
     }
   }, [markPassedQcLoading, onMarkPassedQc]);
 
+  const onMarkPassedQcActionClick = React.useCallback((): void => {
+    handleMarkPassedQcClick().catch(() => undefined);
+  }, [handleMarkPassedQcClick]);
+
+  const handleAssignConfirmClick = React.useCallback((): void => {
+    if (!selectedAssignUser) {
+      return;
+    }
+    handleAssignClick(selectedAssignUser).catch(() => undefined);
+  }, [handleAssignClick, selectedAssignUser]);
+
+  const renderAssignSelectCell = React.useCallback((item: AssignUser): JSX.Element | null => {
+    if (item.id === ASSIGN_LOADING_ROW_ID) {
+      return null;
+    }
+
+    const disabled = assignLoading || isAssignUserDisabled(item.id);
+    const disabledReason = assignLoading ? assignTasksText.loadingText : assignAlreadyAssignedReason;
+    const fullName = `${item.firstName ?? ''} ${item.lastName ?? ''}`.trim();
+    const selectLabel = disabled
+      ? `Select ${fullName}. Unavailable. ${disabledReason}`
+      : `Select ${fullName}`;
+
+    const handleChange = (): void => {
+      if (disabled) {
+        return;
+      }
+      handleAssignUserSelect(item.id);
+    };
+
+    return (
+      <input
+        className={joinClassNames('voa-assign-radio', disabled ? 'voa-focusable-disabled-radio' : undefined)}
+        type="radio"
+        name="assign-user"
+        aria-label={selectLabel}
+        disabled={disabled}
+        checked={assignSelectedUserId === item.id}
+        title={disabled ? disabledReason : undefined}
+        onChange={handleChange}
+      />
+    );
+  }, [assignAlreadyAssignedReason, assignLoading, assignSelectedUserId, assignTasksText.loadingText, handleAssignUserSelect, isAssignUserDisabled]);
+
   const assignColumns = React.useMemo<IColumn[]>(
     () => [
       {
@@ -4640,49 +4577,33 @@ export const Grid = React.memo((props: GridProps) => {
         ariaLabel: 'Select user',
         minWidth: 40,
         maxWidth: 40,
-        onRender: (item: AssignUser) => (
-          item.id === ASSIGN_LOADING_ROW_ID
-            ? null
-            : (() => {
-              const disabled = assignLoading || isAssignUserDisabled(item.id);
-              const disabledReason = assignLoading ? assignLoadingText : assignAlreadyAssignedReason;
-              const fullName = `${item.firstName ?? ''} ${item.lastName ?? ''}`.trim();
-              const selectLabel = disabled
-                ? `Select ${fullName}. Unavailable. ${disabledReason}`
-                : `Select ${fullName}`;
-              return (
-              <input
-                className={joinClassNames('voa-assign-radio', disabled ? 'voa-focusable-disabled-radio' : undefined)}
-                type="radio"
-                name="assign-user"
-                aria-label={selectLabel}
-                disabled={disabled}
-                checked={assignSelectedUserId === item.id}
-                title={disabled ? disabledReason : undefined}
-                onChange={() => {
-                  if (disabled) return;
-                  handleAssignUserSelect(item.id);
-                }}
-              />
-              );
-            })()
-        ),
+        onRender: renderAssignSelectCell,
       },
       { key: 'firstName', name: 'First Name', fieldName: 'firstName', minWidth: 140, isResizable: true },
       { key: 'lastName', name: 'Last Name', fieldName: 'lastName', minWidth: 140, isResizable: true },
       { key: 'email', name: 'Email', fieldName: 'email', minWidth: 240, isResizable: true },
     ],
-    [assignAlreadyAssignedReason, assignLoading, assignSelectedUserId, handleAssignUserSelect, isAssignUserDisabled],
+    [renderAssignSelectCell],
   );
+
+  const isAssignRowDisabled = React.useCallback((record?: AssignUser): boolean => {
+    if (!record || record.id === ASSIGN_LOADING_ROW_ID) {
+      return false;
+    }
+    return isAssignUserDisabled(record.id);
+  }, [isAssignUserDisabled]);
+
   const onRenderAssignUserRow = React.useCallback(
     (
       rowProps?: IDetailsRowProps,
       defaultRender?: (props?: IDetailsRowProps) => JSX.Element | null,
     ): JSX.Element | null => {
-      if (!rowProps || !defaultRender) return null;
+      if (!rowProps || !defaultRender) {
+        return null;
+      }
+
       const record = rowProps.item as AssignUser | undefined;
-      const isLoadingRow = record?.id === ASSIGN_LOADING_ROW_ID;
-      const isDisabled = !!record && !isLoadingRow && isAssignUserDisabled(record.id);
+      const isDisabled = isAssignRowDisabled(record);
       const nextProps = {
         ...rowProps,
         className: joinClassNames(
@@ -4695,7 +4616,7 @@ export const Grid = React.memo((props: GridProps) => {
       }
       return defaultRender(nextProps);
     },
-    [isAssignUserDisabled],
+    [isAssignRowDisabled],
   );
 
   const handleAssignItemInvoked = React.useCallback((item?: AssignUser) => {
@@ -4727,6 +4648,98 @@ export const Grid = React.memo((props: GridProps) => {
   const prefilterWorkThatHint = comboEditing.prefilterWorkThat
     ? getComboDisambiguationHint(filteredPrefilterWorkThatOptions, prefilterWorkThatSearch)
     : undefined;
+  const resolvePrefilterWorkThatOptions = (searchValue: string): IComboBoxOption[] => {
+    return filterComboOptions(
+      prefilterWorkThatOptions as IComboBoxOption[],
+      searchValue,
+    );
+  };
+  const commitPrefilterWorkThatSingleSelect = (event: React.KeyboardEvent<IComboBox>, inputValue: string): void => {
+    const resolvedOptions = resolvePrefilterWorkThatOptions(inputValue);
+    commitComboSingleSelect(
+      event,
+      inputValue,
+      resolvedOptions,
+      prefilters.workThat,
+      (opt) => {
+        onPrefilterWorkThatChange(event as unknown as React.FormEvent<IComboBox>, opt);
+        setComboEditingFor('prefilterWorkThat', false);
+        setPrefilterWorkThatSearch('');
+      },
+      'prefilterWorkThat',
+    );
+  };
+  const handlePrefilterWorkThatComboChange = (
+    event: React.FormEvent<IComboBox>,
+    option?: IComboBoxOption,
+    _index?: number,
+    value?: string,
+  ): void => {
+    if (consumeComboIgnoreNextChange('prefilterWorkThat', option)) return;
+    if (shouldIgnoreComboChange('prefilterWorkThat', option)) return;
+    const searchValue = typeof value === 'string' ? value : prefilterWorkThatSearch;
+    const resolvedOptions = resolvePrefilterWorkThatOptions(searchValue);
+    const resolvedKey = option?.key ?? resolveComboKeyFromSearch(resolvedOptions, searchValue, prefilters.workThat);
+    if (!resolvedKey) return;
+    setComboCancelNextDismiss('prefilterWorkThat');
+    onPrefilterWorkThatChange(event, { key: resolvedKey } as IComboBoxOption);
+    setComboEditingFor('prefilterWorkThat', false);
+    setPrefilterWorkThatSearch('');
+  };
+  const handlePrefilterWorkThatComboKeyDownCapture = (event: React.KeyboardEvent<IComboBox>): void => {
+    if (event.key === 'Escape') {
+      setComboCancelNextDismiss('prefilterWorkThat');
+      return;
+    }
+    const isEnter = event.key === 'Enter' || event.key === 'NumpadEnter';
+    if (!isEnter) return;
+    const inputValue = getComboInputValue(event) || prefilterWorkThatSearch;
+    if (!inputValue.trim()) return;
+    commitPrefilterWorkThatSingleSelect(event, inputValue);
+  };
+  const handlePrefilterWorkThatComboInputValueChange = (value: string): void => {
+    const next = normalizeSingleSelectSearchText(
+      value,
+      prefilterWorkThatOptions as IComboBoxOption[],
+    );
+    if (!next) {
+      setComboEditingFor('prefilterWorkThat', false);
+      setPrefilterWorkThatSearch('');
+      return;
+    }
+    setComboEditingFor('prefilterWorkThat', true);
+    setPrefilterWorkThatSearch(next);
+  };
+  const handlePrefilterWorkThatComboKeyDown = (event: React.KeyboardEvent<IComboBox>): void => {
+    if (event.defaultPrevented) return;
+    const inputValue = getComboInputValue(event) || prefilterWorkThatSearch;
+    if (!inputValue.trim()) return;
+    const isEnter = event.key === 'Enter' || event.key === 'NumpadEnter';
+    if (isEnter) {
+      const enabledOptions = filteredPrefilterWorkThatOptions.filter((opt) => !opt.disabled);
+      if (enabledOptions.length === 1) {
+        event.preventDefault();
+        setComboCancelNextDismiss('prefilterWorkThat');
+        onPrefilterWorkThatChange(event as unknown as React.FormEvent<IComboBox>, enabledOptions[0]);
+        setComboEditingFor('prefilterWorkThat', false);
+        setPrefilterWorkThatSearch('');
+        return;
+      }
+    }
+    commitPrefilterWorkThatSingleSelect(event, inputValue);
+  };
+  const handlePrefilterWorkThatComboDismissed = (): void => {
+    if (!consumeComboCancelNextDismiss('prefilterWorkThat')) {
+      commitComboSingleSelectOnDismiss(
+        prefilterWorkThatSearch,
+        prefilterWorkThatOptions as IComboBoxOption[],
+        prefilters.workThat,
+        (opt) => onPrefilterWorkThatChange({} as React.FormEvent<IComboBox>, opt),
+      );
+    }
+    setComboEditingFor('prefilterWorkThat', false);
+    setPrefilterWorkThatSearch('');
+  };
   React.useEffect(() => {
     if ((!isCaseworkerView && !isQcView) || prefilters.workThat) return;
     const firstOption = prefilterWorkThatOptions.find((opt) => opt?.key !== undefined);
@@ -4784,6 +4797,72 @@ export const Grid = React.memo((props: GridProps) => {
     managerBillingSelectedKeys,
     managerBillingAuthorityOptions as IComboBoxOption[],
   );
+  const handlePrefilterBillingComboChange = (event: React.FormEvent<IComboBox>, option?: IComboBoxOption): void => {
+    if (!option) return;
+    onPrefilterBillingChange(event, option);
+    setComboIgnoreNextInput('prefilterBilling');
+    setManagerBillingSearch('');
+  };
+  const handlePrefilterBillingComboKeyDown = (event: React.KeyboardEvent<IComboBox>): void => {
+    if (!managerBillingSearch.trim()) return;
+    commitPrefilterMultiSelect(
+      event,
+      managerBillingSearch,
+      managerBillingAuthorityOptions as IComboBoxOption[],
+      managerBillingSelectedKeys.map((key) => String(key)),
+      onPrefilterBillingChange,
+      'prefilterBilling',
+      setManagerBillingSearch,
+    );
+  };
+  const handlePrefilterBillingComboInputValueChange = (value: string): void => {
+    if (consumeComboIgnoreNextInput('prefilterBilling')) {
+      return;
+    }
+    setManagerBillingSearch(
+      normalizeMultiSelectSearchText(
+        value,
+        managerBillingAuthorityOptions as IComboBoxOption[],
+        managerBillingSelectedKeys.map((key) => String(key)),
+      ),
+    );
+  };
+  const handlePrefilterBillingComboDismissed = (): void => {
+    setManagerBillingSearch('');
+  };
+  const handlePrefilterUserComboChange = (event: React.FormEvent<IComboBox>, option?: IComboBoxOption): void => {
+    if (!option) return;
+    onPrefilterCaseworkerChange(event, option);
+    setComboIgnoreNextInput('prefilterCaseworker');
+    setCaseworkerSearch('');
+  };
+  const handlePrefilterUserComboKeyDown = (event: React.KeyboardEvent<IComboBox>): void => {
+    if (!caseworkerSearch.trim()) return;
+    commitPrefilterMultiSelect(
+      event,
+      caseworkerSearch,
+      prefilterUserOptions as IComboBoxOption[],
+      caseworkerSelectedKeys.map((key) => String(key)),
+      onPrefilterCaseworkerChange,
+      'prefilterCaseworker',
+      setCaseworkerSearch,
+    );
+  };
+  const handlePrefilterUserComboInputValueChange = (value: string): void => {
+    if (consumeComboIgnoreNextInput('prefilterCaseworker')) {
+      return;
+    }
+    setCaseworkerSearch(
+      normalizeMultiSelectSearchText(
+        value,
+        prefilterUserOptions as IComboBoxOption[],
+        caseworkerSelectedKeys.map((key) => String(key)),
+      ),
+    );
+  };
+  const handlePrefilterUserComboDismissed = (): void => {
+    setCaseworkerSearch('');
+  };
   const prefilterFromTitle = buildValueTooltip(
     formatDisplayDate(parseISODate(prefilters.completedFrom)),
     prefilterTooltips.fromDate,
@@ -4829,6 +4908,20 @@ export const Grid = React.memo((props: GridProps) => {
   const selectFirstSuffix = commonText.selectionControls.selectFirstSuffix;
   const selectFirstButtonText = commonText.selectionControls.selectFirstButtonText;
   const selectFirstHelperText = commonText.selectionControls.selectFirstHelperText;
+  const handleSelectFirstInputChange = (_event: React.FormEvent<HTMLInputElement | HTMLTextAreaElement>, value?: string): void => {
+    if (selectionControlsDisabled) return;
+    setSelectFirstInput(value ?? '');
+    if (selectFirstError) {
+      setSelectFirstError(undefined);
+    }
+  };
+  const handleSelectFirstInputKeyDown = (event: React.KeyboardEvent<HTMLInputElement | HTMLTextAreaElement>): void => {
+    if (selectionControlsDisabled) return;
+    if (event.key === 'Enter') {
+      event.preventDefault();
+      selectFirstOnPage();
+    }
+  };
   const assignLoadingText = assignTasksText.loadingText;
   const selectionControlsDisabled = pageItemCount === 0;
   const selectionControlsUnavailableReason = selectionControlsDisabled ? 'No rows are available on this page.' : undefined;
@@ -5033,7 +5126,7 @@ export const Grid = React.memo((props: GridProps) => {
         key: 'markPassedQc',
         text: markPassedQcText.buttonText,
         iconProps: { iconName: 'CompletedSolid' },
-        onClick: () => { void handleMarkPassedQcClick(); },
+        onClick: onMarkPassedQcActionClick,
       });
     }
     return items;
@@ -5054,6 +5147,7 @@ export const Grid = React.memo((props: GridProps) => {
     markPassedQcLoading,
     markPassedQcText.buttonText,
     microViewport,
+    onMarkPassedQcActionClick,
     onViewSelected,
     openCreateTaskModal,
     openAssignPanel,
@@ -5197,6 +5291,12 @@ export const Grid = React.memo((props: GridProps) => {
       : normalizedFilterColumnName;
 
     const renderControl = () => {
+      const handleMenuTextFilterChange = (_event: React.FormEvent<HTMLInputElement | HTMLTextAreaElement>, value?: string): void => {
+        const next = isTaskIdField ? sanitizeTaskIdInput(value, ID_FIELD_MAX_LENGTH) : (value ?? '');
+        setMenuFilterValue(next);
+        setMenuFilterText(next);
+        if (menuFilterError) setMenuFilterError(undefined);
+      };
       if (!cfg) {
         return (
           <>
@@ -5204,12 +5304,7 @@ export const Grid = React.memo((props: GridProps) => {
               label={`Filter ${filterColumnName}`}
               placeholder={`Filter ${filterColumnName}`}
               value={textVal}
-              onChange={(_, v) => {
-                const next = isTaskIdField ? sanitizeTaskIdInput(v, ID_FIELD_MAX_LENGTH) : (v ?? '');
-                setMenuFilterValue(next);
-                setMenuFilterText(next);
-                if (menuFilterError) setMenuFilterError(undefined);
-              }}
+              onChange={handleMenuTextFilterChange}
               errorMessage={(isPostcodeField || isTaskIdField) ? menuFilterError : undefined}
             />
             {isTaskIdField && (
@@ -5230,12 +5325,7 @@ export const Grid = React.memo((props: GridProps) => {
                   label={`Filter ${filterColumnName}`}
                   placeholder={`Filter ${filterColumnName}`}
                   value={textVal}
-                  onChange={(_, v) => {
-                    const next = isTaskIdField ? sanitizeTaskIdInput(v, ID_FIELD_MAX_LENGTH) : (v ?? '');
-                    setMenuFilterValue(next);
-                    setMenuFilterText(next);
-                    if (menuFilterError) setMenuFilterError(undefined);
-                  }}
+                  onChange={handleMenuTextFilterChange}
                   errorMessage={(isPostcodeField || isTaskIdField) ? menuFilterError : undefined}
                 />
                 {isTaskIdField && (
@@ -5250,315 +5340,330 @@ export const Grid = React.memo((props: GridProps) => {
                 )}
               </>
             );
-          case 'singleSelect':
-            return (() => {
-              const menuFilterKey = `menuFilter-${menuState.column.key ?? menuState.column.fieldName ?? 'column'}`;
-              const isEditing = comboEditing[menuFilterKey] === true;
-              const menuHint = isEditing ? getComboDisambiguationHint(filteredColumnOptions, menuFilterSearch) : undefined;
-              const menuHintId = `${menuFilterKey}-hint`;
-              return (
-                <>
+          case 'singleSelect': {
+            const menuFilterKey = `menuFilter-${menuState.column.key ?? menuState.column.fieldName ?? 'column'}`;
+            const isEditing = comboEditing[menuFilterKey] === true;
+            const menuHint = isEditing ? getComboDisambiguationHint(filteredColumnOptions, menuFilterSearch) : undefined;
+            const menuHintId = `${menuFilterKey}-hint`;
+            const commitMenuSingleSelect = (event: React.KeyboardEvent<IComboBox>, inputValue: string): void => {
+              const resolvedOptions = filterComboOptions(options, inputValue);
+              commitComboSingleSelect(
+                event,
+                inputValue,
+                resolvedOptions,
+                typeof menuFilterValue === 'string' ? menuFilterValue : undefined,
+                (opt) => {
+                  setMenuFilterValue((opt?.key as string) ?? '');
+                  setComboEditingFor(menuFilterKey, false);
+                  setMenuFilterSearch('');
+                },
+                menuFilterKey,
+              );
+            };
+            const handleMenuSingleSelectChange = (
+              _event: React.FormEvent<IComboBox>,
+              opt?: IComboBoxOption,
+              _index?: number,
+              value?: string,
+            ): void => {
+              if (consumeComboIgnoreNextChange(menuFilterKey, opt)) return;
+              if (shouldIgnoreComboChange(menuFilterKey, opt)) return;
+              const searchValue = typeof value === 'string' ? value : menuFilterSearch;
+              const resolvedOptions = filterComboOptions(options, searchValue);
+              const resolvedKey = opt?.key ?? resolveComboKeyFromSearch(
+                resolvedOptions,
+                searchValue,
+                typeof menuFilterValue === 'string' ? menuFilterValue : undefined,
+              );
+              if (!resolvedKey) return;
+              setMenuFilterValue(String(resolvedKey));
+              setComboEditingFor(menuFilterKey, false);
+              setMenuFilterSearch('');
+            };
+            const handleMenuSingleSelectKeyDownCapture = (event: React.KeyboardEvent<IComboBox>): void => {
+              const isEnter = event.key === 'Enter' || event.key === 'NumpadEnter';
+              if (!isEnter) return;
+              const inputValue = getComboInputValue(event) || menuFilterSearch;
+              if (!inputValue.trim()) return;
+              commitMenuSingleSelect(event, inputValue);
+            };
+            const handleMenuSingleSelectInputValueChange = (value: string): void => {
+              const next = normalizeSingleSelectSearchText(
+                value,
+                options,
+              );
+              if (!next) {
+                setComboEditingFor(menuFilterKey, false);
+                setMenuFilterSearch('');
+                return;
+              }
+              setComboEditingFor(menuFilterKey, true);
+              setMenuFilterSearch(next);
+            };
+            const handleMenuSingleSelectKeyDown = (event: React.KeyboardEvent<IComboBox>): void => {
+              if (event.defaultPrevented) return;
+              const inputValue = getComboInputValue(event) || menuFilterSearch;
+              if (!inputValue.trim()) return;
+              commitMenuSingleSelect(event, inputValue);
+            };
+            const handleMenuSingleSelectDismissed = (): void => {
+              setComboEditingFor(menuFilterKey, false);
+              setMenuFilterSearch('');
+            };
+            return (
+              <>
+                <ComboBox
+                  label={`Filter ${filterColumnName}`}
+                  placeholder={`Select ${filterColumnName}`}
+                  aria-describedby={buildAriaDescribedBy(menuHint ? menuHintId : undefined)}
+                  options={filteredColumnOptions}
+                  allowFreeform={false}
+                  allowFreeInput
+                  autoComplete="off"
+                  text={isEditing ? menuFilterSearch : undefined}
+                  selectedKey={isEditing ? null : typeof menuFilterValue === 'string' ? menuFilterValue : undefined}
+                  calloutProps={{ directionalHint: DirectionalHint.bottomLeftEdge, directionalHintFixed: true }}
+                  onChange={handleMenuSingleSelectChange}
+                  onKeyDownCapture={handleMenuSingleSelectKeyDownCapture}
+                  onInputValueChange={handleMenuSingleSelectInputValueChange}
+                  onKeyDown={handleMenuSingleSelectKeyDown}
+                  onMenuDismissed={handleMenuSingleSelectDismissed}
+                  styles={comboBoxStyles240x200}
+                />
+                {menuHint && (
+                  <Text id={menuHintId} variant="small" styles={{ root: { marginTop: 4 } }}>
+                    {menuHint}
+                  </Text>
+                )}
+              </>
+            );
+          }
+          case 'multiSelect': {
+            const selectAllValues = cfg.selectAllValues ?? [];
+            const hasAll = hasAllOption(options);
+            const hasOther = hasOtherOption(options);
+            const isSingleAll = selectAllValues.length === 1
+              && String(selectAllValues[0] ?? '').toUpperCase() === 'ALL';
+            const hasSelectAll = selectAllValues.length > 0 && (isSingleAll || (!hasAll && !hasOther));
+            const allKey = isSingleAll ? (resolveAllOptionKey(options) ?? String(selectAllValues[0] ?? 'ALL')) : '';
+            const selectAllKey = hasSelectAll
+              ? (isSingleAll ? allKey : SELECT_ALL_KEY)
+              : '';
+            const menuFilterKey = `menuFilter-${menuState.column.key ?? menuState.column.fieldName ?? 'column'}`;
+            const selectedKeys = Array.isArray(menuFilterValue) ? menuFilterValue.map((key) => String(key)) : [];
+            const rawSearch = menuFilterSearch ?? '';
+            const normalizedSearch = normalizeMultiSelectSearchText(
+              rawSearch,
+              options,
+              selectedKeys,
+            );
+            const filteredMultiOptions = filterComboOptions(
+              options,
+              normalizedSearch,
+            );
+            const exactMatchKey = normalizedSearch.trim()
+              ? resolveComboOptionKey(options, normalizedSearch)
+              : undefined;
+            const highlightBorder = theme.semanticColors.focusBorder ?? theme.palette.themePrimary;
+            const resetMenuFilterSearch = (): void => {
+              setMenuFilterSearch('');
+            };
+            const applySummaryOperatorChange = (opt?: IComboBoxOption): void => {
+              const key = String(opt?.key ?? 'contains');
+              setMenuSummaryOperator(key === 'notContains' ? 'notContains' : key === 'eq' ? 'eq' : 'contains');
+              setMenuFilterValue('');
+              resetMenuFilterSearch();
+            };
+            const handleMultiSelectInputValueChange = (value?: string): void => {
+              if (consumeComboIgnoreNextInput(menuFilterKey)) {
+                return;
+              }
+              const next = normalizeMultiSelectSearchText(
+                value,
+                options,
+                selectedKeys,
+              );
+              setMenuFilterSearch(next);
+            };
+            const handleSingleSelectInputValueChange = (value?: string): void => {
+              if (consumeComboIgnoreNextInput(menuFilterKey)) {
+                return;
+              }
+              const next = normalizeSingleSelectSearchText(
+                value,
+                options,
+              );
+              setMenuFilterSearch(next);
+              const resolvedKey = next ? resolveComboOptionKey(options, next) : undefined;
+              setMenuFilterValue(resolvedKey ? String(resolvedKey) : '');
+            };
+            const exactMatchOptions = buildExactMatchHighlightedOptions(
+              filteredMultiOptions,
+              exactMatchKey,
+              highlightBorder,
+              theme.semanticColors.menuItemBackgroundHovered,
+            );
+            const menuHint = normalizedSearch.trim()
+              ? getComboDisambiguationHint(filteredMultiOptions, normalizedSearch)
+              : undefined;
+            const menuHintId = `${menuFilterKey}-hint`;
+            const handleMenuFilterMultiChange = (opt?: IComboBoxOption) => {
+              if (!opt) return;
+              setMenuFilterValue((prev) => {
+                return resolveMenuMultiSelectValue(
+                  prev,
+                  opt,
+                  hasSelectAll,
+                  selectAllKey,
+                  isSingleAll,
+                  selectAllValues,
+                  cfg.multiLimit,
+                );
+              });
+              setComboIgnoreNextInput(menuFilterKey);
+              resetMenuFilterSearch();
+            };
+            const handleMenuMultiSelectKeyDown = (event: React.KeyboardEvent<IComboBox>): void => {
+              if (!normalizedSearch.trim()) return;
+              commitPrefilterMultiSelect(
+                event,
+                normalizedSearch,
+                filteredMultiOptions,
+                selectedKeys,
+                (_, opt) => handleMenuFilterMultiChange(opt),
+                menuFilterKey,
+                (value) => setMenuFilterSearch(value),
+              );
+            };
+            const handleSummaryOperatorComboChange = (_event: React.FormEvent<IComboBox>, opt?: IComboBoxOption): void => {
+              applySummaryOperatorChange(opt);
+            };
+            const handleSummaryFlagMultiComboChange = (_event: React.FormEvent<IComboBox>, opt?: IComboBoxOption): void => {
+              handleMenuFilterMultiChange(opt);
+            };
+            const handleSummaryFlagMultiInputChange = (value: string): void => {
+              handleMultiSelectInputValueChange(value);
+            };
+            const handleMenuFilterComboDismissed = (): void => {
+              setMenuFilterSearch('');
+            };
+            const handleSummaryFlagSingleComboChange = (_event: React.FormEvent<IComboBox>, opt?: IComboBoxOption): void => {
+              setMenuFilterValue(typeof opt?.key === 'number' ? String(opt.key) : (opt?.key ?? ''));
+              setComboIgnoreNextChange(menuFilterKey);
+            };
+            const handleSummaryFlagSingleInputChange = (value: string): void => {
+              handleSingleSelectInputValueChange(value);
+            };
+            return (
+              <>
+                {isSummaryFlagField && (
+                  <ComboBox
+                    label="Operator"
+                    options={[
+                      { key: 'contains', text: 'Contains' },
+                      { key: 'notContains', text: 'Does not contain' },
+                      { key: 'eq', text: 'Equals' },
+                    ]}
+                    selectedKey={menuSummaryOperator}
+                    allowFreeform={false}
+                    autoComplete="off"
+                    onChange={handleSummaryOperatorComboChange}
+                    styles={{
+                      ...comboBoxStyles240x200,
+                      root: { ...comboBoxStyles240x200.root, marginBottom: 8 },
+                    }}
+                  />
+                )}
+                {isSummaryFlagMultiSelect ? (
                   <ComboBox
                     label={`Filter ${filterColumnName}`}
                     placeholder={`Select ${filterColumnName}`}
                     aria-describedby={buildAriaDescribedBy(menuHint ? menuHintId : undefined)}
-                    options={filteredColumnOptions}
+                    options={exactMatchOptions}
+                    multiSelect
                     allowFreeform={false}
                     allowFreeInput
                     autoComplete="off"
-                    text={isEditing ? menuFilterSearch : undefined}
-                    selectedKey={isEditing ? null : typeof menuFilterValue === 'string' ? menuFilterValue : undefined}
+                    text={normalizedSearch.trim() ? normalizedSearch : undefined}
+                    persistMenu
+                    selectedKey={selectedKeys}
                     calloutProps={{ directionalHint: DirectionalHint.bottomLeftEdge, directionalHintFixed: true }}
-                    onChange={(event, opt, _index, value) => {
-                      if (consumeComboIgnoreNextChange(menuFilterKey, opt)) return;
-                      if (shouldIgnoreComboChange(menuFilterKey, opt)) return;
-                      const searchValue = typeof value === 'string' ? value : menuFilterSearch;
-                      const resolvedOptions = filterComboOptions(options, searchValue);
-                      const resolvedKey = opt?.key ?? resolveComboKeyFromSearch(
-                        resolvedOptions,
-                        searchValue,
-                        typeof menuFilterValue === 'string' ? menuFilterValue : undefined,
-                      );
-                      if (!resolvedKey) return;
-                      setMenuFilterValue(String(resolvedKey));
-                      setComboEditingFor(menuFilterKey, false);
-                      setMenuFilterSearch('');
-                    }}
-                    onKeyDownCapture={(event) => {
-                      const isEnter = event.key === 'Enter' || event.key === 'NumpadEnter';
-                      if (!isEnter) return;
-                      const inputValue = getComboInputValue(event) || menuFilterSearch;
-                      if (!inputValue.trim()) return;
-                      const resolvedOptions = filterComboOptions(options, inputValue);
-                      commitComboSingleSelect(
-                        event,
-                        inputValue,
-                        resolvedOptions,
-                        typeof menuFilterValue === 'string' ? menuFilterValue : undefined,
-                        (opt) => {
-                          setMenuFilterValue((opt?.key as string) ?? '');
-                          setComboEditingFor(menuFilterKey, false);
-                          setMenuFilterSearch('');
-                        },
-                        menuFilterKey,
-                      );
-                    }}
-                    onInputValueChange={(value) => {
-                      const next = normalizeSingleSelectSearchText(
-                        value,
-                        options,
-                      );
-                      if (!next) {
-                        setComboEditingFor(menuFilterKey, false);
-                        setMenuFilterSearch('');
-                        return;
-                      }
-                      setComboEditingFor(menuFilterKey, true);
-                      setMenuFilterSearch(next);
-                    }}
-                    onKeyDown={(event) => {
-                      if (event.defaultPrevented) return;
-                      const inputValue = getComboInputValue(event) || menuFilterSearch;
-                      if (!inputValue.trim()) return;
-                      const resolvedOptions = filterComboOptions(options, inputValue);
-                      commitComboSingleSelect(
-                        event,
-                        inputValue,
-                        resolvedOptions,
-                        typeof menuFilterValue === 'string' ? menuFilterValue : undefined,
-                        (opt) => {
-                          setMenuFilterValue((opt?.key as string) ?? '');
-                          setComboEditingFor(menuFilterKey, false);
-                          setMenuFilterSearch('');
-                        },
-                        menuFilterKey,
-                      );
-                    }}
-                  onMenuDismissed={() => {
-                    setComboEditingFor(menuFilterKey, false);
-                    setMenuFilterSearch('');
-                  }}
-                    styles={{
-                      root: { width: '100%' },
-                      callout: { minWidth: 240 },
-                      optionsContainer: { minWidth: 200 },
-                    }}
+                    onChange={handleSummaryFlagMultiComboChange}
+                    onInputValueChange={handleSummaryFlagMultiInputChange}
+                    onKeyDown={handleMenuMultiSelectKeyDown}
+                    onMenuDismissed={handleMenuFilterComboDismissed}
+                    styles={comboBoxStyles240x200}
                   />
-                  {menuHint && (
-                    <Text id={menuHintId} variant="small" styles={{ root: { marginTop: 4 } }}>
-                      {menuHint}
-                    </Text>
-                  )}
-                </>
-              );
-            })();
-        case 'multiSelect':
-            return (
-              (() => {
-                const selectAllValues = cfg.selectAllValues ?? [];
-                const vals = Array.isArray(menuFilterValue)
-                  ? menuFilterValue.map((v) => String(v).trim()).filter((v) => v !== '')
-                  : isSummaryFlagField && menuSummaryOperator === 'eq' && typeof menuFilterValue === 'string'
-                    ? [menuFilterValue.trim()].filter((v) => v !== '')
-                    : [];
-                const hasAll = hasAllOption(options);
-                const hasOther = hasOtherOption(options);
-                const isSingleAll = selectAllValues.length === 1
-                  && String(selectAllValues[0] ?? '').toUpperCase() === 'ALL';
-                const hasSelectAll = selectAllValues.length > 0 && (isSingleAll || (!hasAll && !hasOther));
-                const allKey = isSingleAll ? (resolveAllOptionKey(options) ?? String(selectAllValues[0] ?? 'ALL')) : '';
-                const selectAllKey = hasSelectAll
-                  ? (isSingleAll ? allKey : SELECT_ALL_KEY)
-                  : '';
-                const menuFilterKey = `menuFilter-${menuState.column.key ?? menuState.column.fieldName ?? 'column'}`;
-                const selectedKeys = Array.isArray(menuFilterValue) ? menuFilterValue.map((key) => String(key)) : [];
-                const rawSearch = menuFilterSearch ?? '';
-                const normalizedSearch = normalizeMultiSelectSearchText(
-                  rawSearch,
-                  options,
-                  selectedKeys,
-                );
-                const filteredMultiOptions = filterComboOptions(
-                  options,
-                  normalizedSearch,
-                );
-                const exactMatchKey = normalizedSearch.trim()
-                  ? resolveComboOptionKey(options, normalizedSearch)
-                  : undefined;
-                const highlightBorder = theme.semanticColors.focusBorder ?? theme.palette.themePrimary;
-                const exactMatchOptions = exactMatchKey
-                  ? filteredMultiOptions.map((opt) => {
-                    if (String(opt.key) !== String(exactMatchKey)) return opt;
-                    const highlight = {
-                      backgroundColor: theme.semanticColors.menuItemBackgroundHovered,
-                      outline: `2px solid ${highlightBorder}`,
-                      outlineOffset: '-2px',
-                    };
-                    return {
-                      ...opt,
-                      styles: {
-                        ...opt.styles,
-                        root: [opt.styles?.root, highlight],
-                        rootHovered: [opt.styles?.rootHovered, highlight],
-                        rootFocused: [opt.styles?.rootFocused, highlight],
-                        rootPressed: [opt.styles?.rootPressed, highlight],
-                      },
-                    };
-                  })
-                  : filteredMultiOptions;
-                const menuHint = normalizedSearch.trim()
-                  ? getComboDisambiguationHint(filteredMultiOptions, normalizedSearch)
-                  : undefined;
-                const menuHintId = `${menuFilterKey}-hint`;
-                const handleMenuFilterMultiChange = (opt?: IComboBoxOption) => {
-                  if (!opt) return;
-                  if (hasSelectAll && String(opt.key) === selectAllKey) {
-                    setMenuFilterValue(isSingleAll ? [selectAllKey] : selectAllValues);
-                    setComboIgnoreNextInput(menuFilterKey);
-                    setMenuFilterSearch('');
-                    return;
-                  }
-                  setMenuFilterValue((prev) => {
-                    const current = Array.isArray(prev)
-                      ? prev.slice().filter((key) => !hasSelectAll || String(key) !== selectAllKey)
-                      : [];
-                    const key = String(opt.key);
-                    const idx = current.indexOf(key);
-                    if (opt.selected) {
-                      if (idx === -1) current.push(key);
-                    } else if (idx !== -1) {
-                      current.splice(idx, 1);
-                    }
-                    if (cfg.multiLimit && current.length > cfg.multiLimit) {
-                      return current.slice(current.length - cfg.multiLimit);
-                    }
-                    return current;
-                  });
-                  setComboIgnoreNextInput(menuFilterKey);
-                  setMenuFilterSearch('');
-                };
-                return (
-                  <>
-                    {isSummaryFlagField && (
-                      <ComboBox
-                        label="Operator"
-                        options={[
-                          { key: 'contains', text: 'Contains' },
-                          { key: 'notContains', text: 'Does not contain' },
-                          { key: 'eq', text: 'Equals' },
-                        ]}
-                        selectedKey={menuSummaryOperator}
-                        allowFreeform={false}
-                        autoComplete="off"
-                        onChange={(_, opt) => {
-                          const key = String(opt?.key ?? 'contains');
-                          setMenuSummaryOperator(key === 'notContains' ? 'notContains' : key === 'eq' ? 'eq' : 'contains');
-                          setMenuFilterValue('');
-                          setMenuFilterSearch('');
-                        }}
-                        styles={{
-                          root: { width: '100%', marginBottom: 8 },
-                          callout: { minWidth: 240 },
-                          optionsContainer: { minWidth: 200 },
-                        }}
-                      />
-                    )}
-                    {isSummaryFlagMultiSelect ? (
-                      <ComboBox
-                        label={`Filter ${filterColumnName}`}
-                        placeholder={`Select ${filterColumnName}`}
-                        aria-describedby={buildAriaDescribedBy(menuHint ? menuHintId : undefined)}
-                        options={exactMatchOptions}
-                        multiSelect
-                        allowFreeform={false}
-                        allowFreeInput
-                        autoComplete="off"
-                        text={normalizedSearch.trim() ? normalizedSearch : undefined}
-                        persistMenu
-                        selectedKey={selectedKeys}
-                        calloutProps={{ directionalHint: DirectionalHint.bottomLeftEdge, directionalHintFixed: true }}
-                        onChange={(_, opt) => handleMenuFilterMultiChange(opt)}
-                        onInputValueChange={(value) => {
-                          if (consumeComboIgnoreNextInput(menuFilterKey)) {
-                            return;
-                          }
-                          const next = normalizeMultiSelectSearchText(
-                            value,
-                            options,
-                            selectedKeys,
-                          );
-                          setMenuFilterSearch(next);
-                        }}
-                        onKeyDown={(event) => {
-                          if (!normalizedSearch.trim()) return;
-                          commitPrefilterMultiSelect(
-                            event,
-                            normalizedSearch,
-                            filteredMultiOptions,
-                            selectedKeys,
-                            (_, opt) => handleMenuFilterMultiChange(opt),
-                            menuFilterKey,
-                            (value) => setMenuFilterSearch(value),
-                          );
-                        }}
-                        onMenuDismissed={() => setMenuFilterSearch('')}
-                        styles={{
-                          root: { width: '100%' },
-                          callout: { minWidth: 240 },
-                          optionsContainer: { minWidth: 200 },
-                        }}
-                      />
-                    ) : (
-                      <ComboBox
-                        label={`Filter ${filterColumnName}`}
-                        placeholder={`Select ${filterColumnName}`}
-                        aria-describedby={buildAriaDescribedBy(menuHint ? menuHintId : undefined)}
-                        options={exactMatchOptions}
-                        allowFreeform={false}
-                        allowFreeInput
-                        autoComplete="off"
-                        text={menuFilterSearch.trim() ? menuFilterSearch : undefined}
-                        selectedKey={typeof menuFilterValue === 'string' ? menuFilterValue : ''}
-                        calloutProps={{ directionalHint: DirectionalHint.bottomLeftEdge, directionalHintFixed: true }}
-                        onChange={(_, opt) => {
-                          setMenuFilterValue(typeof opt?.key === 'number' ? String(opt.key) : (opt?.key ?? ''));
-                          setComboIgnoreNextChange(menuFilterKey);
-                        }}
-                        onInputValueChange={(value) => {
-                          if (consumeComboIgnoreNextInput(menuFilterKey)) {
-                            return;
-                          }
-                          const next = normalizeSingleSelectSearchText(
-                            value,
-                            options,
-                          );
-                          setMenuFilterSearch(next);
-                          const resolvedKey = next ? resolveComboOptionKey(options, next) : undefined;
-                          setMenuFilterValue(resolvedKey ? String(resolvedKey) : '');
-                        }}
-                        onMenuDismissed={() => setMenuFilterSearch('')}
-                        styles={{
-                          root: { width: '100%' },
-                          callout: { minWidth: 240 },
-                          optionsContainer: { minWidth: 200 },
-                        }}
-                      />
-                    )}
-                    {menuHint && (
-                      <Text id={menuHintId} variant="small" styles={{ root: { marginTop: 4 } }}>
-                        {menuHint}
-                      </Text>
-                    )}
-                    {isSummaryFlagField && (
-                      <Text variant="small" styles={{ root: { marginTop: 4 } }}>
-                        {'Select one or more summary flags from the current page.'}
-                      </Text>
-                    )}
-                  </>
-                );
-              })()
+                ) : (
+                  <ComboBox
+                    label={`Filter ${filterColumnName}`}
+                    placeholder={`Select ${filterColumnName}`}
+                    aria-describedby={buildAriaDescribedBy(menuHint ? menuHintId : undefined)}
+                    options={exactMatchOptions}
+                    allowFreeform={false}
+                    allowFreeInput
+                    autoComplete="off"
+                    text={menuFilterSearch.trim() ? menuFilterSearch : undefined}
+                    selectedKey={typeof menuFilterValue === 'string' ? menuFilterValue : ''}
+                    calloutProps={{ directionalHint: DirectionalHint.bottomLeftEdge, directionalHintFixed: true }}
+                    onChange={handleSummaryFlagSingleComboChange}
+                    onInputValueChange={handleSummaryFlagSingleInputChange}
+                    onMenuDismissed={handleMenuFilterComboDismissed}
+                    styles={comboBoxStyles240x200}
+                  />
+                )}
+                {menuHint && (
+                  <Text id={menuHintId} variant="small" styles={{ root: { marginTop: 4 } }}>
+                    {menuHint}
+                  </Text>
+                )}
+                {isSummaryFlagField && (
+                  <Text variant="small" styles={{ root: { marginTop: 4 } }}>
+                    {'Select one or more summary flags from the current page.'}
+                  </Text>
+                )}
+              </>
             );
-        case 'numeric':
+          }
+        case 'numeric': {
+          const numVal = (menuFilterValue as NumericFilter) ?? { mode: '>=' };
+          const handleMenuNumericModeChange = (_event: React.FormEvent<IComboBox>, opt?: IComboBoxOption): void => {
+            setMenuFilterValue((prev) => {
+              const current = (prev as NumericFilter) ?? { mode: '>=' };
+              const mode = typeof opt?.key === 'string' ? (opt.key as NumericFilter['mode']) : current.mode ?? '>=';
+              setMenuNumericMinText(current.min !== undefined ? String(current.min) : '');
+              setMenuNumericMaxText(current.max !== undefined ? String(current.max) : '');
+              return { ...current, mode };
+            });
+          };
+          const handleMenuNumericValueChange = (_event: React.FormEvent<HTMLInputElement | HTMLTextAreaElement>, value?: string): void => {
+            const text = value ?? '';
+            if (text !== '' && !/^-?\d*\.?\d*$/.test(text)) return;
+            if (numVal.mode === '<=') {
+              setMenuNumericMaxText(text);
+            } else {
+              setMenuNumericMinText(text);
+            }
+            setMenuFilterValue((prev) => {
+              const current = (prev as NumericFilter) ?? { mode: '>=' };
+              const currentMode = current.mode ?? '>=';
+              const parsed = parseFloat(text);
+              const num = text === '' || isNaN(parsed) ? undefined : parsed;
+              if (currentMode === '<=') return { ...current, max: num };
+              return { ...current, min: num };
+            });
+          };
+          const handleMenuNumericMaxChange = (_event: React.FormEvent<HTMLInputElement | HTMLTextAreaElement>, value?: string): void => {
+            const text = value ?? '';
+            if (text !== '' && !/^-?\d*\.?\d*$/.test(text)) return;
+            setMenuNumericMaxText(text);
+            setMenuFilterValue((prev) => {
+              const current = (prev as NumericFilter) ?? { mode: 'between' };
+              const parsed = parseFloat(text);
+              const num = text === '' || isNaN(parsed) ? undefined : parsed;
+              return { ...current, max: num };
+            });
+          };
           return (
             <Stack tokens={{ childrenGap: 8 }}>
               <ComboBox
@@ -5571,43 +5676,15 @@ export const Grid = React.memo((props: GridProps) => {
                 selectedKey={numVal.mode ?? '>='}
                 allowFreeform={false}
                 autoComplete="off"
-                onChange={(_, opt) =>
-                  setMenuFilterValue((prev) => {
-                    const current = (prev as NumericFilter) ?? { mode: '>=' };
-                    const mode = typeof opt?.key === 'string' ? (opt.key as NumericFilter['mode']) : current.mode ?? '>=';
-                    setMenuNumericMinText(current.min !== undefined ? String(current.min) : '');
-                    setMenuNumericMaxText(current.max !== undefined ? String(current.max) : '');
-                    return { ...current, mode };
-                  })
-                }
-                styles={{
-                  root: { width: '100%' },
-                  callout: { minWidth: 240 },
-                  optionsContainer: { minWidth: 200 },
-                }}
+                onChange={handleMenuNumericModeChange}
+                styles={comboBoxStyles240x200}
               />
               <TextField
                 label={`${menuState.column.name} ${numVal.mode === '<=' ? 'max' : 'min'}`}
                 type="text"
                 inputMode="decimal"
                 value={numVal.mode === '<=' ? menuNumericMaxText : menuNumericMinText}
-                onChange={(_, v) => {
-                  const text = v ?? '';
-                  if (text !== '' && !/^-?\d*\.?\d*$/.test(text)) return;
-                  if (numVal.mode === '<=') {
-                    setMenuNumericMaxText(text);
-                  } else {
-                    setMenuNumericMinText(text);
-                  }
-                  setMenuFilterValue((prev) => {
-                    const current = (prev as NumericFilter) ?? { mode: '>=' };
-                    const mode = current.mode ?? '>=';
-                    const parsed = parseFloat(text);
-                    const num = text === '' || isNaN(parsed) ? undefined : parsed;
-                    if (mode === '<=') return { ...current, max: num };
-                    return { ...current, min: num };
-                  });
-                }}
+                onChange={handleMenuNumericValueChange}
               />
               {numVal.mode === 'between' && (
                 <TextField
@@ -5615,25 +5692,36 @@ export const Grid = React.memo((props: GridProps) => {
                   type="text"
                   inputMode="decimal"
                   value={menuNumericMaxText}
-                  onChange={(_, v) => {
-                    const text = v ?? '';
-                    if (text !== '' && !/^-?\d*\.?\d*$/.test(text)) return;
-                    setMenuNumericMaxText(text);
-                    setMenuFilterValue((prev) => {
-                      const current = (prev as NumericFilter) ?? { mode: 'between' };
-                      const parsed = parseFloat(text);
-                      const num = text === '' || isNaN(parsed) ? undefined : parsed;
-                      return { ...current, max: num };
-                    });
-                  }}
+                  onChange={handleMenuNumericMaxChange}
                 />
               )}
             </Stack>
           );
+        }
         case 'dateRange': {
           const menuFromDate = parseISODate(dateVal.from);
           const menuToDate = parseISODate(dateVal.to);
           const menuDateRangeInvalidOrder = Boolean(menuFromDate && menuToDate && menuToDate < menuFromDate);
+          const handleMenuDateRangeFromSelect = (date: Date | null | undefined): void => {
+            setMenuFilterValue((prev) => {
+              const current = (prev as DateRangeFilter) ?? {};
+              const nextFrom = toISODateString(date);
+              if (!nextFrom) {
+                return { ...current, from: undefined, to: undefined };
+              }
+              return { ...current, from: nextFrom };
+            });
+          };
+          const handleMenuDateRangeToSelect = (date: Date | null | undefined): void => {
+            setMenuFilterValue((prev) => {
+              const current = (prev as DateRangeFilter) ?? {};
+              const fromDate = parseISODate(current.from);
+              if (date && fromDate && date < fromDate) {
+                return current;
+              }
+              return { ...current, to: toISODateString(date) };
+            });
+          };
           return (
             <Stack tokens={{ childrenGap: 8 }}>
               <DatePicker
@@ -5644,17 +5732,7 @@ export const Grid = React.memo((props: GridProps) => {
                 formatDate={formatDisplayDate}
                 allowTextInput
                 parseDateFromString={parseDateInput}
-                onSelectDate={(d) =>
-                  setMenuFilterValue((prev) => {
-                    const current = (prev as DateRangeFilter) ?? {};
-                    const nextFrom = toISODateString(d);
-                    // If start is cleared, force end to clear so the range remains valid.
-                    if (!nextFrom) {
-                      return { ...current, from: undefined, to: undefined };
-                    }
-                    return { ...current, from: nextFrom };
-                  })
-                }
+                onSelectDate={handleMenuDateRangeFromSelect}
               />
               <DatePicker
                 label={`${menuState.column.name} end`}
@@ -5666,16 +5744,7 @@ export const Grid = React.memo((props: GridProps) => {
                 parseDateFromString={parseDateInput}
                 minDate={menuFromDate}
                 disabled={!hasDateRangeStart}
-                onSelectDate={(d) =>
-                  setMenuFilterValue((prev) => {
-                    const current = (prev as DateRangeFilter) ?? {};
-                    const fromDate = parseISODate(current.from);
-                    if (d && fromDate && d < fromDate) {
-                      return current;
-                    }
-                    return { ...current, to: toISODateString(d) };
-                  })
-                }
+                onSelectDate={handleMenuDateRangeToSelect}
               />
               {menuDateRangeInvalidOrder && (
                 <Text variant="small" styles={{ root: { color: '#d4351c' } }} role="alert">
@@ -5699,19 +5768,12 @@ export const Grid = React.memo((props: GridProps) => {
           ? `End date for ${columnName} must be on or after the start date.`
           : 'Enter or select a filter value before applying.';
     return [
-      {
-        key: 'sortAsc',
-        text: commonText.columnMenu.sortAscending,
-        iconProps: { iconName: 'SortUp' },
-        onClick: () => handleSort(menuState.column, false),
-      },
-      {
-        key: 'sortDesc',
-        text: commonText.columnMenu.sortDescending,
-        iconProps: { iconName: 'SortDown' },
-        onClick: () => handleSort(menuState.column, true),
-      },
-      { key: 'divider', itemType: ContextualMenuItemType.Divider },
+      ...buildSortMenuItems(
+        { columnMenu: commonText.columnMenu },
+        () => handleSort(menuState.column, false),
+        () => handleSort(menuState.column, true),
+      ),
+      buildDividerMenuItem(),
       {
         key: 'filterInput',
         onRender: () => (
@@ -5719,9 +5781,7 @@ export const Grid = React.memo((props: GridProps) => {
             {renderControl()}
             {isDateRangeIncomplete && (
               <Text variant="small" styles={{ root: { marginTop: 8 } }}>
-                {!hasDateRangeStart
-                  ? `Select a start date for ${columnName} to enable the end date.`
-                  : `Select an end date for ${columnName} to apply this filter.`}
+                {computeDateRangeIncompleteText(!hasDateRangeStart, columnName)}
               </Text>
             )}
             <Stack horizontal tokens={{ childrenGap: 8 }} style={{ marginTop: 8 }}>
@@ -5809,7 +5869,7 @@ export const Grid = React.memo((props: GridProps) => {
           <MessageBar
             messageBarType={MessageBarType.error}
             style={{ marginBottom: 16 }}
-            onDismiss={() => setDismissedColumnConfigMessage(true)}
+            onDismiss={handleDismissColumnConfigMessage}
             dismissButtonAriaLabel={commonText.buttons.clear}
           >
             {commonText.messages.columnConfigMissing}
@@ -5819,7 +5879,7 @@ export const Grid = React.memo((props: GridProps) => {
           <MessageBar
             messageBarType={MessageBarType.error}
             style={{ marginBottom: 16 }}
-            onDismiss={() => setDismissedErrorMessage(true)}
+            onDismiss={handleDismissErrorMessage}
             dismissButtonAriaLabel={commonText.buttons.clear}
           >
             {errorMessage}
@@ -5938,116 +5998,23 @@ export const Grid = React.memo((props: GridProps) => {
               </Stack.Item>
               <Stack.Item className="voa-prefilter-col voa-prefilter-col-searchby-field">
                 <div className="voa-prefilter-field">
-                  <ComboBox
+                  <SearchByComboField
                     id="prefilter-searchby"
                     ariaLabel={prefilterText.labels.searchBy}
-                    aria-describedby={buildAriaDescribedBy(prefilterSearchByHint ? 'prefilter-searchby-hint' : undefined)}
+                    ariaDescribedBy={buildAriaDescribedBy(prefilterSearchByHint ? 'prefilter-searchby-hint' : undefined)}
                     placeholder={prefilterText.placeholders.searchBy}
                     title={prefilterSearchByTitle}
                     options={filteredPrefilterSearchByOptions}
                     selectedKey={comboEditing.prefilterSearchBy ? null : prefilters.searchBy}
-                    onChange={(event, option, _index, value) => {
-                      if (consumeComboIgnoreNextChange('prefilterSearchBy', option)) return;
-                      if (shouldIgnoreComboChange('prefilterSearchBy', option)) return;
-                      const searchValue = typeof value === 'string' ? value : prefilterSearchBySearch;
-                      const resolvedOptions = filterComboOptions(
-                        prefilterSearchByOptions as IComboBoxOption[],
-                        searchValue,
-                      );
-                      const resolvedKey = option?.key ?? resolveComboKeyFromSearch(resolvedOptions, searchValue, prefilters.searchBy);
-                      if (!resolvedKey) return;
-                      setComboCancelNextDismiss('prefilterSearchBy');
-                      onPrefilterSearchByChange(event, { key: resolvedKey } as IComboBoxOption);
-                      setComboEditingFor('prefilterSearchBy', false);
-                      setPrefilterSearchBySearch('');
-                    }}
-                    onKeyDownCapture={(event) => {
-                      if (event.key === 'Escape') {
-                        setComboCancelNextDismiss('prefilterSearchBy');
-                        return;
-                      }
-                      const isEnter = event.key === 'Enter' || event.key === 'NumpadEnter';
-                      if (!isEnter) return;
-                      const inputValue = getComboInputValue(event) || prefilterSearchBySearch;
-                      if (!inputValue.trim()) return;
-                      const resolvedOptions = filterComboOptions(
-                        prefilterSearchByOptions as IComboBoxOption[],
-                        inputValue,
-                      );
-                      commitComboSingleSelect(
-                        event,
-                        inputValue,
-                        resolvedOptions,
-                        prefilters.searchBy,
-                        (opt) => {
-                          onPrefilterSearchByChange(event as unknown as React.FormEvent<IComboBox>, opt);
-                          setComboEditingFor('prefilterSearchBy', false);
-                          setPrefilterSearchBySearch('');
-                        },
-                        'prefilterSearchBy',
-                      );
-                    }}
-                    allowFreeform={false}
-                    allowFreeInput
-                    autoComplete="off"
                     text={comboEditing.prefilterSearchBy ? prefilterSearchBySearch : undefined}
-                    onInputValueChange={(value) => {
-                      const next = normalizeSingleSelectSearchText(
-                        value,
-                        prefilterSearchByOptions as IComboBoxOption[],
-                      );
-                      if (!next) {
-                        setComboEditingFor('prefilterSearchBy', false);
-                        setPrefilterSearchBySearch('');
-                        return;
-                      }
-                      setComboEditingFor('prefilterSearchBy', true);
-                      setPrefilterSearchBySearch(next);
-                    }}
-                    onKeyDown={(event) => {
-                      if (event.defaultPrevented) return;
-                      const inputValue = getComboInputValue(event) || prefilterSearchBySearch;
-                      if (!inputValue.trim()) return;
-                      const resolvedOptions = filterComboOptions(
-                        prefilterSearchByOptions as IComboBoxOption[],
-                        inputValue,
-                      );
-                      commitComboSingleSelect(
-                        event,
-                        inputValue,
-                        resolvedOptions,
-                        prefilters.searchBy,
-                        (opt) => {
-                          onPrefilterSearchByChange(event as unknown as React.FormEvent<IComboBox>, opt);
-                          setComboEditingFor('prefilterSearchBy', false);
-                          setPrefilterSearchBySearch('');
-                        },
-                        'prefilterSearchBy',
-                      );
-                    }}
-                    onMenuDismissed={() => {
-                      if (!consumeComboCancelNextDismiss('prefilterSearchBy')) {
-                        commitComboSingleSelectOnDismiss(
-                          prefilterSearchBySearch,
-                          prefilterSearchByOptions as IComboBoxOption[],
-                          prefilters.searchBy,
-                          (opt) => onPrefilterSearchByChange({} as React.FormEvent<IComboBox>, opt),
-                        );
-                      }
-                      setComboEditingFor('prefilterSearchBy', false);
-                      setPrefilterSearchBySearch('');
-                    }}
-                    styles={{
-                      root: { width: '100%' },
-                      callout: { minWidth: 240 },
-                      optionsContainer: { minWidth: 200 },
-                    }}
+                    hintText={prefilterSearchByHint}
+                    hintId="prefilter-searchby-hint"
+                    onChange={handlePrefilterSearchByComboChange}
+                    onKeyDownCapture={handlePrefilterSearchByComboKeyDownCapture}
+                    onInputValueChange={handlePrefilterSearchByComboInputValueChange}
+                    onKeyDown={handlePrefilterSearchByComboKeyDown}
+                    onMenuDismissed={handlePrefilterSearchByComboDismissed}
                   />
-                  {prefilterSearchByHint && (
-                    <Text id="prefilter-searchby-hint" variant="small" styles={{ root: { marginTop: 4 } }}>
-                      {prefilterSearchByHint}
-                    </Text>
-                  )}
                 </div>
               </Stack.Item>
               {isManagerAssign && prefilters.searchBy === 'billingAuthority' && (
@@ -6063,83 +6030,31 @@ export const Grid = React.memo((props: GridProps) => {
                   </Stack.Item>
                   <Stack.Item className="voa-prefilter-col voa-prefilter-col-owner-field">
                     <div className="voa-prefilter-field">
-                      <ComboBox
+                      <PrefilterMultiSelectComboField
                         id="prefilter-billing"
                         ariaLabel={formatRequiredAriaLabel(managerText.prefilter.labels.billingAuthority, true)}
-                        aria-describedby={buildAriaDescribedBy(
+                        ariaDescribedBy={buildAriaDescribedBy(
                           prefilterBillingHint ? 'prefilter-billing-hint' : undefined,
                           billingAuthorityOptionsError ? 'prefilter-billing-error' : undefined,
                         )}
                         placeholder={managerText.prefilter.placeholders.billingAuthority}
                         title={prefilterBillingTitle}
-                        multiSelect
                         options={filteredManagerBillingAuthorityOptions}
-                        selectedKey={managerBillingSelectedKeys}
-                        onChange={(event, option) => {
-                          if (!option) return;
-                          onPrefilterBillingChange(event, option);
-                          setComboIgnoreNextInput('prefilterBilling');
-                          setManagerBillingSearch('');
-                        }}
-                        allowFreeform={false}
-                        allowFreeInput
-                        autoComplete="off"
-                        text={managerBillingSearch.trim() ? managerBillingSearch : undefined}
-                        persistMenu
-                        onKeyDown={(event) => {
-                          if (!managerBillingSearch.trim()) return;
-                          commitPrefilterMultiSelect(
-                            event,
-                            managerBillingSearch,
-                            managerBillingAuthorityOptions as IComboBoxOption[],
-                            managerBillingSelectedKeys.map((key) => String(key)),
-                            onPrefilterBillingChange,
-                            'prefilterBilling',
-                            setManagerBillingSearch,
-                          );
-                        }}
-                        onInputValueChange={(value) => {
-                          if (consumeComboIgnoreNextInput('prefilterBilling')) {
-                            return;
-                          }
-                          setManagerBillingSearch(
-                            normalizeMultiSelectSearchText(
-                              value,
-                              managerBillingAuthorityOptions as IComboBoxOption[],
-                              managerBillingSelectedKeys.map((key) => String(key)),
-                            ),
-                          );
-                        }}
-                        onMenuDismissed={() => setManagerBillingSearch('')}
-                        styles={{
-                          root: { width: '100%' },
-                          callout: { minWidth: 240 },
-                          optionsContainer: { minWidth: 240 },
-                        }}
+                        selectedKeys={managerBillingSelectedKeys}
+                        searchText={managerBillingSearch}
+                        hintText={prefilterBillingHint}
+                        hintId="prefilter-billing-hint"
+                        errorText={billingAuthorityOptionsError}
+                        errorId="prefilter-billing-error"
+                        errorColor={theme.palette.redDark}
+                        selectionSummary={prefilterBillingSelectionSummary}
+                        selectionSummaryTooltip={prefilterBillingTitle ?? prefilterBillingSelectionSummary}
+                        selectionSummaryClassName="voa-prefilter-selection-summary"
+                        onChange={handlePrefilterBillingComboChange}
+                        onKeyDown={handlePrefilterBillingComboKeyDown}
+                        onInputValueChange={handlePrefilterBillingComboInputValueChange}
+                        onMenuDismissed={handlePrefilterBillingComboDismissed}
                       />
-                      {prefilterBillingHint && (
-                        <Text id="prefilter-billing-hint" variant="small" styles={{ root: { marginTop: 4 } }}>
-                          {prefilterBillingHint}
-                        </Text>
-                      )}
-                      {billingAuthorityOptionsError && (
-                        <Text
-                          id="prefilter-billing-error"
-                          variant="small"
-                          role="alert"
-                          aria-live="assertive"
-                          styles={{ root: { color: theme.palette.redDark, marginTop: 2 } }}
-                        >
-                          {billingAuthorityOptionsError}
-                        </Text>
-                      )}
-                      {prefilterBillingSelectionSummary && (
-                        <TooltipHost content={prefilterBillingTitle ?? prefilterBillingSelectionSummary}>
-                          <Text variant="small" className="voa-prefilter-selection-summary">
-                            {prefilterBillingSelectionSummary}
-                          </Text>
-                        </TooltipHost>
-                      )}
                     </div>
                   </Stack.Item>
                 </>
@@ -6157,83 +6072,31 @@ export const Grid = React.memo((props: GridProps) => {
                   </Stack.Item>
                   <Stack.Item className="voa-prefilter-col voa-prefilter-col-owner-field">
                     <div className="voa-prefilter-field">
-                      <ComboBox
+                      <PrefilterMultiSelectComboField
                         id={prefilterUserId}
                         ariaLabel={formatRequiredAriaLabel(prefilterUserLabel, true)}
-                        aria-describedby={buildAriaDescribedBy(
+                        ariaDescribedBy={buildAriaDescribedBy(
                           prefilterUserHint ? 'prefilter-user-hint' : undefined,
                           prefilterUserOptionsError ? 'prefilter-user-error' : undefined,
                         )}
                         placeholder={prefilterUserPlaceholder}
                         title={prefilterUserTitle}
-                        multiSelect
                         options={prefilterUserOptionsFiltered}
-                        selectedKey={caseworkerSelectedKeys}
-                        onChange={(event, option) => {
-                          if (!option) return;
-                          onPrefilterCaseworkerChange(event, option);
-                          setComboIgnoreNextInput('prefilterCaseworker');
-                          setCaseworkerSearch('');
-                        }}
-                        allowFreeform={false}
-                        allowFreeInput
-                        autoComplete="off"
-                        text={caseworkerSearch.trim() ? caseworkerSearch : undefined}
-                        persistMenu
-                        onKeyDown={(event) => {
-                          if (!caseworkerSearch.trim()) return;
-                          commitPrefilterMultiSelect(
-                            event,
-                            caseworkerSearch,
-                            prefilterUserOptions as IComboBoxOption[],
-                            caseworkerSelectedKeys.map((key) => String(key)),
-                            onPrefilterCaseworkerChange,
-                            'prefilterCaseworker',
-                            setCaseworkerSearch,
-                          );
-                        }}
-                        onInputValueChange={(value) => {
-                          if (consumeComboIgnoreNextInput('prefilterCaseworker')) {
-                            return;
-                          }
-                          setCaseworkerSearch(
-                            normalizeMultiSelectSearchText(
-                              value,
-                              prefilterUserOptions as IComboBoxOption[],
-                              caseworkerSelectedKeys.map((key) => String(key)),
-                            ),
-                          );
-                        }}
-                        onMenuDismissed={() => setCaseworkerSearch('')}
-                        styles={{
-                          root: { width: '100%' },
-                          callout: { minWidth: 240 },
-                          optionsContainer: { minWidth: 240 },
-                        }}
+                        selectedKeys={caseworkerSelectedKeys}
+                        searchText={caseworkerSearch}
+                        hintText={prefilterUserHint}
+                        hintId="prefilter-user-hint"
+                        errorText={prefilterUserOptionsError}
+                        errorId="prefilter-user-error"
+                        errorColor={theme.palette.redDark}
+                        selectionSummary={prefilterUserSelectionSummary}
+                        selectionSummaryTooltip={prefilterUserTitle ?? prefilterUserSelectionSummary}
+                        selectionSummaryClassName="voa-prefilter-selection-summary"
+                        onChange={handlePrefilterUserComboChange}
+                        onKeyDown={handlePrefilterUserComboKeyDown}
+                        onInputValueChange={handlePrefilterUserComboInputValueChange}
+                        onMenuDismissed={handlePrefilterUserComboDismissed}
                       />
-                      {prefilterUserHint && (
-                        <Text id="prefilter-user-hint" variant="small" styles={{ root: { marginTop: 4 } }}>
-                          {prefilterUserHint}
-                        </Text>
-                      )}
-                      {prefilterUserSelectionSummary && (
-                        <TooltipHost content={prefilterUserTitle ?? prefilterUserSelectionSummary}>
-                          <Text variant="small" className="voa-prefilter-selection-summary">
-                            {prefilterUserSelectionSummary}
-                          </Text>
-                        </TooltipHost>
-                      )}
-                      {prefilterUserOptionsError && (
-                        <Text
-                          id="prefilter-user-error"
-                          variant="small"
-                          role="alert"
-                          aria-live="assertive"
-                          styles={{ root: { color: theme.palette.redDark, marginTop: 2 } }}
-                        >
-                          {prefilterUserOptionsError}
-                        </Text>
-                      )}
                     </div>
                   </Stack.Item>
                 </>
@@ -6251,129 +6114,24 @@ export const Grid = React.memo((props: GridProps) => {
           </Stack.Item>
           <Stack.Item className="voa-prefilter-col voa-prefilter-col-workthat-field">
             <div className="voa-prefilter-field">
-              <ComboBox
+              <SearchByComboField
                 id="prefilter-workthat"
                 ariaLabel={formatRequiredAriaLabel(prefilterText.labels.workThat, true)}
-                aria-describedby={buildAriaDescribedBy(prefilterWorkThatHint ? 'prefilter-workthat-hint' : undefined)}
+                ariaDescribedBy={buildAriaDescribedBy(prefilterWorkThatHint ? 'prefilter-workthat-hint' : undefined)}
                 placeholder={prefilterText.placeholders.workThat}
                 title={prefilterWorkThatTitle}
                 options={filteredPrefilterWorkThatOptions}
                 selectedKey={comboEditing.prefilterWorkThat ? null : (prefilters.workThat ?? null)}
                 calloutProps={{ setInitialFocus: false }}
-                onChange={(event, option, _index, value) => {
-                  if (consumeComboIgnoreNextChange('prefilterWorkThat', option)) return;
-                  if (shouldIgnoreComboChange('prefilterWorkThat', option)) return;
-                  const searchValue = typeof value === 'string' ? value : prefilterWorkThatSearch;
-                  const resolvedOptions = filterComboOptions(
-                    prefilterWorkThatOptions as IComboBoxOption[],
-                    searchValue,
-                  );
-                  const resolvedKey = option?.key ?? resolveComboKeyFromSearch(resolvedOptions, searchValue, prefilters.workThat);
-                  if (!resolvedKey) return;
-                  setComboCancelNextDismiss('prefilterWorkThat');
-                  onPrefilterWorkThatChange(event, { key: resolvedKey } as IComboBoxOption);
-                  setComboEditingFor('prefilterWorkThat', false);
-                  setPrefilterWorkThatSearch('');
-                }}
-                allowFreeform={false}
-                allowFreeInput
-                autoComplete="off"
                 text={comboEditing.prefilterWorkThat ? prefilterWorkThatSearch : undefined}
-                onKeyDownCapture={(event) => {
-                  if (event.key === 'Escape') {
-                    setComboCancelNextDismiss('prefilterWorkThat');
-                    return;
-                  }
-                  const isEnter = event.key === 'Enter' || event.key === 'NumpadEnter';
-                  if (!isEnter) return;
-                  const inputValue = getComboInputValue(event) || prefilterWorkThatSearch;
-                  if (!inputValue.trim()) return;
-                  const resolvedOptions = filterComboOptions(
-                    prefilterWorkThatOptions as IComboBoxOption[],
-                    inputValue,
-                  );
-                  commitComboSingleSelect(
-                    event,
-                    inputValue,
-                    resolvedOptions,
-                    prefilters.workThat,
-                    (opt) => {
-                      onPrefilterWorkThatChange(event as unknown as React.FormEvent<IComboBox>, opt);
-                      setComboEditingFor('prefilterWorkThat', false);
-                      setPrefilterWorkThatSearch('');
-                    },
-                    'prefilterWorkThat',
-                  );
-                }}
-                onInputValueChange={(value) => {
-                      const next = normalizeSingleSelectSearchText(
-                        value,
-                        prefilterWorkThatOptions as IComboBoxOption[],
-                      );
-                  if (!next) {
-                    setComboEditingFor('prefilterWorkThat', false);
-                    setPrefilterWorkThatSearch('');
-                    return;
-                  }
-                  setComboEditingFor('prefilterWorkThat', true);
-                  setPrefilterWorkThatSearch(next);
-                }}
-                onKeyDown={(event) => {
-                  if (event.defaultPrevented) return;
-                  const inputValue = getComboInputValue(event) || prefilterWorkThatSearch;
-                  if (!inputValue.trim()) return;
-                  const isEnter = event.key === 'Enter' || event.key === 'NumpadEnter';
-                  if (isEnter) {
-                    const enabledOptions = filteredPrefilterWorkThatOptions.filter((opt) => !opt.disabled);
-                    if (enabledOptions.length === 1) {
-                      event.preventDefault();
-                      setComboCancelNextDismiss('prefilterWorkThat');
-                      onPrefilterWorkThatChange(event as unknown as React.FormEvent<IComboBox>, enabledOptions[0]);
-                      setComboEditingFor('prefilterWorkThat', false);
-                      setPrefilterWorkThatSearch('');
-                      return;
-                    }
-                  }
-                  const resolvedOptions = filterComboOptions(
-                    prefilterWorkThatOptions as IComboBoxOption[],
-                    inputValue,
-                  );
-                  commitComboSingleSelect(
-                    event,
-                    inputValue,
-                    resolvedOptions,
-                    prefilters.workThat,
-                    (opt) => {
-                      onPrefilterWorkThatChange(event as unknown as React.FormEvent<IComboBox>, opt);
-                      setComboEditingFor('prefilterWorkThat', false);
-                      setPrefilterWorkThatSearch('');
-                    },
-                    'prefilterWorkThat',
-                  );
-                }}
-                onMenuDismissed={() => {
-                  if (!consumeComboCancelNextDismiss('prefilterWorkThat')) {
-                    commitComboSingleSelectOnDismiss(
-                      prefilterWorkThatSearch,
-                      prefilterWorkThatOptions as IComboBoxOption[],
-                      prefilters.workThat,
-                      (opt) => onPrefilterWorkThatChange({} as React.FormEvent<IComboBox>, opt),
-                    );
-                  }
-                  setComboEditingFor('prefilterWorkThat', false);
-                  setPrefilterWorkThatSearch('');
-                }}
-                styles={{
-                  root: { width: '100%' },
-                  callout: { minWidth: 240 },
-                  optionsContainer: { minWidth: 200 },
-                }}
+                hintText={prefilterWorkThatHint}
+                hintId="prefilter-workthat-hint"
+                onChange={handlePrefilterWorkThatComboChange}
+                onKeyDownCapture={handlePrefilterWorkThatComboKeyDownCapture}
+                onInputValueChange={handlePrefilterWorkThatComboInputValueChange}
+                onKeyDown={handlePrefilterWorkThatComboKeyDown}
+                onMenuDismissed={handlePrefilterWorkThatComboDismissed}
               />
-              {prefilterWorkThatHint && (
-                <Text id="prefilter-workthat-hint" variant="small" styles={{ root: { marginTop: 4 } }}>
-                  {prefilterWorkThatHint}
-                </Text>
-              )}
             </div>
           </Stack.Item>
           {prefilterNeedsCompletedDates && (
@@ -6389,72 +6147,41 @@ export const Grid = React.memo((props: GridProps) => {
               </Stack.Item>
               <Stack.Item className="voa-prefilter-col voa-prefilter-col-daterange-fields">
                 <div role="group" aria-labelledby="voa-prefilter-date-range" className="voa-prefilter-field">
-                  <div className="voa-prefilter-date-fields">
-                    <DatePicker
-                      placeholder={prefilterText.placeholders.completedFrom}
-                      firstDayOfWeek={DayOfWeek.Monday}
-                      strings={dateStrings}
-                      value={parseISODate(prefilters.completedFrom)}
-                      formatDate={formatDisplayDate}
-                      allowTextInput
-                      parseDateFromString={parseDateInput}
-                      onSelectDate={onPrefilterFromDateChange}
-                      maxDate={today}
-                      styles={{ root: { width: 180 } }}
-                      ariaLabel={formatRequiredAriaLabel(prefilterText.labels.fromDate, true)}
-                      title={prefilterFromTitle}
-                    />
-                    {prefilterFromDateError && (
-                      <Text
-                        variant="small"
-                        role="alert"
-                        aria-live="assertive"
-                        styles={{ root: { color: theme.palette.redDark, marginTop: -2 } }}
-                      >
-                        {prefilterFromDateError}
-                      </Text>
-                    )}
-                    <span id="voa-prefilter-to-date-note" className="voa-sr-only">
-                      {prefilterTooltips.toDate}
-                    </span>
-                    <TextField
-                      value={formatDisplayDate(parseISODate(prefilters.completedTo))}
-                      disabled
-                      aria-describedby="voa-prefilter-to-date-note"
-                      className="voa-focusable-disabled-field"
-                      styles={{ root: { width: 180 } }}
-                      ariaLabel={`${prefilterText.labels.toDate}, calculated automatically`}
-                      title={prefilterToTitle}
-                    />
-                  </div>
+                  <PrefilterCompletedDateFields
+                    fromPlaceholder={prefilterText.placeholders.completedFrom}
+                    fromValue={parseISODate(prefilters.completedFrom)}
+                    toFormattedValue={formatDisplayDate(parseISODate(prefilters.completedTo))}
+                    fromAriaLabel={formatRequiredAriaLabel(prefilterText.labels.fromDate, true)}
+                    fromTitle={prefilterFromTitle}
+                    toAriaLabel={`${prefilterText.labels.toDate}, calculated automatically`}
+                    toTitle={prefilterToTitle}
+                    fromDateError={prefilterFromDateError}
+                    errorColor={theme.palette.redDark}
+                    toDateNote={prefilterTooltips.toDate}
+                    maxDate={today}
+                    dateStrings={dateStrings}
+                    formatDate={formatDisplayDate}
+                    parseDateFromString={parseDateInput}
+                    onSelectDate={onPrefilterFromDateChange}
+                  />
                 </div>
               </Stack.Item>
             </>
           )}
           <Stack.Item className="voa-prefilter-col voa-prefilter-col-actions">
-            <div className="voa-prefilter-field voa-prefilter-actions">
-              <span className="voa-prefilter-label-spacer" aria-hidden="true"></span>
-              <Stack horizontal verticalAlign="center" tokens={{ childrenGap: 12 }}>
-                <FocusableActionButton
-                  text={prefilterText.buttons.search}
-                  iconProps={{ iconName: 'Search' }}
-                  onClick={handlePrefilterSearch}
-                  unavailable={prefilterSearchDisabled}
-                  unavailableReason={prefilterSearchUnavailableReason}
-                  unavailableReasonId="voa-prefilter-search-unavailable"
-                  ariaLabel={prefilterText.buttons.search}
-                />
-                {!prefilterIsDefault && (
-                  <DefaultButton
-                    text={prefilterText.buttons.clearSearch}
-                    iconProps={{ iconName: 'ClearFilter' }}
-                    onClick={handlePrefilterClear}
-                    aria-label={commonText.aria.clearSearchFilters}
-                    className="voa-prefilter-clear"
-                  />
-                )}
-              </Stack>
-            </div>
+            <PrefilterActionsRow
+              searchText={prefilterText.buttons.search}
+              searchAriaLabel={prefilterText.buttons.search}
+              searchUnavailable={prefilterSearchDisabled}
+              searchUnavailableReason={prefilterSearchUnavailableReason}
+              searchUnavailableReasonId="voa-prefilter-search-unavailable"
+              clearText={prefilterText.buttons.clearSearch}
+              clearAriaLabel={commonText.aria.clearSearchFilters}
+              showClear={!prefilterIsDefault}
+              clearClassName="voa-prefilter-clear"
+              onSearch={handlePrefilterSearch}
+              onClear={handlePrefilterClear}
+            />
           </Stack.Item>
         </Stack>
         </div>
@@ -6477,117 +6204,39 @@ export const Grid = React.memo((props: GridProps) => {
         >
           <Stack.Item styles={{ root: { minWidth: 200 } }}>
             <Label htmlFor="searchby-input">{salesSearchText.searchPanel.searchByLabel}</Label>
-            <ComboBox
+            <SearchByComboField
               id="searchby"
               ariaLabel={salesSearchText.searchPanel.searchByLabel}
-              aria-describedby={buildAriaDescribedBy(searchByHint ? 'voa-searchby-hint' : undefined)}
+              ariaDescribedBy={buildAriaDescribedBy(searchByHint ? 'voa-searchby-hint' : undefined)}
               title={searchByTitle}
               options={filteredSearchByOptions}
               selectedKey={comboEditing.searchBy ? null : filters.searchBy}
-              onChange={(event, option, _index, value) => {
-                if (consumeComboIgnoreNextChange('searchBy', option)) return;
-                if (shouldIgnoreComboChange('searchBy', option)) return;
-                const searchValue = typeof value === 'string' ? value : searchBySearch;
-                const resolvedOptions = filterComboOptions(searchByOptions as IComboBoxOption[], searchValue);
-                const resolvedKey = option?.key ?? resolveComboKeyFromSearch(resolvedOptions, searchValue, filters.searchBy);
-                if (!resolvedKey) return;
-                setComboCancelNextDismiss('searchBy');
-                onSearchByChange(event, { key: resolvedKey } as IComboBoxOption);
-                setComboEditingFor('searchBy', false);
-                setSearchBySearch('');
-              }}
-              onKeyDownCapture={(event) => {
-                if (event.key === 'Escape') {
-                  setComboCancelNextDismiss('searchBy');
-                  return;
-                }
-                const isEnter = event.key === 'Enter' || event.key === 'NumpadEnter';
-                if (!isEnter) return;
-                const inputValue = getComboInputValue(event) || searchBySearch;
-                if (!inputValue.trim()) return;
-                const resolvedOptions = filterComboOptions(searchByOptions as IComboBoxOption[], inputValue);
-                commitComboSingleSelect(event, inputValue, resolvedOptions, filters.searchBy, (opt) => {
-                  onSearchByChange(event as unknown as React.FormEvent<IComboBox>, opt);
-                  setComboEditingFor('searchBy', false);
-                  setSearchBySearch('');
-                }, 'searchBy');
-              }}
-              allowFreeform={false}
-              allowFreeInput
-              autoComplete="off"
               text={comboEditing.searchBy ? searchBySearch : undefined}
-              onInputValueChange={(value) => {
-                const next = normalizeSingleSelectSearchText(
-                  value,
-                  searchByOptions as IComboBoxOption[],
-                );
-                if (!next) {
-                  setComboEditingFor('searchBy', false);
-                  setSearchBySearch('');
-                  return;
-                }
-                setComboEditingFor('searchBy', true);
-                setSearchBySearch(next);
-              }}
-              onKeyDown={(event) => {
-                if (event.defaultPrevented) return;
-                const inputValue = getComboInputValue(event) || searchBySearch;
-                if (!inputValue.trim()) return;
-                const resolvedOptions = filterComboOptions(searchByOptions as IComboBoxOption[], inputValue);
-                commitComboSingleSelect(event, inputValue, resolvedOptions, filters.searchBy, (opt) => {
-                  onSearchByChange(event as unknown as React.FormEvent<IComboBox>, opt);
-                  setComboEditingFor('searchBy', false);
-                  setSearchBySearch('');
-                }, 'searchBy');
-              }}
-              onMenuDismissed={() => {
-                if (!consumeComboCancelNextDismiss('searchBy')) {
-                  commitComboSingleSelectOnDismiss(
-                    searchBySearch,
-                    searchByOptions as IComboBoxOption[],
-                    filters.searchBy,
-                    (opt) => onSearchByChange({} as React.FormEvent<IComboBox>, opt),
-                  );
-                }
-                setComboEditingFor('searchBy', false);
-                setSearchBySearch('');
-              }}
-              styles={{
-                root: { width: '100%' },
-                callout: { minWidth: 240 },
-                optionsContainer: { minWidth: 200 },
-              }}
+              hintText={searchByHint}
+              hintId="voa-searchby-hint"
+              onChange={handleSearchByComboChange}
+              onKeyDownCapture={handleSearchByComboKeyDownCapture}
+              onInputValueChange={handleSearchByComboInputValueChange}
+              onKeyDown={handleSearchByComboKeyDown}
+              onMenuDismissed={handleSearchByComboDismissed}
             />
-            {searchByHint && (
-              <Text id="voa-searchby-hint" variant="small" styles={{ root: { marginTop: 4 } }}>
-                {searchByHint}
-              </Text>
-            )}
           </Stack.Item>
           {renderSearchControl()}
           <Stack.Item className="voa-search-panel__actions">
-            <Stack horizontal wrap verticalAlign="center" tokens={{ childrenGap: 12 }}>
-              {(shimmer || itemsLoading) && (
-                <Spinner size={SpinnerSize.small} ariaLabel={commonText.aria.loadingFilterResults} />
-              )}
-              <FocusableActionButton
-                text={commonText.buttons.search}
-                iconProps={{ iconName: 'Search' }}
-                onClick={handleSearch}
-                onUnavailableClick={isSalesSearch ? handleSalesSearchUnavailableAttempt : undefined}
-                unavailable={isSearchDisabled}
-                unavailableReason={searchUnavailableReason}
-                unavailableReasonId="voa-search-unavailable"
-                ariaLabel={commonText.buttons.search}
-              />
-              <DefaultButton
-                text={commonText.buttons.clearAll}
-                iconProps={{ iconName: 'ClearFilter' }}
-                onClick={handleClear}
-                ariaLabel={commonText.aria.clearAllFilters}
-                className="voa-prefilter-clear"
-              />
-            </Stack>
+            <SalesSearchActionsRow
+              isLoading={shimmer || itemsLoading}
+              loadingAriaLabel={commonText.aria.loadingFilterResults}
+              searchText={commonText.buttons.search}
+              searchAriaLabel={commonText.buttons.search}
+              searchUnavailable={isSearchDisabled}
+              searchUnavailableReason={searchUnavailableReason}
+              searchUnavailableReasonId="voa-search-unavailable"
+              onSearch={handleSearch}
+              onUnavailableClick={isSalesSearch ? handleSalesSearchUnavailableAttempt : undefined}
+              clearText={commonText.buttons.clearAll}
+              clearAriaLabel={commonText.aria.clearAllFilters}
+              onClear={handleClear}
+            />
           </Stack.Item>
         </Stack>
         {salesSearchShowsRequiredFields && !showResults && (
@@ -6607,91 +6256,42 @@ export const Grid = React.memo((props: GridProps) => {
               <div className="voa-grid-toolbar__left">
                 {showBulkSelectionControls && (
                   <div className="voa-selection-controls" role="group" aria-label={selectionGroupLabel}>
-                    <div className="voa-selection-controls__field">
-                      <Label htmlFor="voa-select-first" className="voa-selection-controls__label">
-                        {selectFirstLabel}
-                      </Label>
-                      <TextField
-                        id="voa-select-first"
-                        ariaLabel={selectFirstLabel}
-                        aria-describedby={buildAriaDescribedBy(
-                          'voa-select-first-help',
-                          selectionControlsDisabled ? 'voa-select-first-unavailable' : undefined,
-                        )}
-                        value={selectFirstInput}
-                        placeholder={selectFirstPlaceholder}
-                        type="number"
-                        min={1}
-                        max={pageItemCount}
-                        inputMode="numeric"
-                        disabled={selectionControlsDisabled}
-                        className={selectionControlsDisabled ? 'voa-focusable-disabled-field' : undefined}
-                        title={selectionControlsUnavailableReason}
-                        onChange={(_, value) => {
-                          if (selectionControlsDisabled) return;
-                          setSelectFirstInput(value ?? '');
-                          if (selectFirstError) {
-                            setSelectFirstError(undefined);
-                          }
-                        }}
-                        onKeyDown={(ev) => {
-                          if (selectionControlsDisabled) return;
-                          if (ev.key === 'Enter') {
-                            ev.preventDefault();
-                            selectFirstOnPage();
-                          }
-                        }}
-                        errorMessage={selectFirstError}
-                        styles={{ root: { maxWidth: 160 } }}
-                      />
-                      {selectionControlsDisabled && (
-                        <span id="voa-select-first-unavailable" className="voa-sr-only">
-                          {selectionControlsUnavailableReason}
-                        </span>
-                      )}
-                      <span id="voa-select-first-help" className="voa-sr-only">
-                        {selectFirstHelperText}
-                      </span>
-                      <Text variant="small" className="voa-selection-controls__suffix">
-                        {selectFirstSuffix}
-                      </Text>
-                    </div>
-                    <FocusableActionButton
-                      text={selectFirstButtonText}
-                      iconProps={{ iconName: 'Accept' }}
-                      onClick={selectFirstOnPage}
-                      unavailable={selectionControlsDisabled}
-                      unavailableReason={selectionControlsUnavailableReason}
-                      unavailableReasonId="voa-select-first-apply-unavailable"
-                      ariaLabel={selectFirstButtonText}
-                    />
-                    <FocusableActionButton
-                      text={clearSelectionText}
-                      iconProps={{ iconName: 'Clear' }}
-                      onClick={clearPageSelection}
-                      unavailable={selectionControlsDisabled || selectedCount === 0}
-                      unavailableReason={clearSelectionUnavailableReason}
-                      unavailableReasonId="voa-clear-selection-unavailable"
-                      ariaLabel={clearSelectionText}
+                    <BulkSelectionField
+                      selectFirstLabel={selectFirstLabel}
+                      selectFirstPlaceholder={selectFirstPlaceholder}
+                      selectFirstHelperText={selectFirstHelperText}
+                      selectFirstSuffix={selectFirstSuffix}
+                      selectFirstButtonText={selectFirstButtonText}
+                      clearSelectionText={clearSelectionText}
+                      selectFirstInput={selectFirstInput}
+                      selectFirstError={selectFirstError}
+                      pageItemCount={pageItemCount}
+                      selectedCount={selectedCount}
+                      selectionControlsDisabled={selectionControlsDisabled}
+                      selectionControlsUnavailableReason={selectionControlsUnavailableReason}
+                      clearSelectionUnavailableReason={clearSelectionUnavailableReason}
+                      onSelectFirstInputChange={handleSelectFirstInputChange}
+                      onSelectFirstInputKeyDown={handleSelectFirstInputKeyDown}
+                      onSelectFirstOnPage={selectFirstOnPage}
+                      onClearPageSelection={clearPageSelection}
                     />
                   </div>
                 )}
                 {showCompactClearSelection && (
-                  <FocusableActionButton
+                  <CompactClearSelectionButton
                     text={clearSelectionText}
-                    iconProps={{ iconName: 'Clear' }}
-                    onClick={clearPageSelection}
-                    unavailable={selectedCount === 0}
+                    selectedCount={selectedCount}
                     unavailableReason={clearSelectionUnavailableReason}
                     unavailableReasonId="voa-clear-selection-unavailable"
                     ariaLabel={clearSelectionText}
+                    onClear={clearPageSelection}
                   />
                 )}
                 {showClearFiltersButton && (
                   <DefaultButton
                     text={commonText.buttons.clearFilters}
                     iconProps={{ iconName: 'ClearFilter' }}
-                    onClick={() => clearAllColumnFilters()}
+                    onClick={handleClearAllColumnFiltersClick}
                     ariaLabel={commonText.aria.clearColumnFilters}
                   />
                 )}
@@ -6751,7 +6351,7 @@ export const Grid = React.memo((props: GridProps) => {
                     <FocusableActionButton
                       text={markPassedQcActionText}
                       iconProps={{ iconName: 'CompletedSolid' }}
-                      onClick={() => { void handleMarkPassedQcClick(); }}
+                      onClick={onMarkPassedQcActionClick}
                       unavailable={markPassedQcButtonState.disabled || markPassedQcLoading}
                       unavailableReason={markPassedQcUnavailableReason}
                       unavailableReasonId="voa-mark-passed-qc-unavailable"
@@ -6818,7 +6418,7 @@ export const Grid = React.memo((props: GridProps) => {
                     columns={columnsWithIcons}
                     setKey="grid"
                     enableShimmer={itemsLoading || shimmer}
-                    onShouldVirtualize={() => true}
+                    onShouldVirtualize={shouldVirtualizeResults}
                     useReducedRowRenderer={true}
                     enableUpdateAnimations={false}
                     selectionMode={selectionType}
@@ -6858,7 +6458,7 @@ export const Grid = React.memo((props: GridProps) => {
           isVisible={Boolean(showResults && menuState)}
           target={menuState?.target}
           items={menuItems}
-          onDismiss={() => setMenuState(undefined)}
+          onDismiss={handleDismissColumnFilterMenu}
         />
         {showResults && (!compactViewport || totalPages > 0) && (
           <Stack
@@ -6912,13 +6512,16 @@ export const Grid = React.memo((props: GridProps) => {
                     }
 
                     const isCurrent = item === currentPage;
+                    const handlePageButtonClick = (): void => {
+                      onSetPage(item);
+                    };
                     return (
                       <DefaultButton
                         key={`page-${item}`}
                         aria-label={`Page ${item + 1}`}
                         aria-current={isCurrent ? 'page' : undefined}
                         styles={isCurrent ? activePaginationButtonStyles : paginationButtonStyles}
-                        onClick={() => onSetPage(item)}
+                        onClick={handlePageButtonClick}
                       >
                         {item + 1}
                       </DefaultButton>
@@ -6978,19 +6581,15 @@ export const Grid = React.memo((props: GridProps) => {
             onRenderAssignUserRow={onRenderAssignUserRow}
             onAssignSearchChange={handleAssignSearchChange}
             onAssignItemInvoked={handleAssignItemInvoked}
-            onDismissAssignUsersInfo={() => setDismissedAssignUsersInfo(true)}
-            onDismissAssignUsersError={() => setDismissedAssignUsersError(true)}
+            onDismissAssignUsersInfo={handleDismissAssignUsersInfo}
+            onDismissAssignUsersError={handleDismissAssignUsersError}
             onBack={closeAssignPanel}
             onClose={closeAssignPanel}
             assignConfirmButton={(
               <FocusableActionButton
                 text={assignActionText}
                 iconProps={{ iconName: 'AddFriend' }}
-                onClick={() => {
-                  if (selectedAssignUser) {
-                    void handleAssignClick(selectedAssignUser);
-                  }
-                }}
+                onClick={handleAssignConfirmClick}
                 unavailable={!selectedAssignUser || assignLoading}
                 unavailableReason={assignConfirmUnavailableReason}
                 unavailableReasonId="voa-assign-confirm-unavailable"
@@ -7011,7 +6610,7 @@ export const Grid = React.memo((props: GridProps) => {
           errorMessage={createTaskError}
           closeText={commonText.buttons.close}
           onDismiss={closeCreateTaskModal}
-          onDismissInfo={() => setDismissedCreateTaskInfo(true)}
+          onDismissInfo={handleDismissCreateTaskInfo}
           onConfirm={handleConfirmCreateTask}
         />
       </div>

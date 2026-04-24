@@ -10,19 +10,21 @@ function readRepoFile(relativePath: string): string {
 describe('accessibility review gate: inactive controls', () => {
   const gridSource = readRepoFile('DetailsListVOA/Grid.tsx');
   const assignOverlaySource = readRepoFile('DetailsListVOA/components/Grid/AssignTasksOverlay.tsx');
+  const sharedControlsSource = readRepoFile('DetailsListVOA/components/Grid/GridSharedControls.tsx');
   const cssSource = readRepoFile('DetailsListVOA/css/DetailsListVOA.css');
+  const completedDateFieldsSource = readRepoFile('DetailsListVOA/components/Grid/PrefilterCompletedDateFields.tsx');
 
   test('removes inactive action controls from keyboard navigation with true disabled states', () => {
-    expect(gridSource).toContain('disabled={unavailable}');
+    expect(sharedControlsSource).toContain('disabled={unavailable}');
     expect(assignOverlaySource).toContain('disabled={assignLoading}');
-    expect(gridSource).not.toContain('aria-disabled={unavailable || undefined}');
-    expect(gridSource).toContain('voa-focusable-disabled-button');
-    expect(gridSource).toContain('voa-focusable-disabled-field');
+    expect(sharedControlsSource).not.toContain('aria-disabled={unavailable || undefined}');
+    expect(sharedControlsSource).toContain('voa-focusable-disabled-button');
+    expect(completedDateFieldsSource).toContain('voa-focusable-disabled-field');
   });
 
   test('keeps the calculated to-date field descriptive while removing it from keyboard navigation', () => {
-    expect(gridSource).toContain('voa-prefilter-to-date-note');
-    expect(gridSource).toContain('disabled');
+    expect(completedDateFieldsSource).toContain('voa-prefilter-to-date-note');
+    expect(completedDateFieldsSource).toContain('disabled');
     expect(gridSource).toContain('calculated automatically');
   });
 
@@ -41,9 +43,9 @@ describe('accessibility review gate: inactive controls', () => {
     expect(gridSource).toContain('prefilter-billing-error');
     expect(gridSource).toContain('prefilter-user-error');
     expect(gridSource).toContain("role=\"alert\"");
-    expect(gridSource).toContain("aria-live=\"assertive\"");
+    expect(completedDateFieldsSource).toContain("aria-live=\"assertive\"");
     expect(gridSource).toContain("billingAuthorityOptionsError ? 'prefilter-billing-error' : undefined");
     expect(gridSource).toContain("prefilterUserOptionsError ? 'prefilter-user-error' : undefined");
-    expect(gridSource).toContain('prefilterFromDateError && (');
+    expect(gridSource).toContain('fromDateError={prefilterFromDateError}');
   });
 });

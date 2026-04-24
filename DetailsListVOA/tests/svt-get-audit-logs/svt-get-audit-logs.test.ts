@@ -549,7 +549,7 @@ describe('View model field label mapping', () => {
     qcassignedto: 'QC Assigned to',
     qcremarks: 'QC Remarks',
     outcome: 'Outcome',
-    completedat: 'Completed At',
+    completedat: 'CW Completed At',
   };
 
   test('AUDIT_FIELD_LABEL_BY_KEY is declared in view model', () => {

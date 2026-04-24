@@ -47,6 +47,24 @@
       default-value=""
     />
     <property
+      name="externalSaleId"
+      display-name-key="External Sale ID"
+      description-key="Optional external launch sale ID. When provided with externalOpenMode='vt-readonly', SVT opens this sale directly in readonly mode."
+      of-type="SingleLine.Text"
+      usage="input"
+      required="false"
+      default-value=""
+    />
+    <property
+      name="externalOpenMode"
+      display-name-key="External Open Mode"
+      description-key="Optional external launch mode. Supported value: vt-readonly."
+      of-type="SingleLine.Text"
+      usage="input"
+      required="false"
+      default-value=""
+    />
+    <property
       name="fxEnvironmentUrl"
       display-name-key="Fx Environment URL"
       description-key="Canvas-provided Dataverse environment URL used to build hereditament links in Sale Record details (e.g., https://org.crm11.dynamics.com)."

@@ -11,6 +11,7 @@ describe('focus borders review gate', () => {
   const gridSource = readRepoFile('DetailsListVOA/Grid.tsx');
   const gridCellSource = readRepoFile('DetailsListVOA/grid/GridCell.tsx');
   const cssSource = readRepoFile('DetailsListVOA/css/DetailsListVOA.css');
+  const comboUtilsSource = readRepoFile('DetailsListVOA/utils/GridComboUtils.ts');
 
   test('keeps repo-owned custom interactive elements on visible 2px solid focus outlines', () => {
     expect(cssSource).toContain('.voa-skip-links a:focus');
@@ -33,8 +34,8 @@ describe('focus borders review gate', () => {
   });
 
   test('uses a 2px focus outline for exact-match highlighted filter menu options', () => {
-    expect(gridSource).toContain("outline: `2px solid ${highlightBorder}`");
-    expect(gridSource).toContain("outlineOffset: '-2px'");
-    expect(gridSource).not.toContain("outline: `1px solid ${highlightBorder}`");
+    expect(comboUtilsSource).toContain("outline: `2px solid ${highlightBorder}`");
+    expect(comboUtilsSource).toContain("outlineOffset: '-2px'");
+    expect(comboUtilsSource).not.toContain("outline: `1px solid ${highlightBorder}`");
   });
 });

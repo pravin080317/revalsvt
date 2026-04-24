@@ -397,7 +397,7 @@ describe('PCF modifySvtTask() flow (DetailsListRuntimeController.ts)', () => {
 
   test('refreshes access and QC section after merge', () => {
     expect(runtimeSource).toContain(
-      'this.resolveSaleDetailsAccess(this._saleDetails)',
+      'this.applySaleDetailsAccess(this._saleDetails)',
     );
     expect(runtimeSource).toContain(
       'this.resolveQcSectionAccess(this._saleDetails)',

@@ -319,7 +319,7 @@ export type AuditFieldDisplayLabel =
   | 'QC Assigned to'
   | 'QC Remarks'
   | 'Outcome'
-  | 'Completed At';
+  | 'CW Completed At';
 
 /* ------------------------------------------------------------------ */
 /*  Plugin configuration                                              */

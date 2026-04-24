@@ -10,7 +10,10 @@ function readRepoFile(relativePath: string): string {
 describe('keyboard review gate', () => {
   const gridSource = readRepoFile('DetailsListVOA/Grid.tsx');
   const assignOverlaySource = readRepoFile('DetailsListVOA/components/Grid/AssignTasksOverlay.tsx');
+  const sharedControlsSource = readRepoFile('DetailsListVOA/components/Grid/GridSharedControls.tsx');
   const gridCellSource = readRepoFile('DetailsListVOA/grid/GridCell.tsx');
+  const dateRangeControlSource = readRepoFile('DetailsListVOA/components/Grid/GenericDateRangeSearchControl.tsx');
+  const completedDateFieldsSource = readRepoFile('DetailsListVOA/components/Grid/PrefilterCompletedDateFields.tsx');
 
   test('keeps active custom controls keyboard-operable', () => {
     expect(gridCellSource).toContain('<button');
@@ -20,12 +23,12 @@ describe('keyboard review gate', () => {
   });
 
   test('removes inactive controls from keyboard navigation by using disabled states', () => {
-    expect(gridSource).toContain('disabled={unavailable}');
+    expect(sharedControlsSource).toContain('disabled={unavailable}');
     expect(assignOverlaySource).toContain('disabled={assignLoading}');
     expect(gridSource).toContain('disabled');
-    expect(gridSource).toContain('disabled={selectionControlsDisabled}');
+    expect(gridSource).toContain('selectionControlsDisabled={selectionControlsDisabled}');
     expect(assignOverlaySource).toContain('disabled={!!assignSearchUnavailableReason}');
-    expect(gridSource).not.toContain('aria-disabled={selectionControlsDisabled || undefined}');
+    expect(sharedControlsSource).not.toContain('aria-disabled={unavailable || undefined}');
     expect(assignOverlaySource).not.toContain('aria-disabled={assignSearchUnavailableReason ? true : undefined}');
   });
 
@@ -38,7 +41,9 @@ describe('keyboard review gate', () => {
 
   test('keeps date pickers manually editable with typed input support', () => {
     const allowTextInputMatches = gridSource.match(/allowTextInput/g) ?? [];
-    expect(allowTextInputMatches.length).toBeGreaterThanOrEqual(5);
+    expect(allowTextInputMatches.length).toBeGreaterThanOrEqual(2);
+    expect(dateRangeControlSource).toContain('allowTextInput');
+    expect(completedDateFieldsSource).toContain('allowTextInput');
     expect(gridSource).toContain('parseDateFromString={parseDateInput}');
   });
 });

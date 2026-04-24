@@ -63,6 +63,7 @@ interface SalesVerificationTaskSectionProps {
   onModifyTask?: () => void | Promise<void>;
   canCreateTask?: boolean;
   canModifyTask?: boolean;
+  disableInternalActions?: boolean;
 }
 
 export const SalesVerificationTaskSection: React.FC<SalesVerificationTaskSectionProps> = ({
@@ -78,6 +79,7 @@ export const SalesVerificationTaskSection: React.FC<SalesVerificationTaskSection
   onModifyTask,
   canCreateTask = false,
   canModifyTask = false,
+  disableInternalActions = false,
 }) => {
   const [createTaskBusy, setCreateTaskBusy] = React.useState(false);
   const [createTaskMessage, setCreateTaskMessage] = React.useState<{ text: string; type: MessageBarType } | undefined>(undefined);
@@ -85,6 +87,8 @@ export const SalesVerificationTaskSection: React.FC<SalesVerificationTaskSection
   const [modifyTaskBusy, setModifyTaskBusy] = React.useState(false);
   const [showModifyTaskConfirmation, setShowModifyTaskConfirmation] = React.useState(false);
   const [modifyTaskMessage, setModifyTaskMessage] = React.useState<{ text: string; type: MessageBarType } | undefined>(undefined);
+
+  const internalActionsDisabledReason = 'Internal SVT actions are disabled when opened from VT.';
 
   const hasTaskId = hasDisplayValue(taskId);
   const createTaskActionRule = React.useMemo(
@@ -142,12 +146,12 @@ export const SalesVerificationTaskSection: React.FC<SalesVerificationTaskSection
   }, [modifyTaskMessage]);
 
   const handleOpenCreateTaskConfirmation = React.useCallback(() => {
-    if (!onCreateTask || createTaskActionRule.disabled) {
+    if (!onCreateTask || disableInternalActions || createTaskActionRule.disabled) {
       return;
     }
     setCreateTaskMessage(undefined);
     setShowCreateTaskConfirmation(true);
-  }, [createTaskActionRule.disabled, onCreateTask]);
+  }, [createTaskActionRule.disabled, disableInternalActions, onCreateTask]);
 
   const handleCancelCreateTask = React.useCallback(() => {
     if (createTaskBusy) {
@@ -178,13 +182,13 @@ export const SalesVerificationTaskSection: React.FC<SalesVerificationTaskSection
   }, [createTaskActionRule.disabled, onCreateTask]);
 
   const handleOpenModifyTaskConfirmation = React.useCallback(() => {
-    if (!onModifyTask || modifyTaskActionRule.disabled) {
+    if (!onModifyTask || disableInternalActions || modifyTaskActionRule.disabled) {
       return;
     }
 
     setModifyTaskMessage(undefined);
     setShowModifyTaskConfirmation(true);
-  }, [modifyTaskActionRule.disabled, onModifyTask]);
+  }, [disableInternalActions, modifyTaskActionRule.disabled, onModifyTask]);
 
   const handleCancelModifyTask = React.useCallback(() => {
     if (modifyTaskBusy) {
@@ -215,9 +219,22 @@ export const SalesVerificationTaskSection: React.FC<SalesVerificationTaskSection
     }
   }, [modifyTaskActionRule.disabled, onModifyTask]);
 
-  const createTaskDisabled = createTaskActionRule.disabled;
-  const createTaskUnavailableReason = createTaskActionRule.reason;
-  const modifyTaskUnavailableReason = modifyTaskActionRule.reason;
+  const createTaskDisabled = disableInternalActions || createTaskActionRule.disabled;
+  const createTaskUnavailableReason = disableInternalActions
+    ? internalActionsDisabledReason
+    : createTaskActionRule.reason;
+  const modifyTaskUnavailableReason = disableInternalActions
+    ? internalActionsDisabledReason
+    : modifyTaskActionRule.reason;
+  const modifyTaskDisabled = disableInternalActions || modifyTaskActionRule.disabled;
+  const salesAuditHistoryDisabled = disableInternalActions || auditHistoryActionRule.disabled;
+  const salesAuditHistoryReason = disableInternalActions
+    ? internalActionsDisabledReason
+    : auditHistoryActionRule.reason;
+  const qcAuditHistoryDisabled = disableInternalActions || qcAuditHistoryActionRule.disabled;
+  const qcAuditHistoryReason = disableInternalActions
+    ? internalActionsDisabledReason
+    : qcAuditHistoryActionRule.reason;
 
   return (
     <section className="voa-sale-details-card" aria-labelledby="svt-task-details-heading">
@@ -254,21 +271,25 @@ export const SalesVerificationTaskSection: React.FC<SalesVerificationTaskSection
           <div className="voa-task-actions" role="group" aria-label="Audit history actions">
             <DefaultButton
               text="Sales Audit History"
-              ariaLabel={auditHistoryActionRule.disabled
-                ? auditHistoryActionRule.reason ?? 'Audit history is currently unavailable.'
+              ariaLabel={salesAuditHistoryDisabled
+                ? salesAuditHistoryReason ?? 'Audit history is currently unavailable.'
                 : 'Open sales audit history'}
-              title={auditHistoryActionRule.reason}
-              disabled={auditHistoryActionRule.disabled}
-              onClick={() => { void onOpenAuditHistory?.(); }}
+              title={salesAuditHistoryReason}
+              disabled={salesAuditHistoryDisabled}
+              onClick={() => {
+                Promise.resolve(onOpenAuditHistory?.()).catch(() => undefined);
+              }}
             />
             <DefaultButton
               text="QC Audit History"
-              ariaLabel={qcAuditHistoryActionRule.disabled
-                ? qcAuditHistoryActionRule.reason ?? 'QC audit history is currently unavailable.'
+              ariaLabel={qcAuditHistoryDisabled
+                ? qcAuditHistoryReason ?? 'QC audit history is currently unavailable.'
                 : 'Open QC audit history'}
-              title={qcAuditHistoryActionRule.reason}
-              disabled={qcAuditHistoryActionRule.disabled}
-              onClick={() => { void onOpenQcLog?.(); }}
+              title={qcAuditHistoryReason}
+              disabled={qcAuditHistoryDisabled}
+              onClick={() => {
+                Promise.resolve(onOpenQcLog?.()).catch(() => undefined);
+              }}
             />
           </div>
         </article>
@@ -279,11 +300,11 @@ export const SalesVerificationTaskSection: React.FC<SalesVerificationTaskSection
             {canShowModifyTaskButton && (
               <DefaultButton
                 text="Modify SVT Task"
-                disabled={modifyTaskActionRule.disabled}
-                ariaLabel={modifyTaskActionRule.disabled
+                disabled={modifyTaskDisabled}
+                ariaLabel={modifyTaskDisabled
                   ? modifyTaskUnavailableReason ?? 'Modify task is currently unavailable.'
                   : 'Modify SVT Task'}
-                title={modifyTaskActionRule.disabled
+                title={modifyTaskDisabled
                   ? modifyTaskUnavailableReason ?? 'Modify task is currently unavailable.'
                   : undefined}
                 onClick={handleOpenModifyTaskConfirmation}
@@ -309,7 +330,7 @@ export const SalesVerificationTaskSection: React.FC<SalesVerificationTaskSection
               <Text variant="small">{createTaskBusy ? 'Creating task...' : 'Modifying task...'}</Text>
             </div>
           )}
-          {createTaskUnavailableReason && (hasTaskId || !canCreateTask) && (
+          {createTaskUnavailableReason && (disableInternalActions || hasTaskId || !canCreateTask) && (
             <Text variant="small" className="voa-task-actions__note">{createTaskUnavailableReason}</Text>
           )}
           {createTaskMessage && (
@@ -361,7 +382,9 @@ export const SalesVerificationTaskSection: React.FC<SalesVerificationTaskSection
             text={createTaskBusy ? 'Creating...' : 'Create Task'}
             ariaLabel="Confirm create SVT task"
             disabled={createTaskBusy}
-            onClick={() => { void handleConfirmCreateTask(); }}
+            onClick={() => {
+              handleConfirmCreateTask().catch(() => undefined);
+            }}
           />
           <DefaultButton
             text="Cancel"
@@ -398,7 +421,9 @@ export const SalesVerificationTaskSection: React.FC<SalesVerificationTaskSection
             text={modifyTaskBusy ? 'Modifying...' : 'Confirm'}
             ariaLabel="Confirm modify SVT task"
             disabled={modifyTaskBusy}
-            onClick={() => { void handleConfirmModifyTask(); }}
+            onClick={() => {
+              handleConfirmModifyTask().catch(() => undefined);
+            }}
           />
           <DefaultButton
             text="Cancel"

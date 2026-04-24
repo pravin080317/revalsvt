@@ -87,6 +87,7 @@ export interface SaleDetailsShellProps {
   vmsBaseUrl?: string;
   readOnly?: boolean;
   readOnlyReason?: string;
+  disableInternalActions?: boolean;
   canCreateManualTask?: boolean;
   canModifyTask?: boolean;
   canProgressTask?: boolean;

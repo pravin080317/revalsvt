@@ -25,6 +25,7 @@ interface DetailsListControlShellProps {
   saleDetailsJson: string;
   saleDetailsReadOnly: boolean;
   saleDetailsReadOnlyReason?: string;
+  saleDetailsDisableInternalActions: boolean;
   saleDetailsCanCreateManualTask: boolean;
   saleDetailsCanModifyTask: boolean;
   saleDetailsCanProgressTask: boolean;
@@ -75,6 +76,7 @@ export const DetailsListControlShell: React.FC<DetailsListControlShellProps> = (
   saleDetailsJson,
   saleDetailsReadOnly,
   saleDetailsReadOnlyReason,
+  saleDetailsDisableInternalActions,
   saleDetailsCanCreateManualTask,
   saleDetailsCanModifyTask,
   saleDetailsCanProgressTask,
@@ -185,6 +187,7 @@ export const DetailsListControlShell: React.FC<DetailsListControlShellProps> = (
         vmsBaseUrl={vmsBaseUrl}
         readOnly={saleDetailsReadOnly}
         readOnlyReason={saleDetailsReadOnlyReason}
+        disableInternalActions={saleDetailsDisableInternalActions}
         canCreateManualTask={saleDetailsCanCreateManualTask}
         canModifyTask={saleDetailsCanModifyTask}
         canProgressTask={saleDetailsCanProgressTask}
@@ -226,6 +229,7 @@ export const DetailsListControlShell: React.FC<DetailsListControlShellProps> = (
       vmsBaseUrl,
       saleDetailsReadOnly,
       saleDetailsReadOnlyReason,
+      saleDetailsDisableInternalActions,
       saleDetailsCanCreateManualTask,
       saleDetailsCanModifyTask,
       saleDetailsCanProgressTask,

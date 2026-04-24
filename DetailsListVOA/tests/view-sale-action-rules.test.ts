@@ -220,6 +220,7 @@ describe('view sale action rules', () => {
     expect(getPromoteToMasterActionRule({
       recordCount: 0,
       isCurrentMaster: false,
+      hasRecordId: true,
       readOnly: false,
       hasPromoteHandler: true,
     })).toEqual({ disabled: true });
@@ -227,6 +228,7 @@ describe('view sale action rules', () => {
     expect(getPromoteToMasterActionRule({
       recordCount: 1,
       isCurrentMaster: true,
+      hasRecordId: true,
       readOnly: false,
       hasPromoteHandler: true,
     })).toEqual({ disabled: true });
@@ -234,6 +236,15 @@ describe('view sale action rules', () => {
     expect(getPromoteToMasterActionRule({
       recordCount: 1,
       isCurrentMaster: false,
+      hasRecordId: false,
+      readOnly: false,
+      hasPromoteHandler: true,
+    })).toEqual({ disabled: true });
+
+    expect(getPromoteToMasterActionRule({
+      recordCount: 1,
+      isCurrentMaster: false,
+      hasRecordId: true,
       readOnly: false,
       hasPromoteHandler: true,
     })).toEqual({ disabled: false });

@@ -102,45 +102,69 @@ export const sanitizeFilters = (filters: GridFilterState): GridFilterState => {
     searchBy: filters.searchBy,
   };
 
+  type StringFilterKey =
+    | 'taskId'
+    | 'saleId'
+    | 'address'
+    | 'buildingNameNumber'
+    | 'street'
+    | 'townCity'
+    | 'source'
+    | 'assignedTo'
+    | 'qcAssignedTo'
+    | 'bacode';
+  type DateRangeFilterKey = 'assignedDate' | 'taskCompletedDate' | 'qcAssignedDate' | 'qcCompletedDate';
+
+  const trimToUndefined = (value?: string, minLength = 1): string | undefined => {
+    const trimmed = (value ?? '').trim();
+    return trimmed.length >= minLength ? trimmed : undefined;
+  };
+
+  const sanitizeDateRange = (value?: DateRangeFilter, preserveEmptyBounds = false): DateRangeFilter | undefined => {
+    if (!value) return undefined;
+    const rawFrom = value.from?.trim() ?? undefined;
+    const rawTo = value.to?.trim() ?? undefined;
+    const from = preserveEmptyBounds ? rawFrom : trimToUndefined(rawFrom);
+    const to = preserveEmptyBounds ? rawTo : trimToUndefined(rawTo);
+    return from || to ? { from, to } : undefined;
+  };
+
+  const applySanitizedStringField = (
+    targetKey: StringFilterKey,
+    sourceValue?: string,
+    minLength = 1,
+  ): void => {
+    const next = trimToUndefined(sourceValue, minLength);
+    if (next) {
+      sanitized[targetKey] = next;
+    }
+  };
+
   if (filters.uprn) {
     const digits = filters.uprn.replace(/\D/g, '');
     sanitized.uprn = digits.length > 0 ? digits : undefined;
   }
 
-  if (filters.taskId) {
-    const trimmed = filters.taskId.trim();
-    sanitized.taskId = trimmed.length > 0 ? trimmed : undefined;
-  }
-
-  if (filters.saleId) {
-    const trimmed = filters.saleId.trim();
-    sanitized.saleId = trimmed.length > 0 ? trimmed : undefined;
-  }
+  applySanitizedStringField('taskId', filters.taskId);
+  applySanitizedStringField('saleId', filters.saleId);
 
   if (filters.postcode) {
     const trimmed = normalizeUkPostcode(filters.postcode);
     sanitized.postcode = trimmed.length >= 2 ? trimmed : undefined;
   }
 
-  if (filters.address) {
-    const trimmed = filters.address.trim();
-    sanitized.address = trimmed.length >= 3 ? trimmed : undefined;
-  }
+  applySanitizedStringField('address', filters.address, 3);
 
-  if (filters.buildingNameNumber) {
-    const trimmed = filters.buildingNameNumber.trim();
-    sanitized.buildingNameNumber = trimmed.length > 0 ? trimmed : undefined;
-  }
-
-  if (filters.street) {
-    const trimmed = filters.street.trim();
-    sanitized.street = trimmed.length > 0 ? trimmed : undefined;
-  }
-
-  if (filters.townCity) {
-    const trimmed = filters.townCity.trim();
-    sanitized.townCity = trimmed.length > 0 ? trimmed : undefined;
-  }
+  const basicStringFields: Array<[StringFilterKey, string | undefined]> = [
+    ['buildingNameNumber', filters.buildingNameNumber],
+    ['street', filters.street],
+    ['townCity', filters.townCity],
+    ['source', filters.source],
+    ['assignedTo', filters.assignedTo],
+    ['qcAssignedTo', filters.qcAssignedTo],
+    ['bacode', filters.bacode],
+  ];
+  basicStringFields.forEach(([key, value]) => applySanitizedStringField(key, value));
 
   if (filters.manualCheck) sanitized.manualCheck = filters.manualCheck;
 
@@ -149,14 +173,8 @@ export const sanitizeFilters = (filters: GridFilterState): GridFilterState => {
     if (trimmed.length > 0) sanitized.billingAuthority = trimmed.slice(0, 3);
   }
 
-  if (filters.transactionDate) {
-    const from = filters.transactionDate.from?.trim();
-    const to = filters.transactionDate.to?.trim();
-    sanitized.transactionDate = {
-      from: from && from.length > 0 ? from : undefined,
-      to: to && to.length > 0 ? to : undefined,
-    };
-  }
+  const transactionDate = sanitizeDateRange(filters.transactionDate);
+  if (transactionDate) sanitized.transactionDate = transactionDate;
 
   const sanitizeNumeric = (value?: NumericFilter): NumericFilter | undefined => {
     if (!value) return undefined;
@@ -218,60 +236,21 @@ export const sanitizeFilters = (filters: GridFilterState): GridFilterState => {
     }
   }
 
-  if (filters.source) {
-    const trimmed = filters.source.trim();
-    sanitized.source = trimmed.length > 0 ? trimmed : undefined;
-  }
-
   const taskStatus = sanitizeMulti(filters.taskStatus);
   if (taskStatus) sanitized.taskStatus = taskStatus;
 
-  if (filters.assignedTo) {
-    const trimmed = filters.assignedTo.trim();
-    sanitized.assignedTo = trimmed.length > 0 ? trimmed : undefined;
-  }
-
-  const assignedDate = filters.assignedDate
-    ? {
-        from: filters.assignedDate.from?.trim() ?? undefined,
-        to: filters.assignedDate.to?.trim() ?? undefined,
-      }
-    : undefined;
-  if (assignedDate && (assignedDate.from || assignedDate.to)) sanitized.assignedDate = assignedDate;
-
-  const taskCompletedDate = filters.taskCompletedDate
-    ? {
-        from: filters.taskCompletedDate.from?.trim() ?? undefined,
-        to: filters.taskCompletedDate.to?.trim() ?? undefined,
-      }
-    : undefined;
-  if (taskCompletedDate && (taskCompletedDate.from || taskCompletedDate.to)) sanitized.taskCompletedDate = taskCompletedDate;
-
-  if (filters.qcAssignedTo) {
-    const trimmed = filters.qcAssignedTo.trim();
-    sanitized.qcAssignedTo = trimmed.length > 0 ? trimmed : undefined;
-  }
-
-  const qcAssignedDate = filters.qcAssignedDate
-    ? {
-        from: filters.qcAssignedDate.from?.trim() ?? undefined,
-        to: filters.qcAssignedDate.to?.trim() ?? undefined,
-      }
-    : undefined;
-  if (qcAssignedDate && (qcAssignedDate.from || qcAssignedDate.to)) sanitized.qcAssignedDate = qcAssignedDate;
-
-  const qcCompletedDate = filters.qcCompletedDate
-    ? {
-        from: filters.qcCompletedDate.from?.trim() ?? undefined,
-        to: filters.qcCompletedDate.to?.trim() ?? undefined,
-      }
-    : undefined;
-  if (qcCompletedDate && (qcCompletedDate.from || qcCompletedDate.to)) sanitized.qcCompletedDate = qcCompletedDate;
-
-  if (filters.bacode) {
-    const trimmed = filters.bacode.trim();
-    sanitized.bacode = trimmed.length > 0 ? trimmed : undefined;
-  }
+  const dateRangeFields: Array<[DateRangeFilterKey, DateRangeFilter | undefined]> = [
+    ['assignedDate', filters.assignedDate],
+    ['taskCompletedDate', filters.taskCompletedDate],
+    ['qcAssignedDate', filters.qcAssignedDate],
+    ['qcCompletedDate', filters.qcCompletedDate],
+  ];
+  dateRangeFields.forEach(([key, value]) => {
+    const range = sanitizeDateRange(value, true);
+    if (range) {
+      sanitized[key] = range;
+    }
+  });
 
   return sanitized;
 };

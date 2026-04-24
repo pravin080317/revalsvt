@@ -42,7 +42,7 @@ describe('WRT-366 View Sales Record through Quality Control Assignment AC', () =
     expect(runtimeSource).toContain('this.selectedScreenKind = normalizeTextValue(args?.screenKind);');
     expect(runtimeSource).toContain('this.selectedTableKey = normalizeTextValue(args?.tableKey);');
     expect(runtimeSource).toContain('const access = this.resolveSaleDetailsAccess(detailsPayload);');
-    expect(runtimeSource).toContain('this.saleDetailsReadOnly = access.readOnly;');
+    expect(runtimeSource).toContain('this.saleDetailsReadOnly = this.externalReadOnlyMode || access.readOnly;');
   });
 
   test('AC4: qc-assignment view-sales details remain read-only for non-caseworker ownership contexts', () => {
