@@ -30,7 +30,7 @@ Exclude QC outcome/remarks from this checklist.
 ## Common "Cannot Change" Reasons (Expected)
 - Record is not assigned to current caseworker.
 - Task status is not `Assigned` or `Assigned QC Failed`.
-- Task details are incomplete (missing task id/status).
+- Task details are missing required values (task id or status).
 - Page is in read-only mode from runtime access gate.
 
 ## Code Gates (Reference)

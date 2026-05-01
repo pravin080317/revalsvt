@@ -135,6 +135,16 @@ describe('profile delegation', () => {
     expect(getProfileConfigs('nonexistent')).toBe(COLUMN_PROFILES.sales);
   });
 
+  it('known empty profiles fall back to sales profile', () => {
+    expect(getProfileConfigs('allsales')).toBe(COLUMN_PROFILES.sales);
+    expect(getProfileConfigs('myassignment')).toBe(COLUMN_PROFILES.sales);
+  });
+
+  it('trims and lowercases profile keys before resolving', () => {
+    expect(getProfileConfigs('  MANAGER  ')).toBe(COLUMN_PROFILES.sales);
+    expect(getProfileConfigs('  MYASSIGNMENT  ')).toBe(COLUMN_PROFILES.sales);
+  });
+
   it('empty key falls back to sales profile', () => {
     expect(getProfileConfigs('')).toBe(COLUMN_PROFILES.sales);
   });

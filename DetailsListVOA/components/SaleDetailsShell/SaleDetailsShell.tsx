@@ -429,7 +429,7 @@ export const SaleDetailsShell: React.FC<SaleDetailsShellProps> = ({
             readOnly={readOnly || sectionsDisabled}
             hereditamentUrl={model.addressLink}
             dataEnhancementUrl={model.dataEnhancementUrl}
-            canCreateDataEnhancement={!readOnly && !sectionsDisabled && canProgressTask && !showQcSection}
+            canCreateDataEnhancement={!readOnly && !sectionsDisabled && canProgressTask}
           /></div>
 
           <div id="section-master" ref={masterSectionRef}><MasterSaleSection masterSale={displayMasterSale} highlighted={masterHighlighted} /></div>

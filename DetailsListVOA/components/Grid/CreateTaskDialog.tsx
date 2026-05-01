@@ -43,7 +43,7 @@ export const CreateTaskDialog: React.FC<CreateTaskDialogProps> = ({
   onConfirm,
 }) => {
   const handleConfirmClick = React.useCallback(() => {
-    void onConfirm();
+    Promise.resolve(onConfirm()).catch(() => undefined);
   }, [onConfirm]);
 
   return (
@@ -55,7 +55,7 @@ export const CreateTaskDialog: React.FC<CreateTaskDialogProps> = ({
         title: createTaskActionText,
         subText: `Create tasks for ${selectedCreateTaskSaleIds.length} selected sale${selectedCreateTaskSaleIds.length === 1 ? '' : 's'}.`,
       }}
-      modalProps={{ isBlocking: false }}
+      modalProps={{ isBlocking: true }}
       minWidth={560}
       maxWidth={720}
     >

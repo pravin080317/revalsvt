@@ -224,14 +224,14 @@ specific screen without changing the shared profile used by all other screens.
 
 ## Adding a New Column
 
-When adding a column to any profile, choose alignment by answering the following:
+When adding a column to any profile, choose alignment using the following decision table:
 
-| Question | Yes → | No → |
+| Decision Step | Match → | Otherwise → |
 | --- | --- | --- |
-| Is the value a colored badge / pill? | `center` (Rule 6) | next question |
-| Is the value a numeric amount or ratio? | `right` (Rule 4) | next question |
-| Is the value a fixed-format ID or reference? | `center` (Rule 5) | next question |
-| Is the value a date or datetime? | `left` (Rule 3) | `left` (Rule 2) |
+| Value is a colored badge / pill | `center` (Rule 6) | continue |
+| Value is a numeric amount or ratio | `right` (Rule 4) | continue |
+| Value is a fixed-format ID or reference | `center` (Rule 5) | continue |
+| Value is a date or datetime | `left` (Rule 3) | `left` (Rule 2) |
 
 Always add `ColVerticalAlign: 'center'` (Rule 1) regardless of the horizontal choice.
 

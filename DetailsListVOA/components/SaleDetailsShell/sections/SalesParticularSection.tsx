@@ -130,6 +130,57 @@ const toScoreText = (score: number): string => {
 
 const normalizeOverallScore = (score: number): number => Math.min(1, Math.max(0, score));
 
+const buildSelectedAttributeValues = (values: {
+  kitchenAge: string;
+  kitchenSpecification: string;
+  bathroomAge: string;
+  bathroomSpecification: string;
+  glazing: string;
+  heating: string;
+  decorativeFinishes: string;
+}): Record<SalesParticularAttributeKey, string> => ({
+  kitchenAge: values.kitchenAge,
+  kitchenSpecification: values.kitchenSpecification,
+  bathroomAge: values.bathroomAge,
+  bathroomSpecification: values.bathroomSpecification,
+  glazing: values.glazing,
+  heating: values.heating,
+  decorativeFinishes: values.decorativeFinishes,
+});
+
+const validateRequiredParticularFields = (
+  selectedValues: Record<SalesParticularAttributeKey, string>,
+): SalesParticularValidationErrors => {
+  const nextErrors: SalesParticularValidationErrors = {};
+  REQUIRED_FIELDS.forEach((field) => {
+    if (!selectedValues[field].trim()) {
+      nextErrors[field] = REQUIRED_FIELD_ERRORS[field];
+    }
+  });
+  return nextErrors;
+};
+
+const calculateConditionOutcome = (
+  selectedValues: Record<SalesParticularAttributeKey, string>,
+  scoringLookup: Map<string, number>,
+): { scoreText: string; scoreValue: number; category: string } => {
+  const totalScore = REQUIRED_FIELDS.reduce((sum, field) => {
+    const lookupKey = `${field}|${normalizeLookupValue(selectedValues[field])}`;
+    return sum + (scoringLookup.get(lookupKey) ?? 0);
+  }, 0);
+
+  const normalizedTotalScore = normalizeOverallScore(totalScore);
+  const roundedTotalScoreText = toScoreText(normalizedTotalScore);
+  const parsedScore = Number.parseFloat(roundedTotalScoreText);
+  const scoreValue = Number.isFinite(parsedScore) ? parsedScore : normalizedTotalScore;
+
+  return {
+    scoreText: roundedTotalScoreText,
+    scoreValue,
+    category: toConditionCategory(scoreValue),
+  };
+};
+
 const toConditionCategory = (score: number): string => {
   if (score >= 0.73) {
     return 'Above Average';
@@ -268,18 +319,17 @@ export const SalesParticularSection: React.FC<SalesParticularSectionProps> = ({
   }, []);
 
   const validateBeforeCalculate = React.useCallback((): SalesParticularValidationErrors => {
-    const nextErrors: SalesParticularValidationErrors = {};
-
     if (!reviewStatusKey) {
+      const nextErrors: SalesParticularValidationErrors = {};
       nextErrors.reviewStatus = 'Enter the sales particulars';
       return nextErrors;
     }
 
     if (reviewStatusKey !== 'details-available') {
-      return nextErrors;
+      return {};
     }
 
-    const selectedValues: Record<SalesParticularAttributeKey, string> = {
+    const selectedValues = buildSelectedAttributeValues({
       kitchenAge,
       kitchenSpecification,
       bathroomAge,
@@ -287,15 +337,8 @@ export const SalesParticularSection: React.FC<SalesParticularSectionProps> = ({
       glazing,
       heating,
       decorativeFinishes,
-    };
-
-    REQUIRED_FIELDS.forEach((field) => {
-      if (!selectedValues[field].trim()) {
-        nextErrors[field] = REQUIRED_FIELD_ERRORS[field];
-      }
     });
-
-    return nextErrors;
+    return validateRequiredParticularFields(selectedValues);
   }, [
     bathroomAge,
     bathroomSpecification,
@@ -315,7 +358,7 @@ export const SalesParticularSection: React.FC<SalesParticularSectionProps> = ({
       return;
     }
 
-    const selectedValues: Record<SalesParticularAttributeKey, string> = {
+    const selectedValues = buildSelectedAttributeValues({
       kitchenAge,
       kitchenSpecification,
       bathroomAge,
@@ -323,16 +366,13 @@ export const SalesParticularSection: React.FC<SalesParticularSectionProps> = ({
       glazing,
       heating,
       decorativeFinishes,
-    };
-
-    const totalScore = REQUIRED_FIELDS.reduce((sum, field) => {
-      const lookupKey = `${field}|${normalizeLookupValue(selectedValues[field])}`;
-      return sum + (scoringLookup.get(lookupKey) ?? 0);
-    }, 0);
-
-    const normalizedTotalScore = normalizeOverallScore(totalScore);
-    setConditionScore(toScoreText(normalizedTotalScore));
-    setConditionCategory(toConditionCategory(normalizedTotalScore));
+    });
+    const outcome = calculateConditionOutcome(selectedValues, scoringLookup);
+    const roundedTotalScoreText = outcome.scoreText;
+    const roundedTotalScore = Number.parseFloat(roundedTotalScoreText);
+    const normalizedTotalScore = outcome.scoreValue;
+    setConditionScore(roundedTotalScoreText);
+    setConditionCategory(toConditionCategory(Number.isFinite(roundedTotalScore) ? roundedTotalScore : normalizedTotalScore));
   }, [
     bathroomAge,
     bathroomSpecification,

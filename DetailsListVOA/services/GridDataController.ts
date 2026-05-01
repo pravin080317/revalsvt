@@ -7,6 +7,7 @@ import { executeUnboundCustomApi, normalizeCustomApiName, resolveCustomApiOperat
 import { normalizeSearchResponse, SalesApiResponse, unwrapCustomApiPayload } from './DataService';
 import { buildGridApiParams, type ClientSortState } from '../utils/GridDataParams';
 import { svtDebug } from '../utils/debug';
+import { stripHtmlTags } from './runtime/text';
 
 export interface LoadResult {
   items: TaskSearchItem[];
@@ -42,8 +43,7 @@ const isBadRequestStyleMessage = (message: string): boolean => {
 };
 
 const stripHtmlAndNormalizeWhitespace = (value: string): string =>
-  value
-    .replace(/<[^>]+>/g, ' ')
+  stripHtmlTags(value)
     .replace(/\\r|\\n|\r|\n/g, ' ')
     .replace(/\\"/g, '"')
     .replace(/\s+/g, ' ')

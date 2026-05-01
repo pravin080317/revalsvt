@@ -121,9 +121,15 @@ export const DetailsListControlShell: React.FC<DetailsListControlShellProps> = (
   );
 
   const [userDisplayNameMap, setUserDisplayNameMap] = React.useState<Record<string, string>>({});
+  const [submitSuccessDismissed, setSubmitSuccessDismissed] = React.useState(false);
   const handleUserDisplayNameMapChange = React.useCallback((map: Record<string, string>) => {
     setUserDisplayNameMap(map);
   }, []);
+
+  const handleDismissSubmitSuccess = React.useCallback(() => {
+    setSubmitSuccessDismissed(true);
+    onDismissSubmitSuccess?.();
+  }, [onDismissSubmitSuccess]);
 
   // Bump refreshNonce when returning from details so the grid re-fetches data.
   const [refreshNonce, setRefreshNonce] = React.useState(0);
@@ -245,21 +251,24 @@ export const DetailsListControlShell: React.FC<DetailsListControlShellProps> = (
   // Auto-dismiss the success notification after 5 seconds
   React.useEffect(() => {
     if (!submitSuccessMessage) return;
+    setSubmitSuccessDismissed(false);
     const timer = setTimeout(() => {
-      onDismissSubmitSuccess?.();
+      handleDismissSubmitSuccess();
     }, 5000);
     return () => clearTimeout(timer);
-  }, [submitSuccessMessage, onDismissSubmitSuccess]);
+  }, [handleDismissSubmitSuccess, submitSuccessMessage]);
+
+  const showSubmitSuccessBanner = Boolean(submitSuccessMessage) && !submitSuccessDismissed;
 
   return (
     <PCFContext.Provider value={context}>
       <>
         <div style={{ display: showPcfDetails ? 'none' : 'block', height: '100%' }}>
-          {submitSuccessMessage && (
+          {showSubmitSuccessBanner && (
             <div className="voa-submit-success-banner" role="status" aria-live="polite">
               <MessageBar
                 messageBarType={MessageBarType.success}
-                onDismiss={onDismissSubmitSuccess}
+                onDismiss={handleDismissSubmitSuccess}
                 dismissButtonAriaLabel="Dismiss"
                 style={{ marginBottom: 8 }}
               >

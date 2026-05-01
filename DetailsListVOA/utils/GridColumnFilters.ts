@@ -160,6 +160,238 @@ export const getActiveColumnFilters = (
   filters: Record<string, ColumnFilterValue>,
 ): [string, ColumnFilterValue][] => Object.entries(filters).filter(([, value]) => value !== undefined && isActiveFilterValue(value));
 
+const isSummaryFlagFilter = (fieldName: string, filterValue: ColumnFilterValue): filterValue is SummaryFlagFilter => {
+  const normalizedField = fieldName.toLowerCase();
+  if (normalizedField !== 'summaryflags' && normalizedField !== 'summaryflag') {
+    return false;
+  }
+
+  return typeof filterValue === 'object'
+    && filterValue !== null
+    && !Array.isArray(filterValue)
+    && 'values' in filterValue
+    && 'operator' in filterValue;
+};
+
+const getMultiSelectOperator = (fieldName: string, filterValue: ColumnFilterValue): SummaryFlagFilter['operator'] =>
+  isSummaryFlagFilter(fieldName, filterValue) ? filterValue.operator : 'contains';
+
+const getMultiSelectValues = (fieldName: string, filterValue: ColumnFilterValue): string[] => {
+  if (isSummaryFlagFilter(fieldName, filterValue)) {
+    return filterValue.values;
+  }
+  return Array.isArray(filterValue) ? filterValue : [];
+};
+
+const matchesTextFilter = (textVal: string, filterValue: ColumnFilterValue, mode: 'eq' | 'prefix' | 'contains'): boolean => {
+  if (typeof filterValue !== 'string') {
+    return true;
+  }
+
+  const haystack = textVal.toLowerCase();
+  const needle = filterValue.trim().toLowerCase();
+  if (mode === 'prefix') {
+    return haystack.startsWith(needle);
+  }
+  return haystack.includes(needle);
+};
+
+const matchesSingleSelectFilter = <T>(
+  item: T,
+  raw: unknown,
+  textVal: string,
+  fieldName: string,
+  filterValue: ColumnFilterValue,
+  getFieldValue: (item: T, field: string) => unknown,
+): boolean => {
+  if (typeof filterValue !== 'string') {
+    return true;
+  }
+
+  const needle = normalizeToken(filterValue);
+  if (!needle) {
+    return true;
+  }
+
+  const textTokens = splitTokens(raw);
+  if (textTokens.some((token) => token === needle) || textVal.toLowerCase() === needle) {
+    return true;
+  }
+
+  if (!isGuidLike(needle)) {
+    return false;
+  }
+
+  const idFieldCandidates = resolveUserIdFieldCandidates(fieldName);
+  if (idFieldCandidates.length === 0) {
+    return false;
+  }
+
+  return idFieldCandidates.some((candidate) => {
+    const candidateTokens = splitTokens(getFieldValue(item, candidate));
+    return candidateTokens.some((token) => token === needle);
+  });
+};
+
+const matchesMultiSelectTokens = (
+  hayTokens: string[],
+  rawText: string,
+  needles: string[],
+  operator: SummaryFlagFilter['operator'],
+): boolean => {
+  if (operator === 'eq') {
+    if (hayTokens.length > 0) {
+      return needles.some((needle) => hayTokens.includes(needle));
+    }
+    return needles.some((needle) => rawText === needle);
+  }
+
+  if (hayTokens.length > 0) {
+    return operator === 'contains'
+      ? needles.some((needle) => hayTokens.includes(needle))
+      : !needles.some((needle) => hayTokens.includes(needle));
+  }
+
+  return operator === 'contains'
+    ? needles.some((needle) => rawText.includes(needle))
+    : !needles.some((needle) => rawText.includes(needle));
+};
+
+const matchesMultiSelectFilter = (
+  raw: unknown,
+  textVal: string,
+  fieldName: string,
+  filterValue: ColumnFilterValue,
+): boolean => {
+  const values = getMultiSelectValues(fieldName, filterValue);
+  if (values.length === 0) {
+    return true;
+  }
+
+  const needles = values.map((value) => String(value).trim().toLowerCase());
+  return matchesMultiSelectTokens(splitTokens(raw), textVal.toLowerCase(), needles, getMultiSelectOperator(fieldName, filterValue));
+};
+
+const matchesNumericFilter = (raw: unknown, textVal: string, filterValue: ColumnFilterValue): boolean => {
+  const numFilter = filterValue as NumericFilter;
+  const numericRaw = toNumericValue(raw, textVal);
+  if (numericRaw === undefined) {
+    return false;
+  }
+  if (numFilter.mode === 'between') {
+    const minOk = numFilter.min !== undefined ? numericRaw >= numFilter.min : true;
+    const maxOk = numFilter.max !== undefined ? numericRaw <= numFilter.max : true;
+    return minOk && maxOk;
+  }
+  if (numFilter.mode === '>=') {
+    return numFilter.min !== undefined ? numericRaw >= numFilter.min : true;
+  }
+  if (numFilter.mode === '<=') {
+    return numFilter.max !== undefined ? numericRaw <= numFilter.max : true;
+  }
+  return true;
+};
+
+const matchesDateRangeFilter = (textVal: string, filterValue: ColumnFilterValue): boolean => {
+  const dr = filterValue as DateRangeFilter;
+  const rawKey = toDateKey(textVal);
+  if (rawKey === undefined) {
+    return false;
+  }
+
+  const fromKey = dr.from ? toDateKey(dr.from) : undefined;
+  const toKey = dr.to ? toDateKey(dr.to) : undefined;
+  if (fromKey !== undefined && rawKey < fromKey) return false;
+  if (toKey !== undefined && rawKey > toKey) return false;
+  return true;
+};
+
+const matchesConfiguredFilter = <T>(
+  item: T,
+  tableKey: string,
+  fieldName: string,
+  raw: unknown,
+  textVal: string,
+  filterValue: ColumnFilterValue,
+  getFieldValue: (item: T, field: string) => unknown,
+): boolean | undefined => {
+  const cfg = getColumnFilterConfigFor(tableKey, fieldName);
+  if (!cfg) {
+    return undefined;
+  }
+
+  switch (cfg.control) {
+    case 'textEq':
+      return matchesTextFilter(textVal, filterValue, 'eq');
+    case 'textPrefix':
+      return matchesTextFilter(textVal, filterValue, 'prefix');
+    case 'textContains':
+      return matchesTextFilter(textVal, filterValue, 'contains');
+    case 'singleSelect':
+      return matchesSingleSelectFilter(item, raw, textVal, fieldName, filterValue, getFieldValue);
+    case 'multiSelect':
+      return matchesMultiSelectFilter(raw, textVal, fieldName, filterValue);
+    case 'numeric':
+      return matchesNumericFilter(raw, textVal, filterValue);
+    case 'dateRange':
+      return matchesDateRangeFilter(textVal, filterValue);
+    default:
+      return true;
+  }
+};
+
+const toPrimitiveArrayTokens = (raw: unknown[]): string[] => raw
+  .map((value) => (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean' ? String(value).trim().toLowerCase() : ''))
+  .filter((value) => value !== '');
+
+const matchesArrayFilter = (raw: unknown, filterValue: string[]): boolean => {
+  const needles = filterValue.map((value) => String(value).trim().toLowerCase()).filter((value) => value !== '');
+  if (needles.length === 0) {
+    return true;
+  }
+  if (Array.isArray(raw)) {
+    const haystack = toPrimitiveArrayTokens(raw);
+    return needles.some((needle) => haystack.includes(needle));
+  }
+  return false;
+};
+
+const matchesFallbackFilter = (raw: unknown, textVal: string, filterValue: ColumnFilterValue): boolean => {
+  if (Array.isArray(filterValue)) {
+    if (Array.isArray(raw)) {
+      return matchesArrayFilter(raw, filterValue);
+    }
+    const needles = filterValue.map((value) => String(value).trim().toLowerCase()).filter((value) => value !== '');
+    if (needles.length === 0) {
+      return true;
+    }
+    return needles.some((needle) => textVal.toLowerCase() === needle);
+  }
+
+  const needle = typeof filterValue === 'string' ? filterValue.trim().toLowerCase() : '';
+  if (Array.isArray(raw)) {
+    return raw.some((value) => (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') && String(value).toLowerCase().includes(needle));
+  }
+  return textVal.toLowerCase().includes(needle);
+};
+
+const matchesColumnFilter = <T>(
+  item: T,
+  tableKey: string,
+  fieldName: string,
+  filterValue: ColumnFilterValue,
+  getFilterableText: (raw: unknown) => string,
+  getFieldValue: (item: T, field: string) => unknown,
+): boolean => {
+  const raw = getFieldValue(item, fieldName);
+  const textVal = getFilterableText(raw).trim();
+  const configuredMatch = matchesConfiguredFilter(item, tableKey, fieldName, raw, textVal, filterValue, getFieldValue);
+  if (configuredMatch !== undefined) {
+    return configuredMatch;
+  }
+  return matchesFallbackFilter(raw, textVal, filterValue);
+};
+
 export const filterItemsByColumnFilters = <T>(
   items: T[],
   filters: Record<string, ColumnFilterValue>,
@@ -175,137 +407,14 @@ export const filterItemsByColumnFilters = <T>(
     return items;
   }
   const out = items.filter((item) => {
-    return filterEntries.every(([fieldName, filterValue]) => {
-      const cfg = getColumnFilterConfigFor(tableKey, fieldName);
-      const raw = getFieldValue(item, fieldName);
-      const textVal = getFilterableText(raw).trim();
-      if (cfg) {
-        switch (cfg.control) {
-          case 'textEq':
-            return typeof filterValue === 'string'
-              ? textVal.toLowerCase().includes(filterValue.trim().toLowerCase())
-              : true;
-          case 'textPrefix':
-            return typeof filterValue === 'string'
-              ? textVal.toLowerCase().startsWith(filterValue.trim().toLowerCase())
-              : true;
-          case 'textContains':
-            return typeof filterValue === 'string'
-              ? textVal.toLowerCase().includes(filterValue.trim().toLowerCase())
-              : true;
-          case 'singleSelect':
-            if (typeof filterValue !== 'string') {
-              return true;
-            }
-            {
-              const needle = normalizeToken(filterValue);
-              if (!needle) return true;
-              const textTokens = splitTokens(raw);
-              if (textTokens.length > 0) {
-                if (textTokens.some((token) => token === needle)) {
-                  return true;
-                }
-              }
-              if (textVal.toLowerCase() === needle) {
-                return true;
-              }
-              if (!isGuidLike(needle)) {
-                return false;
-              }
-              const idFieldCandidates = resolveUserIdFieldCandidates(fieldName);
-              if (idFieldCandidates.length === 0) {
-                return false;
-              }
-              return idFieldCandidates.some((candidate) => {
-                const candidateRaw = getFieldValue(item, candidate);
-                const candidateTokens = splitTokens(candidateRaw);
-                return candidateTokens.some((token) => token === needle);
-              });
-            }
-          case 'multiSelect': {
-            const isSummaryFlagField = fieldName.toLowerCase() === 'summaryflags' || fieldName.toLowerCase() === 'summaryflag';
-            const isSummaryFlagObj = isSummaryFlagField
-              && typeof filterValue === 'object'
-              && filterValue !== null
-              && !Array.isArray(filterValue)
-              && 'values' in filterValue
-              && 'operator' in filterValue;
-            
-            const filterObj = isSummaryFlagObj ? filterValue : null;
-            const values = filterObj ? filterObj.values : Array.isArray(filterValue) ? filterValue : [];
-            const operator = filterObj ? filterObj.operator : 'contains';
-            
-            if (values.length === 0) return true;
-            
-            const needles = values.map((v) => String(v).trim().toLowerCase());
-            const rawText = textVal.toLowerCase();
-            const hayTokens = splitTokens(raw);
-            
-            if (operator === 'eq') {
-              if (hayTokens.length > 0) {
-                return needles.some((n) => hayTokens.includes(n));
-              }
-              return needles.some((n) => rawText === n);
-            }
-            // contains / notContains — use token array when available (handles both
-            // array-backed fields and semicolon-delimited string fields the same way)
-            if (hayTokens.length > 0) {
-              return operator === 'contains'
-                ? needles.some((n) => hayTokens.includes(n))
-                : !needles.some((n) => hayTokens.includes(n));
-            }
-            // fallback: substring search on the joined text value
-            return operator === 'contains'
-              ? needles.some((n) => rawText.includes(n))
-              : !needles.some((n) => rawText.includes(n));
-          }
-          case 'numeric': {
-            const numFilter = filterValue as NumericFilter;
-            const numericRaw = toNumericValue(raw, textVal);
-            if (numericRaw === undefined) return false;
-            if (numFilter.mode === 'between') {
-              const minOk = numFilter.min !== undefined ? numericRaw >= numFilter.min : true;
-              const maxOk = numFilter.max !== undefined ? numericRaw <= numFilter.max : true;
-              return minOk && maxOk;
-            }
-            if (numFilter.mode === '>=') return numFilter.min !== undefined ? numericRaw >= numFilter.min : true;
-            if (numFilter.mode === '<=') return numFilter.max !== undefined ? numericRaw <= numFilter.max : true;
-            return true;
-          }
-          case 'dateRange': {
-            const dr = filterValue as DateRangeFilter;
-            const rawDate = textVal;
-            const rawKey = toDateKey(rawDate);
-            if (rawKey === undefined) return false;
-            const fromKey = dr.from ? toDateKey(dr.from) : undefined;
-            const toKey = dr.to ? toDateKey(dr.to) : undefined;
-            if (fromKey !== undefined && rawKey < fromKey) return false;
-            if (toKey !== undefined && rawKey > toKey) return false;
-            return true;
-          }
-          default:
-            return true;
-        }
-      }
-      if (Array.isArray(filterValue)) {
-        const needles = filterValue.map((v) => String(v).trim().toLowerCase()).filter((v) => v !== '');
-        if (needles.length === 0) return true;
-        if (Array.isArray(raw)) {
-          const hay = raw
-            .map((v) => (typeof v === 'string' || typeof v === 'number' || typeof v === 'boolean' ? String(v).trim().toLowerCase() : ''))
-            .filter((s) => s !== '');
-          return needles.some((n) => hay.includes(n));
-        }
-        const text = textVal.toLowerCase();
-        return needles.some((n) => text === n);
-      }
-      const needle = typeof filterValue === 'string' ? filterValue.trim().toLowerCase() : '';
-      if (Array.isArray(raw)) {
-        return raw.some((v) => (typeof v === 'string' || typeof v === 'number' || typeof v === 'boolean') && String(v).toLowerCase().includes(needle));
-      }
-      const text = textVal.toLowerCase();
-      return text.includes(needle);
-    });
+    return filterEntries.every(([fieldName, filterValue]) => matchesColumnFilter(
+      item,
+      tableKey,
+      fieldName,
+      filterValue,
+      getFilterableText,
+      getFieldValue,
+    ));
   });
   const t1 = nowMs();
   console.log('[Grid Perf] Client filteredItems (ms):', Math.round(t1 - t0), 'items:', items.length, 'filters:', filterEntries.length, 'result:', out.length);

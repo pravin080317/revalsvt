@@ -13,7 +13,6 @@ This runbook executes a browser-level load test for the PCF UI only.
 1. Start the PCF harness in one terminal:
 
 ```powershell
-cd c:\learning\pcf\SVTList
 npm run start
 ```
 
@@ -29,14 +28,13 @@ If k6 is not installed on Windows, use one of:
 In a second terminal:
 
 ```powershell
-cd c:\learning\pcf\SVTList
 npm run perf:ui:200
 ```
 
 Optional custom target URL:
 
 ```powershell
-k6 run scripts/perf-ui-200.js -e TARGET_URL=http://localhost:8182
+k6 run scripts/perf-ui-200.js -e TARGET_URL=<HARNESS_BASE_URL>
 ```
 
 ## Test profile
@@ -59,5 +57,6 @@ The scenario ramps to 200 users and holds:
 
 ## Notes
 
+- Run the commands from the repository root.
 - Keep `customApiName` empty when you want UI-only behavior using local/sample mode.
 - For app-side timings, also enable `perfLogsEnabled` or set `SVT_PERF=true` in local storage.

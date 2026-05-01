@@ -286,66 +286,116 @@ function getIconCell(
     column: IGridColumn,
     cellNavigation: () => void,
 ) {
-    let cellContents: JSX.Element;
-    let isBlank = true;
-    if (item?.getValue) {
-        const imageData = getCellValue<string>(column.fieldName, item)[0];
-        const rawAriaText = getCellValue<string>(column.ariaTextColumn, item)[0];
-        const ariaText = typeof rawAriaText === 'string' ? rawAriaText.trim() : String(rawAriaText ?? '').trim();
-        const columnLabel = String(column.name ?? column.fieldName ?? '').trim();
-        const cellLabel = ariaText || columnLabel;
-        const actionLabel = cellLabel || (columnLabel ? `Open ${columnLabel}` : 'Open details');
-        isBlank = !imageData || imageData === '';
-        if (imageData) {
-            const iconColor = column.tagColor?.startsWith('#')
-                ? column.tagColor
-                : getCellValue<string>(column.tagColor, item)[0];
-            const actionDisabled = getCellValue<string>(column.cellActionDisabledColumn, item)[0];
-            const buttonContent: JSX.Element | null = getImageTag(
-                imageData,
-                column,
-                iconColor,
-                cellLabel,
-                column.cellType?.toLowerCase() === CellTypes.ClickableImage,
-            );
-            const padding = column.imagePadding;
-            if (column.cellType?.toLowerCase() === CellTypes.ClickableImage) {
-                const containerClass = `${ClassNames.imageButton} ${mergeStyles({ padding: padding })}`;
-                cellContents = (
-                    <DefaultButton
-                        onClick={cellNavigation}
-                        className={containerClass}
-                        data-is-focusable={true}
-                        disabled={actionDisabled === 'True'}
-                        ariaLabel={actionLabel}
-                        ariaDescription={ariaText && ariaText !== actionLabel ? ariaText : undefined}
-                    >
-                        <span className="voa-cell-action-button">
-                            {buttonContent}
-                            <span className="voa-cell-action-button__label">{actionLabel}</span>
-                        </span>
-                    </DefaultButton>
-                );
-            } else {
-                const containerClass = mergeStyles({
-                    height: '100%',
-                    padding: padding,
-                    display: 'flex',
-                });
-                cellContents = (
-                    <div className={containerClass} title={actionLabel}>
-                        {buttonContent}
-                        {actionLabel ? <span className="voa-sr-only">{actionLabel}</span> : null}
-                    </div>
-                );
-            }
-        } else {
-            cellContents = <DefaultButton onClick={cellNavigation} ariaLabel={actionLabel}></DefaultButton>;
-        }
-    } else {
-        cellContents = <></>;
+    if (!item?.getValue) {
+        return { isBlank: true, cellContents: <></> };
     }
-    return { isBlank, cellContents };
+
+    const imageData = getCellValue<string>(column.fieldName, item)[0];
+    const { ariaText, cellLabel, actionLabel } = resolveImageAriaInfo(column, item);
+    const isBlank = !imageData || imageData === '';
+
+    if (!imageData) {
+        return {
+            isBlank,
+            cellContents: <DefaultButton onClick={cellNavigation} ariaLabel={actionLabel}></DefaultButton>,
+        };
+    }
+
+    const iconColor = resolveIconColor(column, item);
+    const actionDisabled = getCellValue<string>(column.cellActionDisabledColumn, item)[0];
+    const isClickableImage = column.cellType?.toLowerCase() === CellTypes.ClickableImage;
+    const buttonContent: JSX.Element | null = getImageTag(
+        imageData,
+        column,
+        iconColor,
+        cellLabel,
+        isClickableImage,
+    );
+
+    if (isClickableImage) {
+        return {
+            isBlank,
+            cellContents: renderClickableImageButton(
+                column,
+                cellNavigation,
+                actionDisabled,
+                actionLabel,
+                ariaText,
+                buttonContent,
+            ),
+        };
+    }
+
+    return {
+        isBlank,
+        cellContents: renderStaticImageCell(column, actionLabel, buttonContent),
+    };
+}
+
+function resolveImageAriaInfo(
+    column: IGridColumn,
+    item: ComponentFramework.PropertyHelper.DataSetApi.EntityRecord | Record<string, unknown>,
+): { ariaText: string; cellLabel: string; actionLabel: string } {
+    const rawAriaText = getCellValue<string>(column.ariaTextColumn, item)[0];
+    const ariaText = typeof rawAriaText === 'string' ? rawAriaText.trim() : String(rawAriaText ?? '').trim();
+    const columnLabel = String(column.name ?? column.fieldName ?? '').trim();
+    const cellLabel = ariaText || columnLabel;
+    const actionLabel = cellLabel || (columnLabel ? `Open ${columnLabel}` : 'Open details');
+    return { ariaText, cellLabel, actionLabel };
+}
+
+function resolveIconColor(
+    column: IGridColumn,
+    item: ComponentFramework.PropertyHelper.DataSetApi.EntityRecord | Record<string, unknown>,
+): string {
+    if (column.tagColor?.startsWith('#')) {
+        return column.tagColor;
+    }
+    return getCellValue<string>(column.tagColor, item)[0];
+}
+
+function renderClickableImageButton(
+    column: IGridColumn,
+    cellNavigation: () => void,
+    actionDisabled: string,
+    actionLabel: string,
+    ariaText: string,
+    buttonContent: JSX.Element | null,
+): JSX.Element {
+    const containerClass = `${ClassNames.imageButton} ${mergeStyles({ padding: column.imagePadding })}`;
+    return (
+        <DefaultButton
+            onClick={cellNavigation}
+            className={containerClass}
+            data-is-focusable={true}
+            disabled={actionDisabled === 'True'}
+            ariaLabel={actionLabel}
+            ariaDescription={ariaText && ariaText !== actionLabel ? ariaText : undefined}
+        >
+            <span className="voa-cell-action-button">
+                {buttonContent}
+                <span className="voa-cell-action-button__label">{actionLabel}</span>
+            </span>
+        </DefaultButton>
+    );
+}
+
+function renderStaticImageCell(
+    column: IGridColumn,
+    actionLabel: string,
+    buttonContent: JSX.Element | null,
+): JSX.Element {
+    const containerClass = mergeStyles({
+        height: '100%',
+        padding: column.imagePadding,
+        display: 'flex',
+    });
+    return (
+        <div className={containerClass} title={actionLabel}>
+            {buttonContent}
+            {actionLabel ? <span className="voa-sr-only">{actionLabel}</span> : null}
+        </div>
+    );
 }
 
 function getImageTag(
@@ -467,32 +517,48 @@ function getCellValue<T>(
     fieldName?: string,
     item?: ComponentFramework.PropertyHelper.DataSetApi.EntityRecord | Record<string, unknown>,
 ) {
-    let value: unknown = '';
-    if (fieldName && item) {
-        if (item.getValue) {
-            const itemEntityRecord = item as ComponentFramework.PropertyHelper.DataSetApi.EntityRecord;
-            const rawValue = itemEntityRecord.getValue(fieldName);
-            if (rawValue !== null) {
-                if (Array.isArray(rawValue)) value = rawValue;
-                else value = itemEntityRecord.getFormattedValue(fieldName);
-            }
-        } else {
-            value = (item as Record<string, unknown>)[fieldName];
-        }
+    const value = resolveRawCellValue(fieldName, item);
+    if (!Array.isArray(value)) {
+        return [value as T];
     }
-    const isArrayValue = Array.isArray(value);
-    let values: T[];
-    if (!isArrayValue) {
-        values = [value as T];
-    } else {
-        const arr = value as unknown[];
-        if (arr.length > 0 && typeof arr[0] === 'object' && arr[0] !== null && 'Value' in (arr[0] as Record<string, unknown>)) {
-            values = (arr as DatasetArray<T>).map((i) => i.Value);
-        } else {
-            values = arr as T[];
-        }
+
+    if (isDatasetArrayValue<T>(value)) {
+        return value.map((entry) => entry.Value);
     }
-    return values;
+
+    return value as T[];
+}
+
+function resolveRawCellValue(
+    fieldName?: string,
+    item?: ComponentFramework.PropertyHelper.DataSetApi.EntityRecord | Record<string, unknown>,
+): unknown {
+    if (!fieldName || !item) {
+        return '';
+    }
+
+    if (!item.getValue) {
+        return (item as Record<string, unknown>)[fieldName];
+    }
+
+    const itemEntityRecord = item as ComponentFramework.PropertyHelper.DataSetApi.EntityRecord;
+    const rawValue = itemEntityRecord.getValue(fieldName);
+    if (rawValue === null) {
+        return '';
+    }
+
+    if (Array.isArray(rawValue)) {
+        return rawValue;
+    }
+
+    return itemEntityRecord.getFormattedValue(fieldName);
+}
+
+function isDatasetArrayValue<T>(value: unknown[]): value is DatasetArray<T> {
+    return value.length > 0
+        && typeof value[0] === 'object'
+        && value[0] !== null
+        && 'Value' in (value[0] as Record<string, unknown>);
 }
 
 /**

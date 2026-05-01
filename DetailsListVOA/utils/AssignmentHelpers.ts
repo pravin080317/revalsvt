@@ -61,6 +61,38 @@ const addToken = (set: Set<string>, value: unknown): void => {
   if (token) set.add(token);
 };
 
+const parseStructuredTokenInput = (trimmed: string): unknown | undefined => {
+  const looksStructured =
+    (trimmed.startsWith('[') && trimmed.endsWith(']'))
+    || (trimmed.startsWith('{') && trimmed.endsWith('}'));
+  if (!looksStructured) {
+    return undefined;
+  }
+
+  try {
+    return JSON.parse(trimmed) as unknown;
+  } catch {
+    return undefined;
+  }
+};
+
+const addDelimitedTextTokens = (trimmed: string, out: Set<string>): void => {
+  addToken(out, trimmed);
+  trimmed
+    .split(/[|;,]/)
+    .map((entry) => entry.trim())
+    .filter((entry) => entry !== '')
+    .forEach((entry) => addToken(out, entry));
+};
+
+const collectRecordTokens = (record: Record<string, unknown>, out: Set<string>): void => {
+  ['id', 'name', 'displayName', 'email', 'firstName', 'lastName'].forEach((key) => {
+    if (Object.prototype.hasOwnProperty.call(record, key)) {
+      collectValueTokens(record[key], out);
+    }
+  });
+};
+
 const collectValueTokens = (value: unknown, out: Set<string>): void => {
   if (value === null || value === undefined) return;
   if (Array.isArray(value)) {
@@ -71,23 +103,12 @@ const collectValueTokens = (value: unknown, out: Set<string>): void => {
     const trimmed = value.trim();
     if (!trimmed) return;
 
-    if ((trimmed.startsWith('[') && trimmed.endsWith(']')) || (trimmed.startsWith('{') && trimmed.endsWith('}'))) {
-      try {
-        const parsed = JSON.parse(trimmed) as unknown;
-        if (parsed !== value) {
-          collectValueTokens(parsed, out);
-        }
-      } catch {
-        // Fall back to raw text tokenization.
-      }
+    const parsed = parseStructuredTokenInput(trimmed);
+    if (parsed !== undefined && parsed !== value) {
+      collectValueTokens(parsed, out);
     }
 
-    addToken(out, trimmed);
-    trimmed
-      .split(/[|;,]/)
-      .map((entry) => entry.trim())
-      .filter((entry) => entry !== '')
-      .forEach((entry) => addToken(out, entry));
+    addDelimitedTextTokens(trimmed, out);
     return;
   }
   if (typeof value === 'number' || typeof value === 'boolean') {
@@ -95,13 +116,68 @@ const collectValueTokens = (value: unknown, out: Set<string>): void => {
     return;
   }
   if (typeof value === 'object') {
-    const record = value as Record<string, unknown>;
-    ['id', 'name', 'displayName', 'email', 'firstName', 'lastName'].forEach((key) => {
-      if (Object.prototype.hasOwnProperty.call(record, key)) {
-        collectValueTokens(record[key], out);
-      }
-    });
+    collectRecordTokens(value as Record<string, unknown>, out);
   }
+};
+
+const resolveAllowedStatuses = (screenKind: ScreenKind, assignmentConfig: AssignmentConfig): string[] => {
+  const rawAllowedStatuses =
+    screenKind === 'managerAssign'
+      ? assignmentConfig.allowedStatusesManager
+      : screenKind === 'qcAssign'
+        ? assignmentConfig.allowedStatusesQc
+        : assignmentConfig.allowedStatuses;
+
+  return rawAllowedStatuses.map((status) => status.toLowerCase());
+};
+
+const collectAssignmentStatuses = (
+  records: Record<string, unknown>[],
+  allowedStatuses: string[],
+  invalidStatusMessage: string,
+): { normalizedStatuses: string[]; rawStatuses: string[]; error?: string } => {
+  const normalizedStatuses: string[] = [];
+  const rawStatuses: string[] = [];
+
+  for (const rec of records) {
+    const statusRaw = (rec.taskstatus ?? rec.taskStatus ?? '') as string;
+    const trimmed = String(statusRaw ?? '').trim();
+    const normalized = trimmed.toLowerCase();
+
+    if (normalized) {
+      normalizedStatuses.push(normalized);
+      rawStatuses.push(trimmed);
+    }
+
+    if (allowedStatuses.length > 0 && normalized && !allowedStatuses.includes(normalized)) {
+      return { normalizedStatuses, rawStatuses, error: invalidStatusMessage };
+    }
+  }
+
+  return { normalizedStatuses, rawStatuses };
+};
+
+const resolveStatusForAssignmentFlow = (
+  requiredStatus: string,
+  requiredStatusLabel: string,
+  normalizedStatuses: string[],
+  rawStatuses: string[],
+  invalidStatusMessage: string,
+): { assignmentTaskStatus?: string; error?: string } => {
+  const hasRequiredStatus = normalizedStatuses.includes(requiredStatus);
+  const hasMixedStatuses = normalizedStatuses.some((status) => status !== requiredStatus);
+
+  if (hasRequiredStatus && hasMixedStatuses) {
+    return { error: invalidStatusMessage };
+  }
+
+  if (hasRequiredStatus) {
+    return { assignmentTaskStatus: requiredStatusLabel };
+  }
+
+  return {
+    assignmentTaskStatus: rawStatuses.find((status) => status.toLowerCase() !== requiredStatus),
+  };
 };
 
 const buildUserMatchTokens = (user: AssignUser): Set<string> => {
@@ -159,52 +235,23 @@ export const resolveAssignmentStatusValidation = (
   assignmentConfig: AssignmentConfig,
   invalidStatusMessage: string,
 ): AssignmentStatusResult => {
-  const allowedStatuses = (
-    screenKind === 'managerAssign'
-      ? assignmentConfig.allowedStatusesManager
-      : screenKind === 'qcAssign'
-        ? assignmentConfig.allowedStatusesQc
-        : assignmentConfig.allowedStatuses
-  ).map((s) => s.toLowerCase());
-
-  const normalizedStatuses: string[] = [];
-  const rawStatuses: string[] = [];
-  for (const rec of records) {
-    const statusRaw = (rec.taskstatus ?? rec.taskStatus ?? '') as string;
-    const trimmed = String(statusRaw ?? '').trim();
-    const normalized = trimmed.toLowerCase();
-    if (normalized) {
-      normalizedStatuses.push(normalized);
-      rawStatuses.push(trimmed);
-    }
-    if (allowedStatuses.length > 0 && normalized && !allowedStatuses.includes(normalized)) {
-      return { error: invalidStatusMessage };
-    }
+  const allowedStatuses = resolveAllowedStatuses(screenKind, assignmentConfig);
+  const statusCollection = collectAssignmentStatuses(records, allowedStatuses, invalidStatusMessage);
+  if (statusCollection.error) {
+    return { error: statusCollection.error };
   }
 
-  let assignmentTaskStatus: string | undefined;
+  const { normalizedStatuses, rawStatuses } = statusCollection;
+
   if (screenKind === 'managerAssign') {
-    const hasNew = normalizedStatuses.includes('new');
-    const hasNonNew = normalizedStatuses.some((status) => status !== 'new');
-    if (hasNew && hasNonNew) {
-      return { error: invalidStatusMessage };
-    }
-    assignmentTaskStatus = hasNew
-      ? 'New'
-      : rawStatuses.find((status) => status.toLowerCase() !== 'new');
-  }
-  if (screenKind === 'qcAssign') {
-    const hasQcRequested = normalizedStatuses.includes('qc requested');
-    const hasNonQcRequested = normalizedStatuses.some((status) => status !== 'qc requested');
-    if (hasQcRequested && hasNonQcRequested) {
-      return { error: invalidStatusMessage };
-    }
-    assignmentTaskStatus = hasQcRequested
-      ? 'QC Requested'
-      : rawStatuses.find((status) => status.toLowerCase() !== 'qc requested');
+    return resolveStatusForAssignmentFlow('new', 'New', normalizedStatuses, rawStatuses, invalidStatusMessage);
   }
 
-  return { assignmentTaskStatus };
+  if (screenKind === 'qcAssign') {
+    return resolveStatusForAssignmentFlow('qc requested', 'QC Requested', normalizedStatuses, rawStatuses, invalidStatusMessage);
+  }
+
+  return {};
 };
 
 export const parseAssignableUsersResponse = (

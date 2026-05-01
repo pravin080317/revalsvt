@@ -65,6 +65,102 @@ const formatApiDate = (value?: string): string | undefined => {
   return trimmed;
 };
 
+const normalizeFlaggedForReviewToken = (raw: string): string => {
+  const cleaned = raw.trim().toLowerCase();
+  if (cleaned === 'true' || cleaned === 'yes' || cleaned === 'y') return 'Y';
+  if (cleaned === 'false' || cleaned === 'no' || cleaned === 'n') return 'N';
+  return raw.trim();
+};
+
+const buildScalarFilterTokens = (
+  apiField: string,
+  normalizedField: string,
+  control: string,
+  value: string,
+): string[] | undefined => {
+  const trimmed = value.trim();
+  if (!trimmed) return undefined;
+
+  const normalizedValue = normalizedField === 'flaggedforreview'
+    ? normalizeFlaggedForReviewToken(trimmed)
+    : trimmed;
+  const operator = control === 'singleSelect' ? 'eq' : 'like';
+  return [apiField, operator, normalizedValue];
+};
+
+const buildMultiFilterTokens = (
+  apiField: string,
+  normalizedField: string,
+  values: string[],
+): string[] | undefined => {
+  const normalizedValues = values
+    .map((entry) => String(entry ?? '').trim())
+    .filter((entry) => entry !== '')
+    .map((entry) => (normalizedField === 'flaggedforreview' ? normalizeFlaggedForReviewToken(entry) : entry));
+  if (normalizedValues.length === 0) return undefined;
+
+  const serializedValue = normalizedField === 'reviewflags'
+    ? `${normalizedValues.join(';')};`
+    : normalizedValues.join(COLUMN_FILTER_VALUE_SEPARATOR);
+  return [apiField, 'in', serializedValue];
+};
+
+const buildSummaryFlagTokens = (apiField: string, value: SummaryFlagFilterValue): string[] | undefined => {
+  const values = value.values
+    .map((entry) => String(entry ?? '').trim())
+    .filter((entry) => entry !== '');
+  if (values.length === 0) return undefined;
+
+  const operator = value.operator === 'notContains'
+    ? 'NTL'
+    : value.operator === 'eq'
+      ? 'EQ'
+      : 'like';
+  const serializedValue = value.operator === 'eq'
+    ? `${values.join(';')};`
+    : values.join(';');
+  return serializedValue ? [apiField, operator, serializedValue] : undefined;
+};
+
+const buildNumericTokens = (apiField: string, value: NumericFilter): string[] | undefined => {
+  const { mode, min, max } = value;
+  if (mode === '>=' && min !== undefined && min !== null) {
+    return [apiField, 'GTE', String(min)];
+  }
+  if (mode === '<=' && max !== undefined && max !== null) {
+    return [apiField, 'LTE', String(max)];
+  }
+  if (mode === 'between') {
+    if (min !== undefined && min !== null && max !== undefined && max !== null) {
+      return [apiField, 'between', String(min), String(max)];
+    }
+    if (min !== undefined && min !== null) {
+      return [apiField, 'GTE', String(min)];
+    }
+    if (max !== undefined && max !== null) {
+      return [apiField, 'LTE', String(max)];
+    }
+  }
+  return undefined;
+};
+
+const buildDateRangeTokens = (apiField: string, value: DateRangeFilter): string[] | undefined => {
+  const from = value.from?.trim();
+  const to = value.to?.trim();
+  const formattedFrom = from && from.length > 0 ? formatApiDate(from) : undefined;
+  const formattedTo = to && to.length > 0 ? formatApiDate(to) : undefined;
+  if (formattedFrom && formattedTo) {
+    return [apiField, 'between', formattedFrom, formattedTo];
+  }
+  if (formattedFrom) {
+    return [apiField, 'GTE', formattedFrom];
+  }
+  if (formattedTo) {
+    return [apiField, 'LTE', formattedTo];
+  }
+  return undefined;
+};
+
 export const buildColumnFilterTokens = (
   tableKey: TableKey,
   field: string,
@@ -74,90 +170,25 @@ export const buildColumnFilterTokens = (
   if (!cfg) return undefined;
   const apiField = normalizeColumnFilterFieldName(field);
   const normalizedField = field.replace(/[^a-z0-9]/gi, '').toLowerCase();
-  const normalizeFlaggedForReviewValue = (raw: string): string => {
-    const cleaned = raw.trim().toLowerCase();
-    if (cleaned === 'true' || cleaned === 'yes' || cleaned === 'y') return 'Y';
-    if (cleaned === 'false' || cleaned === 'no' || cleaned === 'n') return 'N';
-    return raw.trim();
-  };
 
   if (typeof value === 'string') {
-    const trimmed = value.trim();
-    if (!trimmed) return undefined;
-    const normalizedValue = normalizedField === 'flaggedforreview'
-      ? normalizeFlaggedForReviewValue(trimmed)
-      : trimmed;
-    const operator = cfg.control === 'singleSelect' ? 'eq' : 'like';
-    return [apiField, operator, normalizedValue];
+    return buildScalarFilterTokens(apiField, normalizedField, cfg.control, value);
   }
 
   if (Array.isArray(value)) {
-    const values = value
-      .map((entry) => String(entry ?? '').trim())
-      .filter((entry) => entry !== '')
-      .map((entry) => (normalizedField === 'flaggedforreview' ? normalizeFlaggedForReviewValue(entry) : entry));
-    if (values.length === 0) return undefined;
-    const operator = 'in';
-    const serializedValue = normalizedField === 'reviewflags'
-      ? `${values.join(';')};`
-      : values.join(COLUMN_FILTER_VALUE_SEPARATOR);
-    return [apiField, operator, serializedValue];
+    return buildMultiFilterTokens(apiField, normalizedField, value);
   }
 
   if ((normalizedField === 'summaryflag' || normalizedField === 'summaryflags') && isSummaryFlagFilterValue(value)) {
-    const values = value.values
-      .map((entry) => String(entry ?? '').trim())
-      .filter((entry) => entry !== '');
-    if (values.length === 0) return undefined;
-    const operator = value.operator === 'notContains'
-      ? 'NTL'
-      : value.operator === 'eq'
-        ? 'EQ'
-        : 'like';
-    const serializedValue = value.operator === 'eq'
-      ? values.join(';') + ';'
-      : values.join(';');
-    if (!serializedValue) return undefined;
-    return [apiField, operator, serializedValue];
+    return buildSummaryFlagTokens(apiField, value);
   }
 
   if (cfg.control === 'numeric' && isNumericFilterValue(value)) {
-    const { mode, min, max } = value;
-    if (mode === '>=' && min !== undefined && min !== null) {
-      return [apiField, 'GTE', String(min)];
-    }
-    if (mode === '<=' && max !== undefined && max !== null) {
-      return [apiField, 'LTE', String(max)];
-    }
-    if (mode === 'between') {
-      if (min !== undefined && min !== null && max !== undefined && max !== null) {
-        return [apiField, 'between', String(min), String(max)];
-      }
-      if (min !== undefined && min !== null) {
-        return [apiField, 'GTE', String(min)];
-      }
-      if (max !== undefined && max !== null) {
-        return [apiField, 'LTE', String(max)];
-      }
-    }
-    return undefined;
+    return buildNumericTokens(apiField, value);
   }
 
   if (cfg.control === 'dateRange' && isDateRangeFilterValue(value)) {
-    const from = value.from?.trim();
-    const to = value.to?.trim();
-    const formattedFrom = from && from.length > 0 ? formatApiDate(from) : undefined;
-    const formattedTo = to && to.length > 0 ? formatApiDate(to) : undefined;
-    if (formattedFrom && formattedTo) {
-      return [apiField, 'between', formattedFrom, formattedTo];
-    }
-    if (formattedFrom) {
-      return [apiField, 'GTE', formattedFrom];
-    }
-    if (formattedTo) {
-      return [apiField, 'LTE', formattedTo];
-    }
-    return undefined;
+    return buildDateRangeTokens(apiField, value);
   }
 
   return undefined;

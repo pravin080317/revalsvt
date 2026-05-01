@@ -1,4 +1,4 @@
-# SVT List 5-Screen API URL Tracker (Latest)
+# SVT List Prefilter and Screen-Level URL Reference
 
 Last updated: 2026-03-17
 
@@ -12,10 +12,13 @@ This is the central tracker for:
   - QA View (QCV)
   - Sales Record Search (SRS)
 
+Use this document for screen-level request shapes and prefilter mapping.
+Use `docs/column-filter-and-sorting-urls.md` for column header filters and sort tokens.
+
 ## Placeholders
 | Placeholder | Meaning |
 | --- | --- |
-| `{org}` | Dataverse org host (example: `contoso.crm.dynamics.com`) |
+| `<DATAVERSE_BASE_URL>` | Dataverse environment base URL used in Custom API examples |
 | `{APIM_SALES_URL}` | `voa_CredentialProvider` Address for `SVTGetSalesRecord` |
 | `{APIM_METADATA_URL}` | `voa_CredentialProvider` Address for `SVTGetSalesMetadata` |
 | `{APIM_TASK_URL}` | `voa_CredentialProvider` Address for `SVTTaskAssignment` |
@@ -30,6 +33,7 @@ Notes:
 - Prefilter date values are sent as `dd/MM/yyyy`.
 - Grid pagination is 1-based (`pageNumber=1` means first page).
 - Column header filters/sort are sent through `SearchQuery` as repeated `columnFilter=...` tokens.
+- Dataverse request examples in this document use `<DATAVERSE_BASE_URL>`.
 
 ## Screen -> Source Mapping (Data Call)
 | Screen | `source` sent by PCF |
@@ -45,7 +49,7 @@ Notes:
 ### Manager Assignment (`source=MA`)
 Custom API (PCF -> plugin):
 ```text
-GET https://{org}.crm.dynamics.com/api/data/v9.2/{customApiName}(
+GET <DATAVERSE_BASE_URL>/api/data/v9.2/{customApiName}(
   pageNumber='1',
   pageSize='50',
   source='MA',
@@ -70,7 +74,7 @@ APIM (plugin -> APIM):
 ### Caseworker View (`source=CWV`)
 Custom API (PCF sends `RequestedBy` and may also send prefilter fields):
 ```text
-GET https://{org}.crm.dynamics.com/api/data/v9.2/{customApiName}(
+GET <DATAVERSE_BASE_URL>/api/data/v9.2/{customApiName}(
   pageNumber='1',
   pageSize='50',
   source='CWV',
@@ -99,7 +103,7 @@ Important:
 ### QA Assignment (`source=QCA`)
 Custom API:
 ```text
-GET https://{org}.crm.dynamics.com/api/data/v9.2/{customApiName}(
+GET <DATAVERSE_BASE_URL>/api/data/v9.2/{customApiName}(
   pageNumber='1',
   pageSize='50',
   source='QCA',
@@ -124,7 +128,7 @@ APIM:
 ### QA View (`source=QCV`)
 Custom API:
 ```text
-GET https://{org}.crm.dynamics.com/api/data/v9.2/{customApiName}(
+GET <DATAVERSE_BASE_URL>/api/data/v9.2/{customApiName}(
   pageNumber='1',
   pageSize='50',
   source='QCV',
@@ -148,7 +152,7 @@ APIM:
 ### Sales Record Search (`source=SRS`)
 Custom API:
 ```text
-GET https://{org}.crm.dynamics.com/api/data/v9.2/{customApiName}(
+GET <DATAVERSE_BASE_URL>/api/data/v9.2/{customApiName}(
   pageNumber='1',
   pageSize='50',
   source='SRS',

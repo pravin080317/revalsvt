@@ -16,8 +16,24 @@ This matrix is based on current implemented gating in:
 ## Quick Rules Summary
 - Caseworker edit is allowed only when task is assigned to current user and status is `Assigned` or `Assigned QC Failed`.
 - QC edit is allowed only when user is QA/Manager, task is QC-assigned to current user, and status is `Assigned To QC` or `Reassigned To QC`.
+- Caseworker can view QC section in read-only mode when the task is assigned to current user and either QC details are present or task status is in QC lifecycle (status contains `QC`, such as `Assigned QC Failed`).
 - `Why is the sale not useful?` is enabled only when `Is this sale useful? = No`.
 - If task ID or task status is missing, sections are disabled.
+
+## Final Persona View/Edit Table (QC Section)
+
+| Persona | Assigned To Current User | Task Status | QC Details Present | QC Section Visible | QC Outcome Editable | QC Remarks Editable |
+|---|---|---|---|---|---|---|
+| Caseworker | Yes | Assigned QC Failed | Yes | Yes | No | No |
+| Caseworker | Yes | Assigned QC Failed | No | Yes | No | No |
+| Caseworker | Yes | Assigned | No | No | No | No |
+| Caseworker | No | Any | Any | No | No | No |
+| QA | Yes (QC assigned) | Assigned To QC / Reassigned To QC | Any | Yes | Yes | Yes |
+| QA | Yes (QC assigned) | Any other status | Any | Yes | No | No |
+| QA | No (QC assigned to another user) | Any | Any | No | No | No |
+| Manager | Yes (QC assigned) | Assigned To QC / Reassigned To QC | Any | Yes | Yes | Yes |
+| Manager | Yes (QC assigned) | Any other status | Any | Yes | No | No |
+| Manager | No (QC assigned to another user) | Any | Any | No | No | No |
 
 ## Preconditions For UAT
 - Have at least 4 test users:

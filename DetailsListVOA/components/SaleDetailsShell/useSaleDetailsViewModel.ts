@@ -873,8 +873,8 @@ const isAuditScoreField = (rawFieldName: string): boolean => {
 const formatAuditDecimalValue = (raw: string): string => {
   const trimmed = raw.trim();
   if (!trimmed || trimmed === '-') return trimmed;
-  const num = parseFloat(trimmed);
-  return (!isNaN(num) && isFinite(num)) ? num.toFixed(2) : trimmed;
+  const num = Number.parseFloat(trimmed);
+  return (!Number.isNaN(num) && Number.isFinite(num)) ? num.toFixed(2) : trimmed;
 };
 
 const AUDIT_ESCAPED_TEXT_PATTERN = /\\r\\n|\\n|\\t|\\u[0-9a-f]{4}/i;
@@ -1200,13 +1200,24 @@ export const useSaleDetailsViewModel = (
     const vmsRootRecord = (!vmsX || !vmsY) ? getRecord(details, 'vms') : {};
     const resolvedVmsX = vmsX || normalizeLinkValue(firstNonEmpty(getValue(vmsRootRecord, 'X'), getValue(vmsRootRecord, 'x')));
     const resolvedVmsY = vmsY || normalizeLinkValue(firstNonEmpty(getValue(vmsRootRecord, 'Y'), getValue(vmsRootRecord, 'y')));
-    const vmsUrl = isHttpUrl(vmsLegacy)
-      ? vmsLegacy
-      : (vmsX && vmsY
-        ? `${vmsCenterBase}${vmsX},${vmsY}${EXTERNAL_LINK_URL_PARTS.vmsSpatialReferenceSuffix}${EXTERNAL_LINK_URL_PARTS.vmsZoomLevelSuffix}`
-        : (resolvedVmsX && resolvedVmsY
-          ? `${vmsCenterBase}${resolvedVmsX},${resolvedVmsY}${EXTERNAL_LINK_URL_PARTS.vmsSpatialReferenceSuffix}${EXTERNAL_LINK_URL_PARTS.vmsZoomLevelSuffix}`
-          : ''));
+    const buildVmsCoordinateUrl = (x: string, y: string): string =>
+      `${vmsCenterBase}${x},${y}${EXTERNAL_LINK_URL_PARTS.vmsSpatialReferenceSuffix}${EXTERNAL_LINK_URL_PARTS.vmsZoomLevelSuffix}`;
+    const resolveVmsUrl = (): string => {
+      if (isHttpUrl(vmsLegacy)) {
+        return vmsLegacy;
+      }
+
+      if (vmsX && vmsY) {
+        return `${vmsCenterBase}${vmsX},${vmsY}${EXTERNAL_LINK_URL_PARTS.vmsSpatialReferenceSuffix}${EXTERNAL_LINK_URL_PARTS.vmsZoomLevelSuffix}`;
+      }
+
+      if (resolvedVmsX && resolvedVmsY) {
+        return buildVmsCoordinateUrl(resolvedVmsX, resolvedVmsY);
+      }
+
+      return '';
+    };
+    const vmsUrl = resolveVmsUrl();
 
     const zooplaRaw = normalizeLinkValue(getValue(links, 'zoopla'));
     const rightMoveRaw = normalizeLinkValue(firstNonEmpty(getValue(links, 'rightMove'), getValue(links, 'rightmove')));

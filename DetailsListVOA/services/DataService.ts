@@ -200,6 +200,29 @@ const toStringArray = (value: unknown): string[] | undefined => {
 
 const toStringArrayOrEmpty = (value: unknown): string[] => toStringArray(value) ?? [];
 
+const toTagText = (value: unknown): string => {
+  const primitive = toText(value);
+  if (primitive) return primitive;
+  if (!value || typeof value !== 'object') return '';
+
+  const record = value as Record<string, unknown>;
+  const candidates = [record.Value, record.value, record.text, record.label, record.name];
+  for (const candidate of candidates) {
+    const text = toText(candidate);
+    if (text) return text;
+  }
+  return '';
+};
+
+const toReviewFlagsArray = (value: unknown): string[] => {
+  const sourceValues = Array.isArray(value) ? value : [value];
+  return sourceValues
+    .map((entry) => toTagText(entry))
+    .flatMap((entry) => entry.split(/[;,|]/))
+    .map((entry) => entry.trim())
+    .filter((entry) => entry !== '');
+};
+
 const toSummaryFlagsArray = (value: unknown): string[] => {
   if (Array.isArray(value)) {
     return value
@@ -247,7 +270,7 @@ const normalizeSalesItem = (item: SalesApiItem): TaskSearchItem => {
     ratio: toNumber(getNormalizedValue(map, 'ratio')),
     dwellingType: toText(getNormalizedValue(map, 'dwellingType', ['deellingtype', 'dwellinlingtype', 'dwelwellingtype'])) ?? undefined,
     flaggedForReview: toBoolean(getNormalizedValue(map, 'flaggedForReview')),
-    reviewFlags: toStringArrayOrEmpty(getNormalizedValue(map, 'reviewFlags', ['reviewFlag'])),
+    reviewFlags: toReviewFlagsArray(getNormalizedValue(map, 'reviewFlags', ['reviewFlag'])),
     outlierRatio: toNumber(getNormalizedValue(map, 'outlierRatio')),
     overallFlag: toText(getNormalizedValue(map, 'overallFlag')) ?? undefined,
     summaryFlags: toSummaryFlagsArray(getNormalizedValue(map, 'summaryFlags', ['summaryFlag'])),
@@ -286,65 +309,98 @@ const extractUserList = (value: unknown): SalesApiUserEntry[] => {
   return value.filter((e): e is SalesApiUserEntry => !!e && typeof e === 'object');
 };
 
+interface SalesFilterExtraction {
+  assignedToUserList: SalesApiUserEntry[];
+  qcAssignedToUserList: SalesApiUserEntry[];
+  strippedFilters: Record<string, string | string[]>;
+}
+
+const extractSalesFilterData = (rawFilters: Record<string, unknown>): SalesFilterExtraction => {
+  const assignedToUserList = extractUserList(rawFilters['assignedToUserList'] ?? rawFilters['assignedtouserlist']);
+  const qcAssignedToUserList = extractUserList(rawFilters['qcAssignedToUserList'] ?? rawFilters['qcassignedtouserlist']);
+
+  const strippedFilters: Record<string, string | string[]> = {};
+  Object.entries(rawFilters).forEach(([key, value]) => {
+    const normalizedKey = key.replace(/[^a-z0-9]/gi, '').toLowerCase();
+    if (normalizedKey === 'assignedtouserlist' || normalizedKey === 'qcassignedtouserlist') {
+      return;
+    }
+    if (typeof value === 'string' || Array.isArray(value)) {
+      strippedFilters[key] = value as string | string[];
+    }
+  });
+
+  return { assignedToUserList, qcAssignedToUserList, strippedFilters };
+};
+
+const buildSalesUserLookup = (userLists: SalesApiUserEntry[][]): Record<string, string> => {
+  const lookup: Record<string, string> = {};
+  userLists.flat().forEach((entry) => {
+    const id = String(entry.userId ?? '').trim().toLowerCase();
+    const name = String(entry.userName ?? '').trim();
+    if (id && name) {
+      lookup[id] = name;
+    }
+  });
+  return lookup;
+};
+
+const buildSortedUserOptions = (list: SalesApiUserEntry[]): Array<{ key: string; text: string }> => {
+  const deduped = new Map<string, { key: string; text: string }>();
+
+  list.forEach((entry) => {
+    const key = String(entry.userId ?? '').trim().toLowerCase();
+    const text = String(entry.userName ?? '').trim();
+    if (!key || !text || deduped.has(key)) {
+      return;
+    }
+    deduped.set(key, { key, text });
+  });
+
+  return Array.from(deduped.values()).sort((left, right) => {
+    const byName = left.text.localeCompare(right.text, undefined, { sensitivity: 'base' });
+    if (byName !== 0) {
+      return byName;
+    }
+    return left.key.localeCompare(right.key, undefined, { sensitivity: 'base' });
+  });
+};
+
+const buildUserFilterOptions = (
+  assignedToUserList: SalesApiUserEntry[],
+  qcAssignedToUserList: SalesApiUserEntry[],
+): Record<string, Array<{ key: string; text: string }>> => {
+  const options: Record<string, Array<{ key: string; text: string }>> = {};
+  if (assignedToUserList.length > 0) {
+    options['assignedto'] = buildSortedUserOptions(assignedToUserList);
+  }
+  if (qcAssignedToUserList.length > 0) {
+    options['qcassignedto'] = buildSortedUserOptions(qcAssignedToUserList);
+  }
+  return options;
+};
+
+const normalizeSalesApiResponse = (payload: SalesApiResponse): TaskSearchResponse => {
+  const sales = payload.sales ?? [];
+  const rawFilters = payload.filters ?? {};
+  const { assignedToUserList, qcAssignedToUserList, strippedFilters } = extractSalesFilterData(rawFilters);
+  const userLookup = buildSalesUserLookup([assignedToUserList, qcAssignedToUserList]);
+  const userFilterOptions = buildUserFilterOptions(assignedToUserList, qcAssignedToUserList);
+
+  return {
+    items: sales.map(normalizeSalesItem),
+    totalCount: payload.pageInfo?.totalRecords ?? payload.pageInfo?.totalRows ?? sales.length,
+    page: payload.pageInfo?.pageNumber ?? 1,
+    pageSize: payload.pageInfo?.pageSize ?? sales.length,
+    filters: Object.keys(strippedFilters).length > 0 ? normalizeFilterMap(strippedFilters) : undefined,
+    userLookup: Object.keys(userLookup).length > 0 ? userLookup : undefined,
+    userFilterOptions: Object.keys(userFilterOptions).length > 0 ? userFilterOptions : undefined,
+  };
+};
+
 export const normalizeSearchResponse = (payload: TaskSearchResponse | SalesApiResponse): TaskSearchResponse => {
   if ('sales' in payload || 'pageInfo' in payload) {
-    const sales = payload.sales ?? [];
-
-    // Extract per-filter user lists before normalizing the rest of the filters.
-    const rawFilters = payload.filters ?? {};
-    const assignedToUserList = extractUserList(rawFilters['assignedToUserList'] ?? rawFilters['assignedtouserlist']);
-    const qcAssignedToUserList = extractUserList(rawFilters['qcAssignedToUserList'] ?? rawFilters['qcassignedtouserlist']);
-
-    // Strip the user-list keys so normalizeFilterMap only sees string | string[] values.
-    const strippedFilters: Record<string, string | string[]> = {};
-    Object.entries(rawFilters).forEach(([key, value]) => {
-      const normalizedKey = key.replace(/[^a-z0-9]/gi, '').toLowerCase();
-      if (normalizedKey === 'assignedtouserlist' || normalizedKey === 'qcassignedtouserlist') return;
-      if (typeof value === 'string' || Array.isArray(value)) {
-        strippedFilters[key] = value as string | string[];
-      }
-    });
-
-    // Build a guid→name lookup from the user lists.
-    const userLookup: Record<string, string> = {};
-    [...assignedToUserList, ...qcAssignedToUserList].forEach((u) => {
-      const id = String(u.userId ?? '').trim().toLowerCase();
-      const name = String(u.userName ?? '').trim();
-      if (id && name) userLookup[id] = name;
-    });
-
-    // Build rich {key, text} option arrays for user filter dropdowns.
-    const userFilterOptions: Record<string, Array<{ key: string; text: string }>> = {};
-    const buildOptions = (list: SalesApiUserEntry[]): Array<{ key: string; text: string }> => {
-      const deduped = new Map<string, { key: string; text: string }>();
-
-      list.forEach((u) => {
-        const key = String(u.userId ?? '').trim().toLowerCase();
-        const text = String(u.userName ?? '').trim();
-        if (!key || !text) return;
-        // Keep the first entry per GUID and ensure stable key-to-name mapping.
-        if (!deduped.has(key)) deduped.set(key, { key, text });
-      });
-
-      return Array.from(deduped.values()).sort((a, b) => {
-        const byName = a.text.localeCompare(b.text, undefined, { sensitivity: 'base' });
-        if (byName !== 0) return byName;
-        return a.key.localeCompare(b.key, undefined, { sensitivity: 'base' });
-      });
-    };
-
-    if (assignedToUserList.length > 0) userFilterOptions['assignedto'] = buildOptions(assignedToUserList);
-    if (qcAssignedToUserList.length > 0) userFilterOptions['qcassignedto'] = buildOptions(qcAssignedToUserList);
-
-    return {
-      items: sales.map(normalizeSalesItem),
-      totalCount: payload.pageInfo?.totalRecords ?? payload.pageInfo?.totalRows ?? sales.length,
-      page: payload.pageInfo?.pageNumber ?? 1,
-      pageSize: payload.pageInfo?.pageSize ?? sales.length,
-      filters: Object.keys(strippedFilters).length > 0 ? normalizeFilterMap(strippedFilters) : undefined,
-      userLookup: Object.keys(userLookup).length > 0 ? userLookup : undefined,
-      userFilterOptions: Object.keys(userFilterOptions).length > 0 ? userFilterOptions : undefined,
-    };
+    return normalizeSalesApiResponse(payload);
   }
   return payload as TaskSearchResponse;
 };
@@ -359,15 +415,83 @@ const tryParseJsonPayload = (value: string): unknown => {
   }
 };
 
+const unwrapStringCandidate = (
+  candidate: unknown,
+  depth: number,
+  unwrap: (value: unknown, nextDepth: number) => unknown,
+): unknown | undefined => {
+  if (typeof candidate !== 'string') {
+    return undefined;
+  }
+
+  const parsed = tryParseJsonPayload(candidate);
+  return parsed === candidate ? candidate : unwrap(parsed, depth + 1);
+};
+
+const unwrapResultEnvelope = (
+  record: Record<string, unknown>,
+  candidate: unknown,
+  depth: number,
+  unwrap: (value: unknown, nextDepth: number) => unknown,
+): unknown | undefined => {
+  const raw = record.Result ?? record.result;
+  if (typeof raw !== 'string') {
+    return undefined;
+  }
+
+  const parsed = tryParseJsonPayload(raw);
+  return parsed === raw ? candidate : unwrap(parsed, depth + 1);
+};
+
+const unwrapNamedEnvelope = (
+  record: Record<string, unknown>,
+  depth: number,
+  unwrap: (value: unknown, nextDepth: number) => unknown,
+): unknown | undefined => {
+  const envelopeKeys = ['response', 'Response', 'data', 'Data', 'body', 'Body', 'value'];
+  for (const key of envelopeKeys) {
+    if (!(key in record)) {
+      continue;
+    }
+
+    const nested = record[key];
+    if (nested === undefined || nested === null) {
+      continue;
+    }
+
+    return unwrap(nested, depth + 1);
+  }
+
+  return undefined;
+};
+
+const unwrapSingleValueEnvelope = (
+  record: Record<string, unknown>,
+  depth: number,
+  unwrap: (value: unknown, nextDepth: number) => unknown,
+): unknown | undefined => {
+  const nonODataKeys = Object.keys(record).filter((key) => !key.startsWith('@odata.'));
+  if (nonODataKeys.length !== 1) {
+    return undefined;
+  }
+
+  const nested = record[nonODataKeys[0]];
+  if (nested === undefined || nested === null) {
+    return undefined;
+  }
+
+  return unwrap(nested, depth + 1);
+};
+
 export const unwrapCustomApiPayload = (payload: unknown): SalesPayload => {
   const unwrap = (candidate: unknown, depth: number): unknown => {
     if (depth > 6) {
       return candidate;
     }
 
-    if (typeof candidate === 'string') {
-      const parsed = tryParseJsonPayload(candidate);
-      return parsed === candidate ? candidate : unwrap(parsed, depth + 1);
+    const unwrappedString = unwrapStringCandidate(candidate, depth, unwrap);
+    if (unwrappedString !== undefined) {
+      return unwrappedString;
     }
 
     if (!candidate || typeof candidate !== 'object') {
@@ -375,26 +499,19 @@ export const unwrapCustomApiPayload = (payload: unknown): SalesPayload => {
     }
 
     const record = candidate as Record<string, unknown>;
-    const raw = record.Result ?? record.result;
-    if (typeof raw === 'string') {
-      const parsed = tryParseJsonPayload(raw);
-      return parsed === raw ? candidate : unwrap(parsed, depth + 1);
+    const unwrappedResult = unwrapResultEnvelope(record, candidate, depth, unwrap);
+    if (unwrappedResult !== undefined) {
+      return unwrappedResult;
     }
 
-    const envelopeKeys = ['response', 'Response', 'data', 'Data', 'body', 'Body', 'value'];
-    for (const key of envelopeKeys) {
-      if (!(key in record)) continue;
-      const nested = record[key];
-      if (nested === undefined || nested === null) continue;
-      return unwrap(nested, depth + 1);
+    const unwrappedNamedEnvelope = unwrapNamedEnvelope(record, depth, unwrap);
+    if (unwrappedNamedEnvelope !== undefined) {
+      return unwrappedNamedEnvelope;
     }
 
-    const nonODataKeys = Object.keys(record).filter((key) => !key.startsWith('@odata.'));
-    if (nonODataKeys.length === 1) {
-      const nested = record[nonODataKeys[0]];
-      if (nested !== undefined && nested !== null) {
-        return unwrap(nested, depth + 1);
-      }
+    const unwrappedSingleValue = unwrapSingleValueEnvelope(record, depth, unwrap);
+    if (unwrappedSingleValue !== undefined) {
+      return unwrappedSingleValue;
     }
 
     return candidate;

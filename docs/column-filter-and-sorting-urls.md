@@ -1,4 +1,4 @@
-# Column Header Filters and Sorting - URL Examples
+# Column Header Filter and Sorting URL Reference
 
 This document applies to all grid screens that support column header filters:
 - Sales Record Search (SRS)
@@ -7,10 +7,13 @@ This document applies to all grid screens that support column header filters:
 - QA Assignment (QCA)
 - QA View (QCV)
 
+This is the single source of truth for header-filter and sort token format.
+Use `docs/prefilter-api-urls.md` for screen-level request and prefilter URL shapes.
+
 ## Placeholders
 | Placeholder | Value |
 | --- | --- |
-| {org} | Dynamics org host (example: contoso.crm.dynamics.com) |
+| <DATAVERSE_BASE_URL> | Dataverse environment base URL used in Custom API examples |
 | {APIM_BASE_ADDRESS} | voa_CredentialProvider Address (SVTGetSalesRecord) |
 | {customApiName} | voa_GetAllSalesRecord |
 | {source} | SRS, MA, CWV, QCA, or QCV |
@@ -58,7 +61,7 @@ Notes:
 ### Example: user clicks sort on saleId (desc) with no header filters
 Custom API:
 ```text
-GET https://{org}.crm.dynamics.com/api/data/v9.2/{customApiName}(pageNumber='1',pageSize='50',source='{source}',sortField='saleId',sortDirection='desc',SearchQuery='columnFilter=saleId~SORT~DESC')
+GET <DATAVERSE_BASE_URL>/api/data/v9.2/{customApiName}(pageNumber='1',pageSize='50',source='{source}',sortField='saleId',sortDirection='desc',SearchQuery='columnFilter=saleId~SORT~DESC')
 ```
 APIM:
 ```text
@@ -68,7 +71,7 @@ APIM:
 ### Example: header filter + header sort on address (asc)
 Custom API:
 ```text
-GET https://{org}.crm.dynamics.com/api/data/v9.2/{customApiName}(pageNumber='1',pageSize='50',source='{source}',sortField='address',sortDirection='asc',SearchQuery='columnFilter=address~like~High%20Street&columnFilter=address~SORT~ASC')
+GET <DATAVERSE_BASE_URL>/api/data/v9.2/{customApiName}(pageNumber='1',pageSize='50',source='{source}',sortField='address',sortDirection='asc',SearchQuery='columnFilter=address~like~High%20Street&columnFilter=address~SORT~ASC')
 ```
 APIM:
 ```text

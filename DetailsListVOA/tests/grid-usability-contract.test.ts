@@ -214,7 +214,7 @@ describe('grid usability contract', () => {
 
   test('keeps the column date filter apply button visible but disabled until an end date is selected', () => {
     expect(gridSource).toContain('const isDateRangeMissingEndDate = cfg?.control === \'dateRange\'');
-    expect(gridSource).toContain('const applyUnavailableReason = isDateRangeMissingEndDate');
+    expect(gridSource).toContain('const applyUnavailableReason = getApplyUnavailableReason(');
     expect(gridSource).toContain('text={commonText.columnMenu.apply}');
     expect(gridSource).toContain('unavailable={applyDisabled}');
     expect(gridSource).toContain('unavailableReason={applyUnavailableReason}');
@@ -240,7 +240,7 @@ describe('grid usability contract', () => {
     // Re-opening an existing eq filter should keep the saved values array rather than coercing
     // back to a single string representation.
     expect(gridSource).toContain('// All operators (contains, notContains, eq) use multi-select ComboBox which expects an array');
-    expect(gridSource).toContain('initialValue = valuesArray;');
+    expect(gridSource).toContain("return { initialValue: [existing], minText: '', maxText: '' };");
   });
 
   test('treats single-value All selection as clearing only the active column filter', () => {
@@ -251,10 +251,9 @@ describe('grid usability contract', () => {
   });
 
   test('keeps currently selected dropdown values in the options list when reopening a filter', () => {
-    expect(gridSource).toContain('Preserve active selections in the options list');
+    expect(gridSource).toContain('const extractSelectedColumnFilterValues = React.useCallback((existing: unknown): string[] => {');
     expect(gridSource).toContain('const existing = columnFiltersState[fieldName];');
-    expect(gridSource).toContain('const selectedValues = Array.isArray(existing)');
-    expect(gridSource).toContain('selectedValues');
+    expect(gridSource).toContain('extractSelectedColumnFilterValues(columnFiltersState[fieldName]).forEach((value) => push(value, value));');
     expect(gridSource).toContain('.forEach((value) => push(value, value));');
   });
 });

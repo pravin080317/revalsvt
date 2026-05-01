@@ -10,6 +10,8 @@ import * as React from 'react';
 import { comboBoxStyles240x200 } from '../../utils/GridComboUtils';
 import { buildAriaDescribedBy } from '../../utils/GridUiUtils';
 
+let nextHintId = 0;
+
 interface GenericSingleSelectControlProps {
   label: string;
   title?: string;
@@ -46,7 +48,19 @@ export const GenericSingleSelectControl = ({
   onKeyDown,
   onMenuDismissed,
 }: GenericSingleSelectControlProps): JSX.Element => {
-  const hintId = disambiguationHint ? `voa-search-hint-${Math.random().toString(36).slice(2, 9)}` : undefined;
+  const hintIdRef = React.useRef<string>();
+  const hintId = React.useMemo(() => {
+    if (!disambiguationHint) {
+      return undefined;
+    }
+
+    if (!hintIdRef.current) {
+      nextHintId += 1;
+      hintIdRef.current = `voa-search-hint-${nextHintId.toString(36)}`;
+    }
+
+    return hintIdRef.current;
+  }, [disambiguationHint]);
 
   return (
     <Stack.Item styles={{ root: { minWidth: 200 } }}>

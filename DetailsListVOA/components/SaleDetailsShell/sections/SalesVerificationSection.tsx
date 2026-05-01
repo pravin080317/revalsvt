@@ -273,32 +273,7 @@ export const SalesVerificationSection: React.FC<SalesVerificationSectionProps> =
     });
   }, [onCrossSectionValidationChange]);
 
-  React.useEffect(() => {
-    if (isReturningToTable) {
-      return;
-    }
-
-    clearReturnToTableTimeout();
-    const nextSaleUsefulKey = toUsefulKey(model.isSaleUseful);
-    setIsSaleUsefulKey(nextSaleUsefulKey);
-    setWhyNotUsefulKey(
-      nextSaleUsefulKey === 'no'
-        ? (toWhyKey(model.whyNotUseful) ?? (model.whyNotUseful || undefined))
-        : undefined,
-    );
-    setAdditionalNotes(model.additionalNotes);
-    setQcRemarks(model.remarks);
-    // Only sync the QC-submission fields when the API has a committed value.
-    // While qcOutcome is empty the task is still "in-progress": the useEffect
-    // firing due to audit-history load or container-resize (DevTools / zoom)
-    // must not overwrite draft values the user is currently typing.
-    // When a new task is opened the Stack key forces a full remount, so
-    // React.useState already initialises qcOutcomeKey / qcOutcomeRemarks
-    // correctly without needing a setXxx call here.
-    if (model.qcOutcome) {
-      setQcOutcomeKey(toQcOutcomeKey(model.qcOutcome));
-      setQcOutcomeRemarks(model.qcRemark);
-    }
+  const clearTransientState = React.useCallback(() => {
     setIsSaleUsefulError(undefined);
     setWhyNotUsefulError(undefined);
     setMandatoryErrorMessages([]);
@@ -314,8 +289,45 @@ export const SalesVerificationSection: React.FC<SalesVerificationSectionProps> =
     setCompleteDialogSuccessMessage(undefined);
     setSubmitForQcDialogSuccessMessage(undefined);
     setQcOutcomeDialogSuccessMessage(undefined);
+  }, []);
+
+  const syncStateFromModel = React.useCallback((nextModel: SalesVerificationViewModel): void => {
+    const nextSaleUsefulKey = toUsefulKey(nextModel.isSaleUseful);
+    setIsSaleUsefulKey(nextSaleUsefulKey);
+    setWhyNotUsefulKey(
+      nextSaleUsefulKey === 'no'
+        ? (toWhyKey(nextModel.whyNotUseful) ?? (nextModel.whyNotUseful || undefined))
+        : undefined,
+    );
+    setAdditionalNotes(nextModel.additionalNotes);
+    setQcRemarks(nextModel.remarks);
+
+    // Only sync the QC-submission fields when the API has a committed value.
+    // While qcOutcome is empty the task is still in-progress, so we preserve
+    // in-progress user edits for remarks/outcome.
+    if (nextModel.qcOutcome) {
+      setQcOutcomeKey(toQcOutcomeKey(nextModel.qcOutcome));
+      setQcOutcomeRemarks(nextModel.qcRemark);
+    }
+  }, []);
+
+  React.useEffect(() => {
+    if (isReturningToTable) {
+      return;
+    }
+
+    clearReturnToTableTimeout();
+    syncStateFromModel(model);
+    clearTransientState();
     clearCrossSectionFieldErrors();
-  }, [clearCrossSectionFieldErrors, clearReturnToTableTimeout, isReturningToTable, model]);
+  }, [
+    clearCrossSectionFieldErrors,
+    clearReturnToTableTimeout,
+    clearTransientState,
+    isReturningToTable,
+    model,
+    syncStateFromModel,
+  ]);
 
   React.useEffect(() => clearReturnToTableTimeout, [clearReturnToTableTimeout]);
 
@@ -774,7 +786,7 @@ export const SalesVerificationSection: React.FC<SalesVerificationSectionProps> =
             <div className="voa-sales-verification-row__control">
               <Dropdown
                 id="voa-why-not-useful"
-                placeholder="Select a value"
+                placeholder="Select why the sale is not useful"
                 selectedKey={isNotUseful ? (whyNotUsefulKey ?? null) : null}
                 options={whyNotOptions}
                 disabled={editingDisabled || !isNotUseful}

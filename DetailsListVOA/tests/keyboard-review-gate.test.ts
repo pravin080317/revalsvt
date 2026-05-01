@@ -19,7 +19,7 @@ describe('keyboard review gate', () => {
     expect(gridCellSource).toContain('<button');
     expect(gridCellSource).toContain('type="button"');
     expect(gridCellSource).toContain('<Link');
-    expect(assignOverlaySource).toContain('<FocusTrapZone>');
+    expect(assignOverlaySource).toContain('<FocusTrapZone');
   });
 
   test('removes inactive controls from keyboard navigation by using disabled states', () => {

@@ -7,7 +7,12 @@ import { GridFilterState, createDefaultGridFilters, sanitizeFilters, NumericFilt
 import { getProfileConfigs } from '../../config/ColumnProfiles';
 import { CONTROL_CONFIG } from '../../config/ControlConfig';
 import { getColumnFilterConfigFor, type TableKey } from '../../config/TableConfigs';
-import { COLUMN_FILTER_VALUE_SEPARATOR, type ManagerPrefilterState } from '../../config/PrefilterConfigs';
+import {
+  COLUMN_FILTER_VALUE_SEPARATOR,
+  isManagerCompletedWorkThat,
+  isQcCompletedWorkThat,
+  type ManagerPrefilterState,
+} from '../../config/PrefilterConfigs';
 import { CASEWORKER_ROLE_NAMES, CASEWORKER_TEAM_NAMES, QA_ROLE_NAMES, QA_TEAM_NAMES } from '../../constants/AccessControl';
 import { SCREEN_TEXT, MANAGER_BILLING_AUTHORITY_OPTIONS, MANAGER_CASEWORKER_OPTIONS } from '../../constants/ScreenText';
 import { buildColumns } from '../../utils/ColumnsBuilder';
@@ -216,24 +221,150 @@ const parseFilterValue = (raw: string): ColumnFilterValue => {
   return trimmed;
 };
 
+interface AssignmentApiResult { success?: boolean; message?: string; payload?: string }
+
+interface SelectionIds {
+  taskId?: string;
+  saleId?: string;
+  selectedTaskIds: string[];
+  selectedSaleIds: string[];
+}
+
+const toNumericTaskId = (value: unknown): string => {
+  const raw = typeof value === 'string' ? value : typeof value === 'number' || typeof value === 'boolean' ? String(value) : '';
+  if (!raw) return '';
+  const digitsOnly = raw.replace(/\D/g, '');
+  return digitsOnly || raw;
+};
+
+const buildUniqueTaskIdsFromRecords = (records: Record<string, unknown>[]): string[] => {
+  const taskIds = records
+    .map((rec) => toNumericTaskId(rec.taskid ?? rec.taskId ?? ''))
+    .map((value) => value.trim())
+    .filter((value) => value !== '');
+  return Array.from(new Set(taskIds));
+};
+
+const parseJsonString = <T,>(value: string): T | undefined => {
+  try {
+    return JSON.parse(value) as T;
+  } catch {
+    return undefined;
+  }
+};
+
+const parseAssignmentApiString = (value: string): AssignmentApiResult =>
+  parseJsonString<AssignmentApiResult>(value) ?? { message: value };
+
+const parseAssignmentApiRecord = (record: Record<string, unknown>): AssignmentApiResult | null => {
+  const raw = record.Result ?? record.result;
+  if (typeof raw === 'string') {
+    return parseAssignmentApiString(raw);
+  }
+  return typeof record.success === 'boolean' ? record as AssignmentApiResult : null;
+};
+
+const parseAssignmentApiResult = (payload: unknown): AssignmentApiResult | null => {
+  if (!payload) return null;
+  if (typeof payload === 'string') {
+    return parseAssignmentApiString(payload);
+  }
+  if (typeof payload === 'object') {
+    return parseAssignmentApiRecord(payload as Record<string, unknown>);
+  }
+  return null;
+};
+
+const normalizeAssignmentOutcomeText = (value?: string): string => {
+  if (!value) return '';
+  return value.replace(/^['"]|['"]$/g, '').trim().toLowerCase();
+};
+
+const hasAlreadyAssignedOutcome = (value: string): boolean =>
+  value.includes('already assigned') || value.includes('alreadyassigned');
+
+const extractAssignmentOutcomeRecord = (record: Record<string, unknown>): { success?: boolean; alreadyAssigned?: boolean } => {
+  const success = typeof record.success === 'boolean' ? record.success : undefined;
+  const message = [record.message, record.status, record.result, record.detail]
+    .map((value) => (typeof value === 'string' ? value : ''))
+    .join(' ');
+  return {
+    success,
+    alreadyAssigned: hasAlreadyAssignedOutcome(normalizeAssignmentOutcomeText(message)),
+  };
+};
+
+const tryParseAssignmentOutcome = (raw: string): { success?: boolean; alreadyAssigned?: boolean } | undefined => {
+  const parsed = parseJsonString<unknown>(raw);
+  if (parsed === undefined) {
+    return undefined;
+  }
+  if (typeof parsed === 'string') {
+    return parseAssignmentOutcome(parsed);
+  }
+  if (parsed && typeof parsed === 'object') {
+    return extractAssignmentOutcomeRecord(parsed as Record<string, unknown>);
+  }
+  return undefined;
+};
+
+const parseAssignmentOutcome = (payload?: string): { success?: boolean; alreadyAssigned?: boolean } => {
+  const raw = typeof payload === 'string' ? payload.trim() : '';
+  if (!raw) return {};
+  const normalized = normalizeAssignmentOutcomeText(raw);
+  const hasAlreadyAssigned = hasAlreadyAssignedOutcome(normalized);
+  if (['success', 'succeeded', 'ok', 'true'].includes(normalized)) return { success: true };
+  if (['fail', 'failed', 'failure', 'error', 'false'].includes(normalized)) {
+    return { success: false, alreadyAssigned: hasAlreadyAssigned };
+  }
+  const parsedOutcome = tryParseAssignmentOutcome(raw);
+  if (parsedOutcome) {
+    return parsedOutcome;
+  }
+  return { alreadyAssigned: hasAlreadyAssigned };
+};
+
+const extractSelectionIds = (selected: unknown[]): SelectionIds => {
+  const makeIds = (item: unknown): { taskId?: string; saleId?: string } => {
+    const record = item as { taskid?: string; taskId?: string; saleid?: string; saleId?: string };
+    return { taskId: record.taskid ?? record.taskId, saleId: record.saleid ?? record.saleId };
+  };
+  const pairs = (selected ?? [])
+    .map(makeIds)
+    .filter((pair) => [pair.taskId, pair.saleId].some((value) => !!value));
+  const selectedTaskIds = pairs.map((pair) => pair.taskId).filter((value): value is string => !!value);
+  const selectedSaleIds = pairs.map((pair) => pair.saleId).filter((value): value is string => !!value);
+  const first = pairs[0] ?? { taskId: undefined, saleId: undefined };
+  return {
+    taskId: first.taskId,
+    saleId: first.saleId,
+    selectedTaskIds,
+    selectedSaleIds,
+  };
+};
+
 const normalizeApiFilters = (filters?: Record<string, unknown>): Record<string, ColumnFilterValue> | undefined => {
   if (!filters) return undefined;
   const normalized: Record<string, ColumnFilterValue> = {};
   Object.entries(filters).forEach(([key, value]) => {
     const lowerKey = key.toLowerCase();
-    if (value === undefined || value === null) return;
-    if (Array.isArray(value)) {
-      const arr = value.map((v) => String(v ?? '')).filter((v) => v.trim() !== '');
-      if (arr.length > 0) normalized[lowerKey] = arr;
-      return;
-    }
-    if (typeof value === 'string') {
-      const parsed = parseFilterValue(value);
-      if (parsed !== '') normalized[lowerKey] = parsed;
-      return;
-    }
-    if (isPlainObject(value)) {
-      normalized[lowerKey] = value as ColumnFilterValue;
+    const normalizedValue = (() => {
+      if (value === undefined || value === null) return undefined;
+      if (Array.isArray(value)) {
+        const entries = value.map((entry) => String(entry ?? '')).filter((entry) => entry.trim() !== '');
+        return entries.length > 0 ? entries : undefined;
+      }
+      if (typeof value === 'string') {
+        const parsed = parseFilterValue(value);
+        return parsed !== '' ? parsed : undefined;
+      }
+      if (isPlainObject(value)) {
+        return value as ColumnFilterValue;
+      }
+      return undefined;
+    })();
+    if (normalizedValue !== undefined) {
+      normalized[lowerKey] = normalizedValue;
     }
   });
   return normalized;
@@ -248,52 +379,341 @@ const splitDelimitedFilterValue = (value: string): string[] =>
     .map((part) => part.trim())
     .filter((part) => part !== '');
 
+const toUniqueNonEmpty = (values: string[]): string[] => Array.from(new Set(values.filter((value) => value.trim() !== '')));
+
+const normalizeArrayFilterOptionValues = (
+  value: string[],
+  isSelectableFilter: boolean,
+): string[] => {
+  const mapped = isSelectableFilter
+    ? value
+      .map((v) => String(v ?? '').trim())
+      .flatMap((v) => (/[;,|]/.test(v) ? splitDelimitedFilterValue(v) : [v]))
+      .map((v) => v.trim())
+    : value.map((v) => String(v ?? '').trim());
+  return toUniqueNonEmpty(mapped);
+};
+
+const normalizeStringFilterOptionValues = (
+  trimmed: string,
+  isSelectableFilter: boolean,
+): string[] => {
+  if (!trimmed) return [];
+  const parsed = ((trimmed.startsWith('[') && trimmed.endsWith(']')) || (trimmed.startsWith('{') && trimmed.endsWith('}')))
+    ? parseJsonString<unknown>(trimmed)
+    : undefined;
+  if (Array.isArray(parsed)) {
+    return toUniqueNonEmpty(parsed.map((value) => String(value ?? '').trim()));
+  }
+  if (isSelectableFilter && /[;,|]/.test(trimmed)) {
+    return toUniqueNonEmpty(splitDelimitedFilterValue(trimmed));
+  }
+  return [trimmed];
+};
+
+const normalizeFilterOptionValue = (
+  value: string | string[],
+  isSelectableFilter: boolean,
+): string[] => Array.isArray(value)
+  ? normalizeArrayFilterOptionValues(value, isSelectableFilter)
+  : normalizeStringFilterOptionValues(value.trim(), isSelectableFilter);
+
 const normalizeFilterOptions = (table: string, filters?: Record<string, string | string[]>): FilterOptionsMap => {
   if (!filters) return {};
   const normalized: FilterOptionsMap = {};
   Object.entries(filters).forEach(([key, value]) => {
     const lowerKey = normalizeFilterKey(key);
     if (value === undefined || value === null) return;
-    if (Array.isArray(value)) {
-      const cfg = getColumnFilterConfigFor(table, lowerKey);
-      const isSelectableFilter = cfg?.control === 'multiSelect' || cfg?.control === 'singleSelect';
-      const arr = isSelectableFilter
-        ? value
-          .map((v) => String(v ?? '').trim())
-          .flatMap((v) => (/[;,|]/.test(v) ? splitDelimitedFilterValue(v) : [v]))
-          .map((v) => v.trim())
-          .filter((v) => v !== '')
-        : value.map((v) => String(v ?? '')).filter((v) => v.trim() !== '');
-      if (arr.length > 0) normalized[lowerKey] = Array.from(new Set(arr));
-      return;
-    }
-    if (typeof value === 'string') {
-      const trimmed = value.trim();
-      if (!trimmed) return;
-      if ((trimmed.startsWith('[') && trimmed.endsWith(']')) || (trimmed.startsWith('{') && trimmed.endsWith('}'))) {
-        try {
-          const parsed = JSON.parse(trimmed) as unknown;
-          if (Array.isArray(parsed)) {
-            const arr = parsed.map((v) => String(v ?? '')).filter((v) => v.trim() !== '');
-            if (arr.length > 0) normalized[lowerKey] = Array.from(new Set(arr));
-            return;
-          }
-        } catch {
-          // fall back to plain string
-        }
-      }
-      const cfg = getColumnFilterConfigFor(table, lowerKey);
-      if ((cfg?.control === 'multiSelect' || cfg?.control === 'singleSelect') && /[;,|]/.test(trimmed)) {
-        const arr = splitDelimitedFilterValue(trimmed);
-        if (arr.length > 0) {
-          normalized[lowerKey] = Array.from(new Set(arr));
-          return;
-        }
-      }
-      normalized[lowerKey] = [trimmed];
+    const cfg = getColumnFilterConfigFor(table, lowerKey);
+    const isSelectableFilter = cfg?.control === 'multiSelect' || cfg?.control === 'singleSelect';
+    const options = normalizeFilterOptionValue(value, isSelectableFilter);
+    if (options.length > 0) {
+      normalized[lowerKey] = options;
     }
   });
   return normalized;
+};
+
+const splitUserIdentifiers = (value: unknown): string[] => {
+  if (Array.isArray(value)) {
+    return value.map((entry) => String(entry ?? '').trim()).filter((entry) => entry !== '');
+  }
+  if (typeof value === 'string') {
+    return value.split(',').map((entry) => entry.trim()).filter((entry) => entry !== '');
+  }
+  return [];
+};
+
+const mapUserIdsToDisplayNames = (
+  value: unknown,
+  hasUserDisplayNameMap: boolean,
+  userDisplayNameMap: Record<string, string>,
+): string[] | undefined => {
+  if (!hasUserDisplayNameMap) {
+    return undefined;
+  }
+
+  const ids = splitUserIdentifiers(value);
+  if (ids.length === 0) {
+    return undefined;
+  }
+
+  return ids.map((id) => {
+    const normalizedId = normalizeAssignableUserId(id);
+    return normalizedId ? userDisplayNameMap[normalizedId] ?? id : id;
+  });
+};
+
+const extractNormalizedUserIds = (value: unknown): string[] | undefined => {
+  const normalized = splitUserIdentifiers(value)
+    .map((entry) => normalizeAssignableUserId(entry))
+    .filter((entry) => entry !== '');
+  if (normalized.length === 0) {
+    return undefined;
+  }
+  return Array.from(new Set(normalized));
+};
+
+const assignDisplayNames = (args: {
+  record: Record<string, unknown>;
+  sourceKey: 'assignedto' | 'qcassignedto';
+  nameKey: 'assignedtoname' | 'qcassignedtoname';
+  camelSourceKey: 'assignedTo' | 'qcAssignedTo';
+  camelNameKey: 'assignedToName' | 'qcAssignedToName';
+  hasUserDisplayNameMap: boolean;
+  userDisplayNameMap: Record<string, string>;
+  toTextValue: (value: unknown) => string;
+}): void => {
+  const {
+    record,
+    sourceKey,
+    nameKey,
+    camelSourceKey,
+    camelNameKey,
+    hasUserDisplayNameMap,
+    userDisplayNameMap,
+    toTextValue,
+  } = args;
+  const nameFromResponse = toTextValue(record[nameKey] ?? record[camelNameKey]);
+  if (nameFromResponse) {
+    record[sourceKey] = [nameFromResponse];
+    record[camelSourceKey] = [nameFromResponse];
+    return;
+  }
+
+  const mappedNames = mapUserIdsToDisplayNames(record[sourceKey] ?? record[camelSourceKey], hasUserDisplayNameMap, userDisplayNameMap);
+  if (mappedNames) {
+    record[sourceKey] = mappedNames;
+    record[camelSourceKey] = mappedNames;
+  }
+};
+
+const resolvePrimaryApimRecordId = (item: Record<string, unknown>): string | undefined => {
+  const statutorySpatialUnitLabelId = item.statutorySpatialUnitLabelId ?? item.statutoryspatialunitlabelid;
+  if (typeof statutorySpatialUnitLabelId === 'string' && statutorySpatialUnitLabelId.trim() !== '') {
+    return statutorySpatialUnitLabelId;
+  }
+
+  if (typeof item.taskId === 'string' && item.taskId.trim() !== '') {
+    return item.taskId;
+  }
+
+  return undefined;
+};
+
+const buildApimRecordId = (item: Record<string, unknown>, index: number): string => {
+  const primaryId = resolvePrimaryApimRecordId(item);
+  const uprnValue = item.uprn;
+  const uprnText = typeof uprnValue === 'string' || typeof uprnValue === 'number' ? String(uprnValue) : '';
+  const fallbackId = uprnText ? `${uprnText}-${index}` : `apim-${index}`;
+  return primaryId ? `${primaryId}-${index}` : fallbackId;
+};
+
+const mapApimItemsToEntityRecords = (
+  apimItems: unknown[],
+  clientUrl: string,
+  hasUserDisplayNameMap: boolean,
+  userDisplayNameMap: Record<string, string>,
+): { records: Record<string, ComponentFramework.PropertyHelper.DataSetApi.EntityRecord>; ids: string[] } => {
+  const records: Record<string, ComponentFramework.PropertyHelper.DataSetApi.EntityRecord> = {};
+  const ids: string[] = [];
+  const toTextValue = (value: unknown) => (typeof value === 'string' ? value : typeof value === 'number' || typeof value === 'boolean' ? String(value) : '');
+
+  apimItems.forEach((item, index) => {
+    const base: Record<string, unknown> = {};
+    const record = base as ComponentFramework.PropertyHelper.DataSetApi.EntityRecord & Record<string, unknown>;
+    const r = record;
+    const source = item as Record<string, unknown>;
+    const id = buildApimRecordId(source, index);
+
+    record.getRecordId = () => id;
+    record.getNamedReference = undefined as unknown as ComponentFramework.PropertyHelper.DataSetApi.EntityRecord['getNamedReference'];
+    record.getValue = ((columnName: string) => record[columnName] ?? '') as ComponentFramework.PropertyHelper.DataSetApi.EntityRecord['getValue'];
+    record.getFormattedValue = ((columnName: string) => toTextValue(record[columnName])) as ComponentFramework.PropertyHelper.DataSetApi.EntityRecord['getFormattedValue'];
+    Object.keys(source).forEach((key) => {
+      record[key.toLowerCase()] = source[key];
+    });
+
+    const assignedToIds = extractNormalizedUserIds(record.assignedto ?? record.assignedTo);
+    if (assignedToIds && assignedToIds.length > 0) {
+      r.assignedtoid = assignedToIds;
+      r.assignedToId = assignedToIds;
+    }
+    const qcAssignedToIds = extractNormalizedUserIds(record.qcassignedto ?? record.qcAssignedTo);
+    if (qcAssignedToIds && qcAssignedToIds.length > 0) {
+      r.qcassignedtoid = qcAssignedToIds;
+      r.qcAssignedToId = qcAssignedToIds;
+    }
+    assignDisplayNames({
+      record,
+      sourceKey: 'assignedto',
+      nameKey: 'assignedtoname',
+      camelSourceKey: 'assignedTo',
+      camelNameKey: 'assignedToName',
+      hasUserDisplayNameMap,
+      userDisplayNameMap,
+      toTextValue,
+    });
+    assignDisplayNames({
+      record,
+      sourceKey: 'qcassignedto',
+      nameKey: 'qcassignedtoname',
+      camelSourceKey: 'qcAssignedTo',
+      camelNameKey: 'qcAssignedToName',
+      hasUserDisplayNameMap,
+      userDisplayNameMap,
+      toTextValue,
+    });
+
+    record.saleid = record.saleid ?? (record as Record<string, unknown> & { saleId?: unknown }).saleId;
+    const suid = normalizeSuid(record.suid);
+    record.addressurl = suid && clientUrl ? buildHereditamentUrl(clientUrl, suid) : '';
+    ids.push(id);
+    records[id] = record;
+  });
+
+  return { records, ids };
+};
+
+const buildUserDisplayNameMap = (
+  apiUserLookup: Record<string, string>,
+  assignableUsersCache: AssignUser[],
+  getUserDisplayName: (user: AssignUser) => string,
+): Record<string, string> => {
+  const map: Record<string, string> = { ...apiUserLookup };
+  assignableUsersCache.forEach((user) => {
+    const name = getUserDisplayName(user);
+    if (!name) {
+      return;
+    }
+
+    const primaryId = normalizeAssignableUserId(user.entraObjectId ?? user.id);
+    if (primaryId) {
+      map[primaryId] = name;
+    }
+
+    const userId = normalizeAssignableUserId(user.id);
+    if (userId) {
+      map[userId] = name;
+    }
+
+    const systemUserId = normalizeAssignableUserId(user.systemUserId);
+    if (systemUserId) {
+      map[systemUserId] = name;
+    }
+  });
+  return map;
+};
+
+const readStoredSessionScreens = (): Record<string, boolean> => {
+  try {
+    const rawScreens = sessionStorage.getItem('voa-session-screens');
+    return rawScreens ? JSON.parse(rawScreens) as Record<string, boolean> : {};
+  } catch {
+    return {};
+  }
+};
+
+const restoreStoredHeaderFilters = (
+  tableKey: string,
+  storageKey: string,
+  storageKeyNC: string,
+): Record<string, ColumnFilterValue> => {
+  const rawLocalFilters = localStorage.getItem(storageKey) ?? localStorage.getItem(storageKeyNC);
+  if (!rawLocalFilters) {
+    return {};
+  }
+  return deserializeColumnFiltersFromStorage(String(tableKey), rawLocalFilters) as Record<string, ColumnFilterValue>;
+};
+
+const restoreStoredSort = (
+  storageKeySort: string,
+  storageKeySortNC: string,
+): ReturnType<typeof parseStoredSortState> => {
+  const rawLocalSort = localStorage.getItem(storageKeySort) ?? localStorage.getItem(storageKeySortNC);
+  return rawLocalSort ? parseStoredSortState(rawLocalSort) : undefined;
+};
+
+const restoreStoredPage = (
+  storageKeyPage: string,
+  storageKeyPageNC: string,
+): number => {
+  const rawLocalPage = localStorage.getItem(storageKeyPage) ?? localStorage.getItem(storageKeyPageNC);
+  if (!rawLocalPage) {
+    return 0;
+  }
+  const page = Number(rawLocalPage);
+  return !Number.isNaN(page) && page >= 0 ? page : 0;
+};
+
+const persistSessionScreenState = (sessionScreens: Record<string, boolean>, screenInstanceKey: string): void => {
+  try {
+    sessionScreens[screenInstanceKey] = true;
+    sessionStorage.setItem('voa-session-screens', JSON.stringify(sessionScreens));
+    sessionStorage.setItem('voa-last-screen', screenInstanceKey);
+  } catch {
+    // ignore session storage failures
+  }
+};
+
+const parseMetadataPayload = (rawPayload: unknown): unknown => {
+  let payload: unknown = rawPayload;
+  if (typeof payload === 'string') {
+    try {
+      payload = JSON.parse(payload) as unknown;
+    } catch {
+      return payload;
+    }
+  }
+  if (payload && typeof payload === 'object') {
+    const record = payload as Record<string, unknown>;
+    const raw = record.Result ?? record.result;
+    if (typeof raw === 'string') {
+      try {
+        payload = JSON.parse(raw) as unknown;
+      } catch {
+        // ignore parse failures
+      }
+    }
+  }
+  return payload;
+};
+
+const extractBillingAuthorityValues = (payload: unknown): { values: string[]; hasAuthorityField: boolean } => {
+  const record = payload && typeof payload === 'object' ? (payload as Record<string, unknown>) : undefined;
+  const hasAuthorityField = Boolean(record && (Array.isArray(record.billingAuthority) || Array.isArray(record.billingAuthorities)));
+  const list = Array.isArray(record?.billingAuthority)
+    ? record.billingAuthority
+    : Array.isArray(record?.billingAuthorities)
+      ? record.billingAuthorities
+      : [];
+  const values = Array.isArray(list)
+    ? list
+      .filter((value) => typeof value === 'string')
+      .map((value) => value.trim())
+      .filter((value) => value.length > 0)
+    : [];
+  return { values, hasAuthorityField };
 };
 
 const areFiltersEqual = (a: Record<string, ColumnFilterValue>, b: Record<string, ColumnFilterValue>): boolean => {
@@ -482,14 +902,17 @@ export const DetailsListHost: React.FC<DetailsListHostProps> = ({
   const [searchFilters, setSearchFilters] = React.useState<GridFilterState>(SALES_SEARCH_DEFAULT_FILTERS);
   const [prefilters, setPrefilters] = React.useState<ManagerPrefilterState | undefined>(undefined);
   const [prefilterApplied, setPrefilterApplied] = React.useState(false);
+  const appliedPrefilterSnapshotRef = React.useRef<string>(JSON.stringify(null));
+  const prefilterDirtyRef = React.useRef(false);
   const [searchNonce, setSearchNonce] = React.useState(0);
 
-  // When the parent bumps refreshNonce (e.g. returning from details), trigger a re-fetch.
+  // When the parent bumps refreshNonce (e.g. returning from details), trigger a re-fetch and clear any stale status banner.
   const refreshNonceRef = React.useRef(refreshNonce);
   React.useEffect(() => {
     if (refreshNonce !== undefined && refreshNonce !== refreshNonceRef.current) {
       refreshNonceRef.current = refreshNonce;
       setSearchNonce((n) => n + 1);
+      setAssignMessage(undefined);
     }
   }, [refreshNonce]);
 
@@ -577,7 +1000,12 @@ export const DetailsListHost: React.FC<DetailsListHostProps> = ({
   const isSalesSearch = screenKind === 'salesSearch';
   const isAssignment = isManagerAssign || isQcAssign;
   const isPrefilterScreen = isManagerAssign || isCaseworkerView || isQcAssign || isQcView;
-  const assignmentContextKey = isManagerAssign ? 'manager' : isQcAssign ? 'qa' : '';
+  let assignmentContextKey = '';
+  if (isManagerAssign) {
+    assignmentContextKey = 'manager';
+  } else if (isQcAssign) {
+    assignmentContextKey = 'qa';
+  }
   const assignmentContextScreenName = React.useMemo(() => {
     return resolveAssignmentScreenName(canvasScreenName ?? '', screenKind);
   }, [canvasScreenName, screenKind]);
@@ -589,8 +1017,20 @@ export const DetailsListHost: React.FC<DetailsListHostProps> = ({
   const lastRefreshNonceRef = React.useRef<number | undefined>(refreshNonce);
   React.useEffect(() => {
     if (!isPrefilterScreen || prefilterApplied || !prefilters) return;
+    if (prefilterDirtyRef.current) return;
     if (refreshNonce !== undefined && refreshNonce !== lastRefreshNonceRef.current) {
       lastRefreshNonceRef.current = refreshNonce;
+      const currentPrefilterSnapshot = JSON.stringify(prefilters ?? null);
+      const hasAppliedSnapshot = appliedPrefilterSnapshotRef.current !== JSON.stringify(null);
+      const canAutoReapply = hasAppliedSnapshot && currentPrefilterSnapshot === appliedPrefilterSnapshotRef.current;
+      if (!canAutoReapply) {
+        console.debug('[Prefilter] refresh auto-apply skipped (dirty prefilters)', {
+          screen: screenKind,
+          refreshNonce,
+          prefilters,
+        });
+        return;
+      }
       console.debug('[Prefilter] auto-apply on refresh', {
         screen: screenKind,
         refreshNonce,
@@ -668,6 +1108,7 @@ export const DetailsListHost: React.FC<DetailsListHostProps> = ({
   const [salesSearchApplied, setSalesSearchApplied] = React.useState(!isSalesSearch);
   const handlePrefilterDirty = React.useCallback(() => {
     if (!isPrefilterScreen) return;
+    prefilterDirtyRef.current = true;
     setPrefilterApplied(false);
   }, [isPrefilterScreen]);
   const handleSalesSearchDirty = React.useCallback(() => {
@@ -990,34 +1431,10 @@ export const DetailsListHost: React.FC<DetailsListHostProps> = ({
     return Array.from(map.values());
   }, []);
 
-  const userDisplayNameMap = React.useMemo(() => {
-    const map: Record<string, string> = {};
-    // Seed with API response user lookup as a gap-filler (lower priority than plugin cache).
-    Object.entries(apiUserLookup).forEach(([id, name]) => {
-      if (id && name) map[id] = name;
-    });
-    // Plugin cache takes priority — overwrite any API-sourced names.
-    assignableUsersCache.forEach((user) => {
-      const name = getUserDisplayName(user);
-      if (!name) return;
-
-      // Entra object ID is the primary identity key; keep fallbacks for legacy/system IDs.
-      const primaryId = normalizeAssignableUserId(user.entraObjectId ?? user.id);
-      const userId = normalizeAssignableUserId(user.id);
-      const systemUserId = normalizeAssignableUserId(user.systemUserId);
-
-      if (primaryId) {
-        map[primaryId] = name;
-      }
-      if (userId) {
-        map[userId] = name;
-      }
-      if (systemUserId) {
-        map[systemUserId] = name;
-      }
-    });
-    return map;
-  }, [apiUserLookup, assignableUsersCache, getUserDisplayName]);
+  const userDisplayNameMap = React.useMemo(
+    () => buildUserDisplayNameMap(apiUserLookup, assignableUsersCache, getUserDisplayName),
+    [apiUserLookup, assignableUsersCache, getUserDisplayName],
+  );
   const hasUserDisplayNameMap = React.useMemo(() => Object.keys(userDisplayNameMap).length > 0, [userDisplayNameMap]);
   React.useEffect(() => {
     if (onUserDisplayNameMapChange && hasUserDisplayNameMap) {
@@ -1030,6 +1447,15 @@ export const DetailsListHost: React.FC<DetailsListHostProps> = ({
     const normalized = normalizeUserId(raw).toLowerCase();
     if (!isGuidValue(normalized)) return raw;
     return userDisplayNameMap[normalized] ?? raw;
+  }, [userDisplayNameMap]);
+  const mapUserIdsToNames = React.useCallback((values: string[]): string[] => {
+    return values
+      .map((id) => {
+        const normalizedId = normalizeAssignableUserId(id);
+        return normalizedId ? (userDisplayNameMap[normalizedId] ?? id) : id;
+      })
+      .map((v) => String(v ?? '').trim())
+      .filter((v) => v !== '');
   }, [userDisplayNameMap]);
   const displayFilterOptions = React.useMemo(() => {
     if (!hasUserDisplayNameMap) return apiFilterOptions;
@@ -1080,7 +1506,7 @@ export const DetailsListHost: React.FC<DetailsListHostProps> = ({
       if (items.length > 0) base[field] = items;
     });
     return base;
-  }, [apiFilterOptions, apiUserFilterOptions, displayFilterOptions, hasUserDisplayNameMap, userDisplayNameMap]);
+  }, [apiFilterOptions, apiUserFilterOptions, displayFilterOptions, hasUserDisplayNameMap, mapUserIdsToNames, userDisplayNameMap]);
 
   // Persist header filters per table for consistent UX across reloads
   const storageKey = React.useMemo(() => `voa-grid-filters:${tableKey}:${contextScopeKey}`, [contextScopeKey, tableKey]);
@@ -1139,63 +1565,29 @@ export const DetailsListHost: React.FC<DetailsListHostProps> = ({
   // Hydrate from localStorage on table change (URL persistence disabled by policy)
   React.useEffect(() => {
     try {
-      let sessionScreens: Record<string, boolean> = {};
-      try {
-        const rawScreens = sessionStorage.getItem('voa-session-screens');
-        if (rawScreens) {
-          sessionScreens = JSON.parse(rawScreens) as Record<string, boolean>;
-        }
-      } catch {
-        // ignore session storage failures
-      }
-      // Restore directly from localStorage. In Power Apps hosted navigation, sessionStorage is not
-      // always stable across screen transitions even when the user returns to the same logical screen.
-      const rawLocalFilters = localStorage.getItem(storageKey) ?? localStorage.getItem(storageKeyNC);
-      if (rawLocalFilters) {
-        const normalized = deserializeColumnFiltersFromStorage(String(tableKey), rawLocalFilters) as Record<string, ColumnFilterValue>;
-        lastAppliedFiltersRef.current = normalized;
-        setHeaderFilters(normalized);
+      const sessionScreens = readStoredSessionScreens();
+      const normalizedFilters = restoreStoredHeaderFilters(String(tableKey), storageKey, storageKeyNC);
+      lastAppliedFiltersRef.current = normalizedFilters;
+      setHeaderFilters(normalizedFilters);
+      if (Object.keys(normalizedFilters).length > 0) {
         try {
           onColumnFiltersApply?.(
             toApiHeaderFilters(
-              mapColumnFiltersForApi(normalized, { normalizeSummaryFlags: shouldNormalizeSummaryFlagFilters }),
+              mapColumnFiltersForApi(normalizedFilters, { normalizeSummaryFlags: shouldNormalizeSummaryFlagFilters }),
             ),
           );
         } catch {
           /* ignore */
         }
-      } else {
-        lastAppliedFiltersRef.current = {};
-        setHeaderFilters({});
       }
-      // Sort
-      const rawLocalSort = localStorage.getItem(storageKeySort) ?? localStorage.getItem(storageKeySortNC);
-      if (rawLocalSort) {
-        const parsed = parseStoredSortState(rawLocalSort);
-        if (parsed) {
-          setClientSort(parsed);
-          setUserSortActive(true);
-        } else {
-          setUserSortActive(false);
-        }
-      } else {
-        setUserSortActive(false);
+
+      const parsedSort = restoreStoredSort(storageKeySort, storageKeySortNC);
+      if (parsedSort) {
+        setClientSort(parsedSort);
       }
-      // Page
-      const rawLocalPage = localStorage.getItem(storageKeyPage) ?? localStorage.getItem(storageKeyPageNC);
-      if (rawLocalPage) {
-        const n = Number(rawLocalPage);
-        if (!Number.isNaN(n) && n >= 0) setCurrentPage(n);
-      } else {
-        setCurrentPage(0);
-      }
-      try {
-        sessionScreens[screenInstanceKey] = true;
-        sessionStorage.setItem('voa-session-screens', JSON.stringify(sessionScreens));
-        sessionStorage.setItem('voa-last-screen', screenInstanceKey);
-      } catch {
-        // ignore session storage failures
-      }
+      setUserSortActive(!!parsedSort);
+      setCurrentPage(restoreStoredPage(storageKeyPage, storageKeyPageNC));
+      persistSessionScreenState(sessionScreens, screenInstanceKey);
     } catch {
       // ignore hydrate failures
     }
@@ -1276,100 +1668,10 @@ export const DetailsListHost: React.FC<DetailsListHostProps> = ({
     const t0 = performance.now();
     const recs: Record<string, ComponentFramework.PropertyHelper.DataSetApi.EntityRecord> = {};
     const all: string[] = [];
-    const toText = (v: unknown) => (typeof v === 'string' ? v : typeof v === 'number' || typeof v === 'boolean' ? String(v) : '');
     if (hasLoadedApim && apimItems.length > 0) {
-      const mapUserIdsToNames = (value: unknown): string[] | undefined => {
-        if (!value) return undefined;
-        if (!hasUserDisplayNameMap) return undefined;
-        const ids = Array.isArray(value)
-          ? value.map((v) => String(v ?? '').trim()).filter((v) => v !== '')
-          : typeof value === 'string'
-          ? value.split(',').map((v) => v.trim()).filter((v) => v !== '')
-          : [];
-        if (ids.length === 0) return undefined;
-        return ids.map((id) => {
-          const normalizedId = normalizeAssignableUserId(id);
-          if (!normalizedId) return id;
-          return userDisplayNameMap[normalizedId] ?? id;
-        });
-      };
-      const extractNormalizedUserIds = (value: unknown): string[] | undefined => {
-        const ids = Array.isArray(value)
-          ? value.map((v) => String(v ?? '').trim()).filter((v) => v !== '')
-          : typeof value === 'string'
-          ? value.split(',').map((v) => v.trim()).filter((v) => v !== '')
-          : [];
-        if (ids.length === 0) return undefined;
-        const normalized = ids
-          .map((entry) => normalizeAssignableUserId(entry))
-          .filter((entry) => entry !== '');
-        if (normalized.length === 0) return undefined;
-        return Array.from(new Set(normalized));
-      };
-      apimItems.forEach((item, index) => {
-        const base: Record<string, unknown> = {};
-        const r = base as ComponentFramework.PropertyHelper.DataSetApi.EntityRecord & Record<string, unknown>;
-        const obj = item as Record<string, unknown>;
-        const o = obj as {
-          statutorySpatialUnitLabelId?: string;
-          statutoryspatialunitlabelid?: string;
-          taskId?: string;
-          uprn?: unknown;
-        };
-        const lblId = o.statutorySpatialUnitLabelId ?? o.statutoryspatialunitlabelid;
-        const uprnVal = o.uprn;
-        const uprnStr = typeof uprnVal === 'string' || typeof uprnVal === 'number' ? String(uprnVal) : '';
-        const primaryId = lblId ?? o.taskId;
-        const fallbackId = uprnStr ? `${uprnStr}-${index}` : `apim-${index}`;
-        const id = primaryId ? `${primaryId}-${index}` : fallbackId;
-        r.getRecordId = () => id;
-        r.getNamedReference = undefined as unknown as ComponentFramework.PropertyHelper.DataSetApi.EntityRecord['getNamedReference'];
-        r.getValue = ((columnName: string) => r[columnName] ?? '') as ComponentFramework.PropertyHelper.DataSetApi.EntityRecord['getValue'];
-        r.getFormattedValue = ((columnName: string) => toText(r[columnName])) as ComponentFramework.PropertyHelper.DataSetApi.EntityRecord['getFormattedValue'];
-        Object.keys(obj).forEach((k) => (r[k.toLowerCase()] = obj[k]));
-
-        const assignedToIds = extractNormalizedUserIds((r as Record<string, unknown>).assignedto ?? (r as Record<string, unknown>).assignedTo);
-        if (assignedToIds && assignedToIds.length > 0) {
-          r.assignedtoid = assignedToIds;
-          (r as Record<string, unknown>).assignedToId = assignedToIds;
-        }
-        const qcAssignedToIds = extractNormalizedUserIds((r as Record<string, unknown>).qcassignedto ?? (r as Record<string, unknown>).qcAssignedTo);
-        if (qcAssignedToIds && qcAssignedToIds.length > 0) {
-          r.qcassignedtoid = qcAssignedToIds;
-          (r as Record<string, unknown>).qcAssignedToId = qcAssignedToIds;
-        }
-
-        // Prefer DB-resolved names from the API response; fall back to plugin cache lookup.
-        const assignedToNameFromResponse = toText((r as Record<string, unknown>).assignedtoname ?? (r as Record<string, unknown>).assignedToName);
-        if (assignedToNameFromResponse) {
-          r.assignedto = [assignedToNameFromResponse];
-          (r as Record<string, unknown>).assignedTo = [assignedToNameFromResponse];
-        } else {
-          const assignedDisplay = mapUserIdsToNames((r as Record<string, unknown>).assignedto ?? (r as Record<string, unknown>).assignedTo);
-          if (assignedDisplay) {
-            r.assignedto = assignedDisplay;
-            (r as Record<string, unknown>).assignedTo = assignedDisplay;
-          }
-        }
-
-        const qcAssignedToNameFromResponse = toText((r as Record<string, unknown>).qcassignedtoname ?? (r as Record<string, unknown>).qcAssignedToName);
-        if (qcAssignedToNameFromResponse) {
-          r.qcassignedto = [qcAssignedToNameFromResponse];
-          (r as Record<string, unknown>).qcAssignedTo = [qcAssignedToNameFromResponse];
-        } else {
-          const qcAssignedDisplay = mapUserIdsToNames((r as Record<string, unknown>).qcassignedto ?? (r as Record<string, unknown>).qcAssignedTo);
-          if (qcAssignedDisplay) {
-            r.qcassignedto = qcAssignedDisplay;
-            (r as Record<string, unknown>).qcAssignedTo = qcAssignedDisplay;
-          }
-        }
-        // some handy aliases
-        r.saleid = r.saleid ?? (r as Record<string, unknown> & { saleId?: unknown }).saleId;
-        const suid = normalizeSuid(r.suid);
-        r.addressurl = suid && clientUrl ? buildHereditamentUrl(clientUrl, suid) : '';
-        all.push(id);
-        recs[id] = r;
-      });
+      const mapped = mapApimItemsToEntityRecords(apimItems, clientUrl, hasUserDisplayNameMap, userDisplayNameMap);
+      Object.assign(recs, mapped.records);
+      all.push(...mapped.ids);
     } else if (isLocalHost) {
       ensureSampleColumns(datasetColumns, columnDisplayNames);
       const sample = buildSampleEntityRecords();
@@ -1379,7 +1681,7 @@ export const DetailsListHost: React.FC<DetailsListHostProps> = ({
     const t1 = performance.now();
     logPerf('[Grid Perf] Map records (ms):', Math.round(t1 - t0), 'count:', all.length);
     return { records: recs, ids: all };
-  }, [apimItems, clientUrl, columnDisplayNames, datasetColumns, hasLoadedApim, isLocalHost, userDisplayNameMap]);
+  }, [apimItems, clientUrl, columnDisplayNames, datasetColumns, hasLoadedApim, hasUserDisplayNameMap, isLocalHost, userDisplayNameMap]);
 
   const disableClientFiltering = hasLoadedApim && !clientSideEligible;
 
@@ -1497,15 +1799,18 @@ export const DetailsListHost: React.FC<DetailsListHostProps> = ({
     contextScope?: string;
   }>({});
   React.useEffect(() => {
-    const prevKind = lastScreenKindRef.current;
-    const screenKindChanged = prevKind !== undefined && prevKind !== screenKind;
-    const switchedSalesToManager = screenKindChanged && prevKind === 'salesSearch' && isManagerAssign;
-    const switchedToCaseworker = screenKindChanged && isCaseworkerView;
-    const switchedToQcAssign = screenKindChanged && isQcAssign;
-    const switchedToQcView = screenKindChanged && isQcView;
-    lastScreenKindRef.current = screenKind;
+    const handleScreenTransitionReset = (): boolean => {
+      const prevKind = lastScreenKindRef.current;
+      const screenKindChanged = prevKind !== undefined && prevKind !== screenKind;
+      const switchedSalesToManager = screenKindChanged && prevKind === 'salesSearch' && isManagerAssign;
+      const switchedToCaseworker = screenKindChanged && isCaseworkerView;
+      const switchedToQcAssign = screenKindChanged && isQcAssign;
+      const switchedToQcView = screenKindChanged && isQcView;
+      lastScreenKindRef.current = screenKind;
 
-    if (switchedSalesToManager || switchedToCaseworker || switchedToQcAssign || switchedToQcView) {
+      if (!(switchedSalesToManager || switchedToCaseworker || switchedToQcAssign || switchedToQcView)) {
+        return false;
+      }
       let hasStoredPrefilter = false;
       try {
         hasStoredPrefilter = !!localStorage.getItem(prefilterStorageKey);
@@ -1518,6 +1823,8 @@ export const DetailsListHost: React.FC<DetailsListHostProps> = ({
 
       setPrefilters(undefined);
       setPrefilterApplied(false);
+      appliedPrefilterSnapshotRef.current = JSON.stringify(null);
+      prefilterDirtyRef.current = false;
       setHasLoadedApim(false);
       setApimItems([]);
       setTotalCount(0);
@@ -1537,47 +1844,85 @@ export const DetailsListHost: React.FC<DetailsListHostProps> = ({
         setHeaderFilters({});
         lastAppliedFiltersRef.current = {};
       }
+      return true;
+    };
+
+    if (handleScreenTransitionReset()) {
       return;
     }
 
-    if (externalItems !== undefined) {
-      // External data path; do not load from APIM
-      return;
-    }
-    if (restoredGridStateKey !== screenInstanceKey) {
-      prefilterSkipLogKeyRef.current = '';
-      setApimLoading(false);
-      return;
-    }
-    if (isSalesSearch && restoredSalesSearchKey !== salesSearchStorageKey) {
-      prefilterSkipLogKeyRef.current = '';
-      setApimLoading(false);
-      return;
-    }
-    if (isSalesSearch && !salesSearchApplied) {
-      prefilterSkipLogKeyRef.current = '';
-      resetHostResultsState();
-      return;
-    }
-    const pendingScreenKindChange = lastScreenKindRef.current !== undefined && lastScreenKindRef.current !== screenKind;
-    if (pendingScreenKindChange) {
-      prefilterSkipLogKeyRef.current = '';
-      setApimLoading(false);
-      return;
-    }
-    if (isPrefilterScreen && !prefilterApplied) {
-      const skipKey = `${screenKind}|${prefilterApplied ? '1' : '0'}|${JSON.stringify(prefilters ?? null)}`;
-      if (prefilterSkipLogKeyRef.current !== skipKey) {
-        prefilterSkipLogKeyRef.current = skipKey;
-        console.debug('[Prefilter] host load skip', {
-          screen: screenKind,
-          prefilterApplied,
-          prefilters,
-        });
+    const shouldSkipLoad = (): boolean => {
+      if (externalItems !== undefined) {
+        // External data path; do not load from APIM
+        return true;
       }
-      resetHostResultsState();
+      if (restoredGridStateKey !== screenInstanceKey) {
+        prefilterSkipLogKeyRef.current = '';
+        setApimLoading(false);
+        return true;
+      }
+      if (isSalesSearch && restoredSalesSearchKey !== salesSearchStorageKey) {
+        prefilterSkipLogKeyRef.current = '';
+        setApimLoading(false);
+        return true;
+      }
+      if (isSalesSearch && !salesSearchApplied) {
+        prefilterSkipLogKeyRef.current = '';
+        resetHostResultsState();
+        return true;
+      }
+      const pendingScreenKindChange = lastScreenKindRef.current !== undefined && lastScreenKindRef.current !== screenKind;
+      if (pendingScreenKindChange) {
+        prefilterSkipLogKeyRef.current = '';
+        setApimLoading(false);
+        return true;
+      }
+      if (isPrefilterScreen && prefilterApplied) {
+        if (prefilterDirtyRef.current) {
+          prefilterSkipLogKeyRef.current = '';
+          setPrefilterApplied(false);
+          resetHostResultsState();
+          return true;
+        }
+        const currentPrefilterSnapshot = JSON.stringify(prefilters ?? null);
+        // If user edits prefilters after an applied search, treat it as dirty immediately
+        // and block host loads until Search/Apply is explicitly triggered again.
+        if (currentPrefilterSnapshot !== appliedPrefilterSnapshotRef.current) {
+          prefilterSkipLogKeyRef.current = '';
+          setPrefilterApplied(false);
+          resetHostResultsState();
+          return true;
+        }
+        const needsCompletedFromDate = (isQcAssign || isQcView)
+          ? isQcCompletedWorkThat(prefilters?.workThat)
+          : isManagerCompletedWorkThat(prefilters?.workThat);
+        if (needsCompletedFromDate && !prefilters?.completedFrom) {
+          prefilterSkipLogKeyRef.current = '';
+          setPrefilterApplied(false);
+          resetHostResultsState();
+          return true;
+        }
+      }
+      if (isPrefilterScreen && !prefilterApplied) {
+        const skipKey = `${screenKind}|${prefilterApplied ? '1' : '0'}|${JSON.stringify(prefilters ?? null)}`;
+        if (prefilterSkipLogKeyRef.current !== skipKey) {
+          prefilterSkipLogKeyRef.current = skipKey;
+          console.debug('[Prefilter] host load skip', {
+            screen: screenKind,
+            prefilterApplied,
+            prefilters,
+          });
+        }
+        resetHostResultsState();
+        return true;
+      }
+      return false;
+    };
+
+    if (shouldSkipLoad()) {
       return;
     }
+
     prefilterSkipLogKeyRef.current = '';
     const trigger = String((context.parameters as unknown as Record<string, { raw?: string | number }>).searchTrigger?.raw ?? '');
     const sortKey = serverClientSort ? `${serverClientSort.name}:${serverClientSort.sortDirection}` : '';
@@ -1697,21 +2042,21 @@ export const DetailsListHost: React.FC<DetailsListHostProps> = ({
   React.useEffect(() => {
     if (!assignPanelOpen || !assignmentContextKey) {
       assignUsersLoadKeyRef.current = '';
-      setAssignUsersLoading(false);
+      applyAssignUsersState({ users: [], error: undefined, info: undefined, loading: false });
       if (!assignPanelOpen) {
-        setAssignUsers([]);
-        setAssignUsersError(undefined);
-        setAssignUsersInfo(undefined);
+        applyAssignUsersState({ users: [], error: undefined, info: undefined });
       }
       return;
     }
 
     const apiName = resolveAssignableUsersApiName();
     if (!apiName) {
-      setAssignUsers([]);
-      setAssignUsersError(assignTasksText.messages.assignableUsersApiNotConfigured);
-      setAssignUsersInfo(undefined);
-      setAssignUsersLoading(false);
+      applyAssignUsersState({
+        users: [],
+        error: assignTasksText.messages.assignableUsersApiNotConfigured,
+        info: undefined,
+        loading: false,
+      });
       return;
     }
 
@@ -1723,10 +2068,7 @@ export const DetailsListHost: React.FC<DetailsListHostProps> = ({
     }
     assignUsersLoadKeyRef.current = requestKey;
 
-    setAssignUsers([]);
-    setAssignUsersLoading(true);
-    setAssignUsersError(undefined);
-    setAssignUsersInfo(undefined);
+    applyAssignUsersState({ users: [], error: undefined, info: undefined, loading: true });
 
     const loadAssignableUsers = async (): Promise<void> => {
       try {
@@ -1742,17 +2084,13 @@ export const DetailsListHost: React.FC<DetailsListHostProps> = ({
         }
 
         if (parsed.error) {
-          setAssignUsers([]);
-          setAssignUsersError(parsed.error);
-          setAssignUsersInfo(undefined);
+          applyAssignUsersState({ users: [], error: parsed.error, info: undefined });
           return;
         }
 
         if (parsed.info) {
           assignableUsersCacheContextsRef.current.add(cacheContextKey);
-          setAssignUsers([]);
-          setAssignUsersError(undefined);
-          setAssignUsersInfo(parsed.info);
+          applyAssignUsersState({ users: [], error: undefined, info: parsed.info });
           return;
         }
 
@@ -1762,18 +2100,16 @@ export const DetailsListHost: React.FC<DetailsListHostProps> = ({
           assignableUsersCacheContextsRef.current.add(cacheContextKey);
         }
         if (isQcAssign && filteredUsers.length === 0) {
-          setAssignUsers([]);
-          setAssignUsersError(undefined);
-          setAssignUsersInfo(assignTasksText.messages.noUsersFound);
+          applyAssignUsersState({ users: [], error: undefined, info: assignTasksText.messages.noUsersFound });
           return;
         }
-        setAssignUsers(filteredUsers);
-        setAssignUsersError(undefined);
-        setAssignUsersInfo(undefined);
+        applyAssignUsersState({ users: filteredUsers, error: undefined, info: undefined });
       } catch (err) {
-        setAssignUsers([]);
-        setAssignUsersError(err instanceof Error ? err.message : assignTasksText.messages.assignableUsersLoadFailed);
-        setAssignUsersInfo(undefined);
+        applyAssignUsersState({
+          users: [],
+          error: err instanceof Error ? err.message : assignTasksText.messages.assignableUsersLoadFailed,
+          info: undefined,
+        });
       } finally {
         if (assignUsersLoadKeyRef.current === requestKey) {
           setAssignUsersLoading(false);
@@ -1798,41 +2134,31 @@ export const DetailsListHost: React.FC<DetailsListHostProps> = ({
     const shouldLoad = isManagerAssign || isQcAssign || isCaseworkerView;
     if (!shouldLoad) {
       caseworkerOptionsLoadKeyRef.current = '';
-      setCaseworkerOptions([]);
-      setCaseworkerOptionsLoading(false);
-      setCaseworkerOptionsError(undefined);
-      setQcUserOptions([]);
-      setQcUserOptionsLoading(false);
-      setQcUserOptionsError(undefined);
+      applyAssignableOptionState({
+        caseworkerOptions: [],
+        caseworkerError: undefined,
+        caseworkerLoading: false,
+        qcUserOptions: [],
+        qcUserError: undefined,
+        qcLoading: false,
+      });
       return;
     }
 
     const prefilterErrors = isQcAssign ? qcText.errors : managerText.errors;
     const apiName = resolveAssignableUsersApiName();
     if (!apiName) {
-      if (fallbackCaseworkerOptions.length > 0) {
-        setCaseworkerOptions(fallbackCaseworkerOptions);
-        setCaseworkerOptionsError(undefined);
-      } else {
-        setCaseworkerOptions([]);
-        setCaseworkerOptionsError(prefilterErrors.assignableUsersApiNotConfigured);
-      }
-      setCaseworkerOptionsLoading(false);
-
-      if (isQcAssign) {
-        if (fallbackQcUserOptions.length > 0) {
-          setQcUserOptions(fallbackQcUserOptions);
-          setQcUserOptionsError(undefined);
-        } else {
-          setQcUserOptions([]);
-          setQcUserOptionsError(prefilterErrors.assignableUsersApiNotConfigured);
-        }
-        setQcUserOptionsLoading(false);
-      } else {
-        setQcUserOptions([]);
-        setQcUserOptionsError(undefined);
-        setQcUserOptionsLoading(false);
-      }
+      const fallbackState = resolveAssignableOptionFallbackState({
+        isQcAssign,
+        fallbackCaseworkerOptions,
+        fallbackQcUserOptions,
+        error: prefilterErrors.assignableUsersApiNotConfigured,
+      });
+      applyAssignableOptionState({
+        ...fallbackState,
+        caseworkerLoading: false,
+        qcLoading: false,
+      });
       return;
     }
 
@@ -1844,14 +2170,14 @@ export const DetailsListHost: React.FC<DetailsListHostProps> = ({
     }
     caseworkerOptionsLoadKeyRef.current = requestKey;
 
-    setCaseworkerOptions([]);
-    setCaseworkerOptionsLoading(true);
-    setCaseworkerOptionsError(undefined);
-    if (isQcAssign) {
-      setQcUserOptions([]);
-      setQcUserOptionsLoading(true);
-      setQcUserOptionsError(undefined);
-    }
+    applyAssignableOptionState({
+      caseworkerOptions: [],
+      caseworkerError: undefined,
+      caseworkerLoading: true,
+      qcUserOptions: [],
+      qcUserError: undefined,
+      qcLoading: isQcAssign,
+    });
 
     const loadCaseworkerOptions = async (): Promise<void> => {
       try {
@@ -1868,78 +2194,49 @@ export const DetailsListHost: React.FC<DetailsListHostProps> = ({
         }
 
         if (parsed.error) {
-          if (fallbackCaseworkerOptions.length > 0) {
-            setCaseworkerOptions(fallbackCaseworkerOptions);
-            setCaseworkerOptionsError(undefined);
-          } else {
-            setCaseworkerOptions([]);
-            setCaseworkerOptionsError(parsed.error);
-          }
-          if (isQcAssign) {
-            if (fallbackQcUserOptions.length > 0) {
-              setQcUserOptions(fallbackQcUserOptions);
-              setQcUserOptionsError(undefined);
-            } else {
-              setQcUserOptions([]);
-              setQcUserOptionsError(parsed.error);
-            }
-          }
+          applyAssignableOptionState(resolveAssignableOptionFallbackState({
+            isQcAssign,
+            fallbackCaseworkerOptions,
+            fallbackQcUserOptions,
+            error: parsed.error,
+          }));
           return;
         }
 
         if (parsed.info) {
           assignableUsersCacheContextsRef.current.add(cacheContextKey);
-          if (fallbackCaseworkerOptions.length > 0) {
-            setCaseworkerOptions(fallbackCaseworkerOptions);
-            setCaseworkerOptionsError(undefined);
-          } else {
-            setCaseworkerOptions([]);
-            setCaseworkerOptionsError(undefined);
-          }
-          if (isQcAssign) {
-            if (fallbackQcUserOptions.length > 0) {
-              setQcUserOptions(fallbackQcUserOptions);
-              setQcUserOptionsError(undefined);
-            } else {
-              setQcUserOptions([]);
-              setQcUserOptionsError(undefined);
-            }
-          }
+          applyAssignableOptionState(resolveAssignableOptionFallbackState({
+            isQcAssign,
+            fallbackCaseworkerOptions,
+            fallbackQcUserOptions,
+            error: undefined,
+          }));
           return;
         }
 
         const caseworkerUsers = parsed.users.filter(isCaseworkerAssignableUser);
         const qcUsers = parsed.users.filter(isQcAssignableUser);
-        const caseworkerSource = isQcAssign
-          ? caseworkerUsers
-          : (caseworkerUsers.length > 0 ? caseworkerUsers : parsed.users);
-        const caseworkerNames = buildCaseworkerNames(caseworkerSource);
-        setCaseworkerOptions(caseworkerNames.length > 0 ? caseworkerNames : fallbackCaseworkerOptions);
-        if (isQcAssign) {
-          const qcNames = buildCaseworkerNames(qcUsers);
-          setQcUserOptions(qcNames.length > 0 ? qcNames : fallbackQcUserOptions);
+        let caseworkerSource = caseworkerUsers;
+        if (!isQcAssign && caseworkerUsers.length === 0) {
+          caseworkerSource = parsed.users;
         }
+        const caseworkerNames = buildCaseworkerNames(caseworkerSource);
+        const qcNames = buildCaseworkerNames(qcUsers);
+        applyAssignableOptionState({
+          caseworkerOptions: caseworkerNames.length > 0 ? caseworkerNames : fallbackCaseworkerOptions,
+          caseworkerError: undefined,
+          qcUserOptions: isQcAssign ? (qcNames.length > 0 ? qcNames : fallbackQcUserOptions) : [],
+          qcUserError: undefined,
+        });
         setAssignableUsersCache((prev) => mergeAssignableUsers(prev, parsed.users));
         assignableUsersCacheContextsRef.current.add(cacheContextKey);
-        setCaseworkerOptionsError(undefined);
-        setQcUserOptionsError(undefined);
       } catch (err) {
-        if (fallbackCaseworkerOptions.length > 0) {
-          setCaseworkerOptions(fallbackCaseworkerOptions);
-          setCaseworkerOptionsError(undefined);
-        } else {
-          setCaseworkerOptions([]);
-          setCaseworkerOptionsError(err instanceof Error ? err.message : prefilterErrors.caseworkersLoadFailed);
-        }
-        if (isQcAssign) {
-          if (fallbackQcUserOptions.length > 0) {
-            setQcUserOptions(fallbackQcUserOptions);
-            setQcUserOptionsError(undefined);
-          } else {
-            setQcUserOptions([]);
-            setQcUserOptionsError(err instanceof Error ? err.message : prefilterErrors.caseworkersLoadFailed);
-          }
-        }
+        applyAssignableOptionState(resolveAssignableOptionFallbackState({
+          isQcAssign,
+          fallbackCaseworkerOptions,
+          fallbackQcUserOptions,
+          error: err instanceof Error ? err.message : prefilterErrors.caseworkersLoadFailed,
+        }));
       } finally {
         if (caseworkerOptionsLoadKeyRef.current === requestKey) {
           setCaseworkerOptionsLoading(false);
@@ -2071,20 +2368,8 @@ export const DetailsListHost: React.FC<DetailsListHostProps> = ({
         onSelectionCountChangeRef.current?.(next);
         return next !== sel ? next : sel;
       });
-      // Emit selected Task/Sale IDs to parent without fetching details
       try {
-        const selected = selection.getSelection();
-        const makeIds = (o: unknown) => {
-          const r = o as { taskid?: string; taskId?: string; saleid?: string; saleId?: string };
-          return { taskId: r.taskid ?? r.taskId, saleId: r.saleid ?? r.saleId };
-        };
-        const pairs = (selected ?? [])
-          .map(makeIds)
-          .filter((p) => [p.taskId, p.saleId].some((v) => !!v));
-        const taskIds = pairs.map(p => p.taskId).filter((v): v is string => !!v);
-        const saleIds = pairs.map(p => p.saleId).filter((v): v is string => !!v);
-        const first = pairs[0] ?? { taskId: undefined, saleId: undefined };
-        onSelectionChangeRef.current?.({ taskId: first.taskId, saleId: first.saleId, selectedTaskIds: taskIds, selectedSaleIds: saleIds });
+        onSelectionChangeRef.current?.(extractSelectionIds(selection.getSelection()));
       } catch {
         // ignore selection mapping errors
       }
@@ -2176,6 +2461,16 @@ export const DetailsListHost: React.FC<DetailsListHostProps> = ({
   const metadataApiType = resolveMetadataApiType();
 
   React.useEffect(() => {
+    const applyMetadataFallback = (errorText?: string): void => {
+      if (fallbackBillingAuthorityOptions.length > 0) {
+        setBillingAuthorityOptions(fallbackBillingAuthorityOptions);
+        setBillingAuthorityOptionsError(undefined);
+      } else {
+        setBillingAuthorityOptions([]);
+        setBillingAuthorityOptionsError(errorText);
+      }
+    };
+
     const shouldLoad = isManagerAssign || isSalesSearch;
     if (!shouldLoad) {
       metadataLoadKeyRef.current = '';
@@ -2187,13 +2482,7 @@ export const DetailsListHost: React.FC<DetailsListHostProps> = ({
 
     if (!metadataApiName) {
       metadataLoadKeyRef.current = '';
-      if (fallbackBillingAuthorityOptions.length > 0) {
-        setBillingAuthorityOptions(fallbackBillingAuthorityOptions);
-        setBillingAuthorityOptionsError(undefined);
-      } else {
-        setBillingAuthorityOptions([]);
-        setBillingAuthorityOptionsError(commonText.messages.metadataApiNotConfigured);
-      }
+      applyMetadataFallback(commonText.messages.metadataApiNotConfigured);
       setBillingAuthorityOptionsLoading(false);
       return;
     }
@@ -2220,57 +2509,19 @@ export const DetailsListHost: React.FC<DetailsListHostProps> = ({
           metadataParams,
           { operationType: metadataApiType },
         );
-
-        let payload: unknown = rawPayload;
-        if (typeof payload === 'string') {
-          try {
-            payload = JSON.parse(payload) as unknown;
-          } catch {
-            // ignore parse failures
-          }
-        }
-        if (payload && typeof payload === 'object') {
-          const record = payload as Record<string, unknown>;
-          const raw = record.Result ?? record.result;
-          if (typeof raw === 'string') {
-            try {
-              payload = JSON.parse(raw) as unknown;
-            } catch {
-              // ignore parse failures
-            }
-          }
-        }
-
-        const record = payload && typeof payload === 'object' ? (payload as Record<string, unknown>) : undefined;
-        const list = Array.isArray(record?.billingAuthority)
-          ? record?.billingAuthority
-          : Array.isArray(record?.billingAuthorities)
-            ? record?.billingAuthorities
-            : [];
-
-        const normalized = Array.isArray(list)
-          ? list
-            .filter((value) => typeof value === 'string')
-            .map((value) => value.trim())
-            .filter((value) => value.length > 0)
-          : [];
+        const payload = parseMetadataPayload(rawPayload);
+        const { values, hasAuthorityField } = extractBillingAuthorityValues(payload);
 
         if (!active) return;
 
-        const finalOptions = normalized.length > 0 ? normalized : fallbackBillingAuthorityOptions;
+        const finalOptions = values.length > 0 ? values : fallbackBillingAuthorityOptions;
         setBillingAuthorityOptions(finalOptions);
-        if (!record || (!Array.isArray(record?.billingAuthority) && !Array.isArray(record?.billingAuthorities))) {
+        if (!hasAuthorityField) {
           setBillingAuthorityOptionsError(finalOptions.length > 0 ? undefined : commonText.messages.billingAuthoritiesMissing);
         }
       } catch {
         if (!active) return;
-        if (fallbackBillingAuthorityOptions.length > 0) {
-          setBillingAuthorityOptions(fallbackBillingAuthorityOptions);
-          setBillingAuthorityOptionsError(undefined);
-        } else {
-          setBillingAuthorityOptions([]);
-          setBillingAuthorityOptionsError(commonText.messages.billingAuthoritiesLoadFailed);
-        }
+        applyMetadataFallback(commonText.messages.billingAuthoritiesLoadFailed);
       } finally {
         if (active) {
           setBillingAuthorityOptionsLoading(false);
@@ -2296,6 +2547,89 @@ export const DetailsListHost: React.FC<DetailsListHostProps> = ({
     contextScopeKey,
   ]);
 
+  const clearCurrentSelection = React.useCallback((): void => {
+    selection.setAllSelected(false);
+    setSelectedCount(0);
+    onSelectionCountChange?.(0);
+    onSelectionChange?.({ selectedTaskIds: [], selectedSaleIds: [] });
+  }, [onSelectionChange, onSelectionCountChange, selection]);
+
+  function applyAssignUsersState(args: {
+    users: AssignUser[];
+    error?: string;
+    info?: string;
+    loading?: boolean;
+  }): void {
+    setAssignUsers(args.users);
+    setAssignUsersError(args.error);
+    setAssignUsersInfo(args.info);
+    if (typeof args.loading === 'boolean') {
+      setAssignUsersLoading(args.loading);
+    }
+  }
+
+  function applyAssignableOptionState(args: {
+    caseworkerOptions: string[];
+    caseworkerError?: string;
+    caseworkerLoading?: boolean;
+    qcUserOptions: string[];
+    qcUserError?: string;
+    qcLoading?: boolean;
+  }): void {
+    setCaseworkerOptions(args.caseworkerOptions);
+    setCaseworkerOptionsError(args.caseworkerError);
+    if (typeof args.caseworkerLoading === 'boolean') {
+      setCaseworkerOptionsLoading(args.caseworkerLoading);
+    }
+    setQcUserOptions(args.qcUserOptions);
+    setQcUserOptionsError(args.qcUserError);
+    if (typeof args.qcLoading === 'boolean') {
+      setQcUserOptionsLoading(args.qcLoading);
+    }
+  }
+
+  function resolveAssignableOptionFallbackState(args: {
+    isQcAssign: boolean;
+    fallbackCaseworkerOptions: string[];
+    fallbackQcUserOptions: string[];
+    error?: string;
+  }): {
+    caseworkerOptions: string[];
+    caseworkerError?: string;
+    qcUserOptions: string[];
+    qcUserError?: string;
+  } {
+    const caseworkerOptions = args.fallbackCaseworkerOptions;
+    const caseworkerError = caseworkerOptions.length > 0 ? undefined : args.error;
+    if (!args.isQcAssign) {
+      return {
+        caseworkerOptions,
+        caseworkerError,
+        qcUserOptions: [],
+        qcUserError: undefined,
+      };
+    }
+    const qcUserOptions = args.fallbackQcUserOptions;
+    const qcUserError = qcUserOptions.length > 0 ? undefined : args.error;
+    return {
+      caseworkerOptions,
+      caseworkerError,
+      qcUserOptions,
+      qcUserError,
+    };
+  }
+
+  const resetSalesSearchResults = React.useCallback((): void => {
+    setHasLoadedApim(false);
+    setApimItems([]);
+    setTotalCount(0);
+    setServerDriven(false);
+    setApiFilterOptions({});
+    setApiUserLookup({});
+    setApiUserFilterOptions({});
+    setLoadErrorMessage(undefined);
+  }, []);
+
   const assignTasksToUser = async (user: { id: string; firstName: string; lastName: string }): Promise<boolean> => {
     try {
       const selected = selection.getSelection() as Record<string, unknown>[];
@@ -2318,12 +2652,6 @@ export const DetailsListHost: React.FC<DetailsListHostProps> = ({
       const customApiType = resolveCustomApiTypeForAssign();
       const assignedBy = entraObjectId ?? resolveAssignedByUserId(context);
       const assignedDate = new Date().toISOString();
-      const toNumericTaskId = (value: unknown): string => {
-        const raw = typeof value === 'string' ? value : typeof value === 'number' || typeof value === 'boolean' ? String(value) : '';
-        if (!raw) return '';
-        const digitsOnly = raw.replace(/\D/g, '');
-        return digitsOnly || raw;
-      };
       const statusCheck = resolveAssignmentStatusValidation(
         selected,
         screenKind,
@@ -2335,78 +2663,11 @@ export const DetailsListHost: React.FC<DetailsListHostProps> = ({
         return false;
       }
       const assignmentTaskStatus = statusCheck.assignmentTaskStatus;
-      const taskIds = selected
-        .map((rec) => toNumericTaskId(rec.taskid ?? rec.taskId ?? ''))
-        .map((value) => value.trim())
-        .filter((value) => value !== '');
-      const uniqueTaskIds = Array.from(new Set(taskIds));
+      const uniqueTaskIds = buildUniqueTaskIdsFromRecords(selected);
       if (uniqueTaskIds.length === 0) {
         setAssignMessage({ text: assignTasksText.messages.noValidTaskIds, type: MessageBarType.error });
         return false;
       }
-      const parseAssignmentResult = (payload: unknown): { success?: boolean; message?: string; payload?: string } | null => {
-        if (!payload) return null;
-        if (typeof payload === 'string') {
-          try {
-            return JSON.parse(payload) as { success?: boolean; message?: string; payload?: string };
-          } catch {
-            return { message: payload };
-          }
-        }
-        if (typeof payload === 'object') {
-          const record = payload as Record<string, unknown>;
-          const raw = record.Result ?? record.result;
-          if (typeof raw === 'string') {
-            try {
-              return JSON.parse(raw) as { success?: boolean; message?: string; payload?: string };
-            } catch {
-              return { message: raw };
-            }
-          }
-          if (typeof record.success === 'boolean') {
-            return record as { success?: boolean; message?: string; payload?: string };
-          }
-        }
-        return null;
-      };
-      const normalizeOutcomeText = (value?: string): string => {
-        if (!value) return '';
-        return value.replace(/^['"]|['"]$/g, '').trim().toLowerCase();
-      };
-      const parseApimOutcome = (payload?: string): { success?: boolean; alreadyAssigned?: boolean } => {
-        const raw = typeof payload === 'string' ? payload.trim() : '';
-        if (!raw) return {};
-        const normalized = normalizeOutcomeText(raw);
-        const hasAlreadyAssigned = normalized.includes('already assigned') || normalized.includes('alreadyassigned');
-        if (['success', 'succeeded', 'ok', 'true'].includes(normalized)) return { success: true };
-        if (['fail', 'failed', 'failure', 'error', 'false'].includes(normalized)) {
-          return { success: false, alreadyAssigned: hasAlreadyAssigned };
-        }
-        try {
-          const parsed = JSON.parse(raw) as unknown;
-          if (typeof parsed === 'string') {
-            return parseApimOutcome(parsed);
-          }
-          if (parsed && typeof parsed === 'object') {
-            const record = parsed as Record<string, unknown>;
-            const success = typeof record.success === 'boolean' ? record.success : undefined;
-            const message = [
-              record.message,
-              record.status,
-              record.result,
-              record.detail,
-            ]
-              .map((v) => (typeof v === 'string' ? v : ''))
-              .join(' ');
-            const normalizedMessage = normalizeOutcomeText(message);
-            const alreadyAssigned = normalizedMessage.includes('already assigned') || normalizedMessage.includes('alreadyassigned');
-            return { success, alreadyAssigned };
-          }
-        } catch {
-          // ignore JSON parse issues
-        }
-        return { alreadyAssigned: hasAlreadyAssigned };
-      };
 
       const assignmentParams: Record<string, string> = {
         assignedToUserId: user.id,
@@ -2423,19 +2684,19 @@ export const DetailsListHost: React.FC<DetailsListHostProps> = ({
         assignmentParams,
         { operationType: customApiType },
       );
-      const parsed = parseAssignmentResult(response);
+      const parsed = parseAssignmentApiResult(response);
       if (!parsed || parsed?.success === false) {
         setAssignMessage({ text: assignTasksText.messages.assignmentFailed, type: MessageBarType.error });
         setSearchNonce((n) => n + 1);
         return false;
       }
-      const apimOutcome = parseApimOutcome(parsed.payload);
+      const apimOutcome = parseAssignmentOutcome(parsed.payload);
       if (apimOutcome.alreadyAssigned || apimOutcome.success === false) {
         setAssignMessage({ text: assignTasksText.messages.alreadyAssigned, type: MessageBarType.error });
         setSearchNonce((n) => n + 1);
         return false;
       }
-      const assignedCount = taskIds.length;
+      const assignedCount = uniqueTaskIds.length;
       const rawUserName = [user.firstName, user.lastName].map((v) => (v ?? '').trim()).filter((v) => v !== '');
       const userName = rawUserName.length > 0 ? rawUserName.join(' ') : 'selected user';
       const formatTemplate = (template: string): string =>
@@ -2448,10 +2709,7 @@ export const DetailsListHost: React.FC<DetailsListHostProps> = ({
           ?? assignTasksText.messages.assignedSuccessMultiple
           ?? assignTasksText.messages.assignedSuccess;
       setAssignMessage({ text: formatTemplate(assignedTemplate), type: MessageBarType.success });
-      selection.setAllSelected(false);
-      setSelectedCount(0);
-      onSelectionCountChange?.(0);
-      onSelectionChange?.({ selectedTaskIds: [], selectedSaleIds: [] });
+      clearCurrentSelection();
       setAssignPendingRefresh(true);
       setSearchNonce((n) => n + 1);
       return await new Promise<boolean>((resolve) => {
@@ -2494,17 +2752,7 @@ export const DetailsListHost: React.FC<DetailsListHostProps> = ({
         setAssignMessage({ text: markPassedQcText.messages.invalidStatus, type: MessageBarType.error });
         return;
       }
-      const toNumericTaskId = (value: unknown): string => {
-        const raw = typeof value === 'string' ? value : typeof value === 'number' || typeof value === 'boolean' ? String(value) : '';
-        if (!raw) return '';
-        const digitsOnly = raw.replace(/\D/g, '');
-        return digitsOnly || raw;
-      };
-      const taskIds = selected
-        .map((rec) => toNumericTaskId(rec.taskid ?? rec.taskId ?? ''))
-        .map((value) => value.trim())
-        .filter((value) => value !== '');
-      const uniqueTaskIds = Array.from(new Set(taskIds));
+      const uniqueTaskIds = buildUniqueTaskIdsFromRecords(selected);
       if (uniqueTaskIds.length === 0) {
         setAssignMessage({ text: markPassedQcText.messages.noValidTaskIds, type: MessageBarType.error });
         return;
@@ -2527,16 +2775,36 @@ export const DetailsListHost: React.FC<DetailsListHostProps> = ({
         ? markPassedQcText.messages.success
         : markPassedQcText.messages.successMultiple.replace(/\{count\}/g, String(uniqueTaskIds.length));
       setAssignMessage({ text: successText, type: MessageBarType.success });
-      selection.setAllSelected(false);
-      setSelectedCount(0);
-      onSelectionCountChange?.(0);
-      onSelectionChange?.({ selectedTaskIds: [], selectedSaleIds: [] });
+      clearCurrentSelection();
       setSearchNonce((n) => n + 1);
     } catch {
       setAssignMessage({ text: SCREEN_TEXT.qcView.markPassedQc.messages.failed, type: MessageBarType.error });
       setSearchNonce((n) => n + 1);
     }
   };
+
+  const resolveAppliedPrefilters = React.useCallback((next: ManagerPrefilterState): ManagerPrefilterState => {
+    if (isQcAssign) {
+      if (next.searchBy === 'task') {
+        return normalizePrefilterStateUserIds({ ...next, caseworkers: [] });
+      }
+      if (next.searchBy === 'caseworker' || next.searchBy === 'qcUser') {
+        return normalizePrefilterStateUserIds({
+          ...next,
+          caseworkers: mapCaseworkerNamesToIds(next.caseworkers ?? []),
+        });
+      }
+      return normalizePrefilterStateUserIds(next);
+    }
+    if (next.searchBy === 'caseworker') {
+      const nextCaseworkers = next.caseworkers ?? [];
+      const caseworkers = isCaseworkerView && nextCaseworkers.length === 0 && currentUserId
+        ? [currentUserId]
+        : mapCaseworkerNamesToIds(nextCaseworkers);
+      return normalizePrefilterStateUserIds({ ...next, caseworkers });
+    }
+    return normalizePrefilterStateUserIds(next);
+  }, [currentUserId, isCaseworkerView, isQcAssign, mapCaseworkerNamesToIds, normalizePrefilterStateUserIds]);
 
   const applyPrefilters = React.useCallback((
     next: ManagerPrefilterState,
@@ -2548,22 +2816,10 @@ export const DetailsListHost: React.FC<DetailsListHostProps> = ({
       isAuto,
       next,
     });
-    let resolved = next;
-    if (isQcAssign) {
-      if (next.searchBy === 'task') {
-        resolved = { ...next, caseworkers: [] };
-      } else if (next.searchBy === 'caseworker' || next.searchBy === 'qcUser') {
-        resolved = { ...next, caseworkers: mapCaseworkerNamesToIds(next.caseworkers ?? []) };
-      }
-    } else if (next.searchBy === 'caseworker') {
-      const nextCaseworkers = next.caseworkers ?? [];
-      if (isCaseworkerView && nextCaseworkers.length === 0 && currentUserId) {
-        resolved = { ...next, caseworkers: [currentUserId] };
-      } else {
-        resolved = { ...next, caseworkers: mapCaseworkerNamesToIds(nextCaseworkers) };
-      }
-    }
+    let resolved = resolveAppliedPrefilters(next);
     resolved = normalizePrefilterStateUserIds(resolved);
+    appliedPrefilterSnapshotRef.current = JSON.stringify(resolved ?? null);
+    prefilterDirtyRef.current = false;
     setPrefilters(resolved);
     setPrefilterApplied(true);
     setCurrentPage(0);
@@ -2581,25 +2837,33 @@ export const DetailsListHost: React.FC<DetailsListHostProps> = ({
       }
       clearStoredSort();
     }
-    selection.setAllSelected(false);
-    setSelectedCount(0);
-    onSelectionCountChange?.(0);
-    onSelectionChange?.({ selectedTaskIds: [], selectedSaleIds: [] });
+    clearCurrentSelection();
     setSearchNonce((n) => n + 1);
   }, [
-    currentUserId,
-    isCaseworkerView,
-    isQcAssign,
-    mapCaseworkerNamesToIds,
-    normalizePrefilterStateUserIds,
-    onSelectionChange,
-    onSelectionCountChange,
+    clearCurrentSelection,
+    resolveAppliedPrefilters,
     screenKind,
-    selection,
     clearStoredSort,
     storageKey,
     storageKeyNC,
   ]);
+
+  const handleGridSearch = React.useCallback((fs: GridFilterState): void => {
+    const sanitized = sanitizeFilters(fs);
+    setSearchFilters(sanitized);
+    setCurrentPage(0);
+    setUserSortActive(false);
+    clearStoredSort();
+    if (isSalesSearch) {
+      const isDefault = isSalesSearchDefaultFilters(sanitized);
+      setSalesSearchApplied(!isDefault);
+      if (isDefault) {
+        resetSalesSearchResults();
+        return;
+      }
+    }
+    setSearchNonce((n) => n + 1);
+  }, [clearStoredSort, isSalesSearch, resetSalesSearchResults]);
 
   const props: GridProps = {
     showSearchPanel: !isManagerAssign && !isCaseworkerView && !isQcAssign && !isQcView,
@@ -2628,29 +2892,7 @@ export const DetailsListHost: React.FC<DetailsListHostProps> = ({
     componentRef,
     resources: context.resources,
     columnDatasetNotDefined: false,
-    onSearch: (fs) => {
-      const sanitized = sanitizeFilters(fs);
-      setSearchFilters(sanitized);
-      setCurrentPage(0);
-      setUserSortActive(false);
-      clearStoredSort();
-      if (isSalesSearch) {
-        const isDefault = isSalesSearchDefaultFilters(sanitized);
-        setSalesSearchApplied(!isDefault);
-        if (isDefault) {
-          setHasLoadedApim(false);
-          setApimItems([]);
-          setTotalCount(0);
-          setServerDriven(false);
-          setApiFilterOptions({});
-          setApiUserLookup({});
-          setApiUserFilterOptions({});
-          setLoadErrorMessage(undefined);
-          return;
-        }
-      }
-      setSearchNonce((n) => n + 1);
-    },
+    onSearch: handleGridSearch,
     onNextPage: () => {
       if (canNext) setCurrentPage((p) => p + 1);
     },
@@ -2683,6 +2925,11 @@ export const DetailsListHost: React.FC<DetailsListHostProps> = ({
     onBulkCreateTask: onBulkCreateTask
       ? async (saleIds: string[]) => {
         await onBulkCreateTask(saleIds);
+        const count = saleIds.length;
+        const successText = count === 1
+          ? 'Manual task created successfully for the selected sale record.'
+          : `Manual tasks created successfully for ${count} selected sale records.`;
+        setAssignMessage({ text: successText, type: MessageBarType.success });
         setSearchNonce((n) => n + 1);
       }
       : undefined,
@@ -2744,6 +2991,8 @@ export const DetailsListHost: React.FC<DetailsListHostProps> = ({
     onSearchDirty: handleSalesSearchDirty,
     onPrefilterApply: applyPrefilters,
     onPrefilterClear: () => {
+      appliedPrefilterSnapshotRef.current = JSON.stringify(null);
+      prefilterDirtyRef.current = true;
       setPrefilters(undefined);
       setPrefilterApplied(false);
       setCurrentPage(0);

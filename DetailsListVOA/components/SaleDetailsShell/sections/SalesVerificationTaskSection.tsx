@@ -29,11 +29,10 @@ const CopyablePill: React.FC<{ value: string; label: string }> = ({ value, label
   const [copied, setCopied] = React.useState(false);
 
   const handleCopy = React.useCallback(() => {
-    void navigator.clipboard.writeText(value).then(() => {
+    navigator.clipboard.writeText(value).then(() => {
       setCopied(true);
       setTimeout(() => setCopied(false), 1500);
-      return undefined;
-    });
+    }).catch(() => undefined);
   }, [value]);
 
   return (
@@ -66,6 +65,78 @@ interface SalesVerificationTaskSectionProps {
   disableInternalActions?: boolean;
 }
 
+type ActionMessageState = { text: string; type: MessageBarType } | undefined;
+
+const useDismissibleActionMessage = (): {
+  dismissed: boolean;
+  message: ActionMessageState;
+  setMessage: React.Dispatch<React.SetStateAction<ActionMessageState>>;
+  dismiss: () => void;
+} => {
+  const [message, setMessage] = React.useState<ActionMessageState>(undefined);
+  const [dismissed, setDismissed] = React.useState(false);
+
+  React.useEffect(() => {
+    if (!message || message.type !== MessageBarType.success) return undefined;
+    const timer = setTimeout(() => {
+      setDismissed(true);
+      setMessage(undefined);
+    }, 3000);
+    return () => clearTimeout(timer);
+  }, [message]);
+
+  React.useEffect(() => {
+    if (!message) return;
+    setDismissed(false);
+  }, [message]);
+
+  const dismiss = React.useCallback(() => {
+    setDismissed(true);
+    setMessage(undefined);
+  }, []);
+
+  return { dismissed, message, setMessage, dismiss };
+};
+
+const runTaskAction = async (args: {
+  handler?: () => void | Promise<void>;
+  disabled: boolean;
+  setBusy: React.Dispatch<React.SetStateAction<boolean>>;
+  setMessage: React.Dispatch<React.SetStateAction<ActionMessageState>>;
+  setShowConfirmation: React.Dispatch<React.SetStateAction<boolean>>;
+  successMessage: string;
+  fallbackErrorMessage: string;
+}): Promise<void> => {
+  const {
+    handler,
+    disabled,
+    setBusy,
+    setMessage,
+    setShowConfirmation,
+    successMessage,
+    fallbackErrorMessage,
+  } = args;
+
+  if (!handler || disabled) {
+    return;
+  }
+
+  setBusy(true);
+  setMessage(undefined);
+  try {
+    await Promise.resolve(handler());
+    setShowConfirmation(false);
+    setMessage({ text: successMessage, type: MessageBarType.success });
+  } catch (error) {
+    const message = error instanceof Error && error.message.trim().length > 0
+      ? error.message.trim()
+      : fallbackErrorMessage;
+    setMessage({ text: message, type: MessageBarType.error });
+  } finally {
+    setBusy(false);
+  }
+};
+
 export const SalesVerificationTaskSection: React.FC<SalesVerificationTaskSectionProps> = ({
   saleId,
   taskId,
@@ -82,11 +153,11 @@ export const SalesVerificationTaskSection: React.FC<SalesVerificationTaskSection
   disableInternalActions = false,
 }) => {
   const [createTaskBusy, setCreateTaskBusy] = React.useState(false);
-  const [createTaskMessage, setCreateTaskMessage] = React.useState<{ text: string; type: MessageBarType } | undefined>(undefined);
   const [showCreateTaskConfirmation, setShowCreateTaskConfirmation] = React.useState(false);
   const [modifyTaskBusy, setModifyTaskBusy] = React.useState(false);
   const [showModifyTaskConfirmation, setShowModifyTaskConfirmation] = React.useState(false);
-  const [modifyTaskMessage, setModifyTaskMessage] = React.useState<{ text: string; type: MessageBarType } | undefined>(undefined);
+  const createTaskFeedback = useDismissibleActionMessage();
+  const modifyTaskFeedback = useDismissibleActionMessage();
 
   const internalActionsDisabledReason = 'Internal SVT actions are disabled when opened from VT.';
 
@@ -132,26 +203,13 @@ export const SalesVerificationTaskSection: React.FC<SalesVerificationTaskSection
     }
   }, [hasTaskId, taskId]);
 
-  // Auto-dismiss success notifications after 3 seconds
-  React.useEffect(() => {
-    if (!createTaskMessage || createTaskMessage.type !== MessageBarType.success) return;
-    const timer = setTimeout(() => setCreateTaskMessage(undefined), 3000);
-    return () => clearTimeout(timer);
-  }, [createTaskMessage]);
-
-  React.useEffect(() => {
-    if (!modifyTaskMessage || modifyTaskMessage.type !== MessageBarType.success) return;
-    const timer = setTimeout(() => setModifyTaskMessage(undefined), 3000);
-    return () => clearTimeout(timer);
-  }, [modifyTaskMessage]);
-
   const handleOpenCreateTaskConfirmation = React.useCallback(() => {
     if (!onCreateTask || disableInternalActions || createTaskActionRule.disabled) {
       return;
     }
-    setCreateTaskMessage(undefined);
+    createTaskFeedback.setMessage(undefined);
     setShowCreateTaskConfirmation(true);
-  }, [createTaskActionRule.disabled, disableInternalActions, onCreateTask]);
+  }, [createTaskActionRule.disabled, createTaskFeedback, disableInternalActions, onCreateTask]);
 
   const handleCancelCreateTask = React.useCallback(() => {
     if (createTaskBusy) {
@@ -161,34 +219,25 @@ export const SalesVerificationTaskSection: React.FC<SalesVerificationTaskSection
   }, [createTaskBusy]);
 
   const handleConfirmCreateTask = React.useCallback(async () => {
-    if (!onCreateTask || createTaskActionRule.disabled) {
-      return;
-    }
-
-    setCreateTaskBusy(true);
-    setCreateTaskMessage(undefined);
-    try {
-      await Promise.resolve(onCreateTask());
-      setShowCreateTaskConfirmation(false);
-      setCreateTaskMessage({ text: 'Manual SVT task created and assigned to you.', type: MessageBarType.success });
-    } catch (error) {
-      const message = error instanceof Error && error.message.trim().length > 0
-        ? error.message.trim()
-        : 'Unable to create task. Please try again.';
-      setCreateTaskMessage({ text: message, type: MessageBarType.error });
-    } finally {
-      setCreateTaskBusy(false);
-    }
-  }, [createTaskActionRule.disabled, onCreateTask]);
+    await runTaskAction({
+      handler: onCreateTask,
+      disabled: createTaskActionRule.disabled,
+      setBusy: setCreateTaskBusy,
+      setMessage: createTaskFeedback.setMessage,
+      setShowConfirmation: setShowCreateTaskConfirmation,
+      successMessage: 'Manual SVT task created and assigned to you.',
+      fallbackErrorMessage: 'Unable to create task. Please try again.',
+    });
+  }, [createTaskActionRule.disabled, createTaskFeedback.setMessage, onCreateTask]);
 
   const handleOpenModifyTaskConfirmation = React.useCallback(() => {
     if (!onModifyTask || disableInternalActions || modifyTaskActionRule.disabled) {
       return;
     }
 
-    setModifyTaskMessage(undefined);
+    modifyTaskFeedback.setMessage(undefined);
     setShowModifyTaskConfirmation(true);
-  }, [disableInternalActions, modifyTaskActionRule.disabled, onModifyTask]);
+  }, [disableInternalActions, modifyTaskActionRule.disabled, modifyTaskFeedback, onModifyTask]);
 
   const handleCancelModifyTask = React.useCallback(() => {
     if (modifyTaskBusy) {
@@ -199,25 +248,16 @@ export const SalesVerificationTaskSection: React.FC<SalesVerificationTaskSection
   }, [modifyTaskBusy]);
 
   const handleConfirmModifyTask = React.useCallback(async () => {
-    if (!onModifyTask || modifyTaskActionRule.disabled) {
-      return;
-    }
-
-    setModifyTaskBusy(true);
-    setModifyTaskMessage(undefined);
-    try {
-      await Promise.resolve(onModifyTask());
-      setShowModifyTaskConfirmation(false);
-      setModifyTaskMessage({ text: 'SVT task updated and assigned to you.', type: MessageBarType.success });
-    } catch (error) {
-      const message = error instanceof Error && error.message.trim().length > 0
-        ? error.message.trim()
-        : 'Unable to modify SVT task. Please try again.';
-      setModifyTaskMessage({ text: message, type: MessageBarType.error });
-    } finally {
-      setModifyTaskBusy(false);
-    }
-  }, [modifyTaskActionRule.disabled, onModifyTask]);
+    await runTaskAction({
+      handler: onModifyTask,
+      disabled: modifyTaskActionRule.disabled,
+      setBusy: setModifyTaskBusy,
+      setMessage: modifyTaskFeedback.setMessage,
+      setShowConfirmation: setShowModifyTaskConfirmation,
+      successMessage: 'SVT task updated and assigned to you.',
+      fallbackErrorMessage: 'Unable to modify SVT task. Please try again.',
+    });
+  }, [modifyTaskActionRule.disabled, modifyTaskFeedback.setMessage, onModifyTask]);
 
   const createTaskDisabled = disableInternalActions || createTaskActionRule.disabled;
   const createTaskUnavailableReason = disableInternalActions
@@ -235,6 +275,8 @@ export const SalesVerificationTaskSection: React.FC<SalesVerificationTaskSection
   const qcAuditHistoryReason = disableInternalActions
     ? internalActionsDisabledReason
     : qcAuditHistoryActionRule.reason;
+  const showCreateTaskMessage = Boolean(createTaskFeedback.message) && !createTaskFeedback.dismissed;
+  const showModifyTaskMessage = Boolean(modifyTaskFeedback.message) && !modifyTaskFeedback.dismissed;
 
   return (
     <section className="voa-sale-details-card" aria-labelledby="svt-task-details-heading">
@@ -333,24 +375,24 @@ export const SalesVerificationTaskSection: React.FC<SalesVerificationTaskSection
           {createTaskUnavailableReason && (disableInternalActions || hasTaskId || !canCreateTask) && (
             <Text variant="small" className="voa-task-actions__note">{createTaskUnavailableReason}</Text>
           )}
-          {createTaskMessage && (
+          {showCreateTaskMessage && createTaskFeedback.message && (
             <MessageBar
-              messageBarType={createTaskMessage.type}
+              messageBarType={createTaskFeedback.message.type}
               isMultiline={false}
-              dismissButtonAriaLabel="Close"
-              onDismiss={() => setCreateTaskMessage(undefined)}
+              dismissButtonAriaLabel="Dismiss"
+              onDismiss={createTaskFeedback.dismiss}
             >
-              {createTaskMessage.text}
+              {createTaskFeedback.message.text}
             </MessageBar>
           )}
-          {modifyTaskMessage && (
+          {showModifyTaskMessage && modifyTaskFeedback.message && (
             <MessageBar
-              messageBarType={modifyTaskMessage.type}
+              messageBarType={modifyTaskFeedback.message.type}
               isMultiline={false}
-              dismissButtonAriaLabel="Close"
-              onDismiss={() => setModifyTaskMessage(undefined)}
+              dismissButtonAriaLabel="Dismiss"
+              onDismiss={modifyTaskFeedback.dismiss}
             >
-              {modifyTaskMessage.text}
+              {modifyTaskFeedback.message.text}
             </MessageBar>
           )}
         </article>

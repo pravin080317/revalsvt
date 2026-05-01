@@ -59,6 +59,11 @@ describe('prefilter configs extra', () => {
     expect(getQcWorkThatOptions('task').some((opt) => opt.key === 'taskCompleted')).toBe(true);
   });
 
+  test('getQcWorkThatOptions uses default branch for unknown searchBy values', () => {
+    const options = getQcWorkThatOptions('unexpected' as never);
+    expect(options.some((opt) => opt.key === 'taskCompleted')).toBe(true);
+  });
+
   test('qc assignment defaults and search-by options', () => {
     expect(QC_PREFILTER_DEFAULT.searchBy).toBe('task');
     const keys = QC_SEARCH_BY_OPTIONS.map((opt) => String(opt.key)).sort();
@@ -142,6 +147,93 @@ describe('prefilter configs extra', () => {
     expect(params.searchBy).toBeUndefined();
     expect(params.preFilter).toBeUndefined();
     expect(params.taskStatus).toBe('Assigned QC Failed,Assigned');
+  });
+
+  test('all mappers return empty object when prefilters are missing', () => {
+    expect(mapManagerPrefiltersToApi(undefined)).toEqual({});
+    expect(mapQcPrefiltersToApi(undefined)).toEqual({});
+    expect(mapQcViewPrefiltersToApi(undefined)).toEqual({});
+  });
+
+  test('manager mapper omits invalid ISO dates and empty prefilter values', () => {
+    const params = mapManagerPrefiltersToApi({
+      searchBy: 'caseworker',
+      billingAuthorities: [],
+      caseworkers: ['   ', ''],
+      completedFrom: '2026/02/01',
+      completedTo: 'bad',
+    });
+
+    expect(params.searchBy).toBe('CW');
+    expect(params.preFilter).toBeUndefined();
+    expect(params.fromDate).toBeUndefined();
+    expect(params.toDate).toBeUndefined();
+    expect(params.taskStatus).toBeUndefined();
+  });
+
+  test('manager mapper supports one-sided valid dates', () => {
+    const params = mapManagerPrefiltersToApi({
+      searchBy: 'billingAuthority',
+      billingAuthorities: ['Cardiff'],
+      caseworkers: [],
+      completedFrom: '2026-03-01',
+    });
+
+    expect(params.searchBy).toBe('BA');
+    expect(params.preFilter).toBe('Cardiff');
+    expect(params.fromDate).toBe('01/03/2026');
+    expect(params.toDate).toBeUndefined();
+  });
+
+  test('qc assignment mapper supports unknown searchBy fallback and task branch prefilter omission', () => {
+    const unknownSearchParams = mapQcPrefiltersToApi({
+      searchBy: 'unknown' as never,
+      billingAuthorities: [],
+      caseworkers: ['user-1'],
+      workThat: 'qcAssignedToSelected',
+    });
+
+    expect(unknownSearchParams.searchBy).toBeUndefined();
+    expect(unknownSearchParams.preFilter).toBe('user-1');
+
+    const taskParams = mapQcPrefiltersToApi({
+      searchBy: 'task',
+      billingAuthorities: [],
+      caseworkers: ['user-1'],
+      workThat: 'taskCompleted',
+      completedTo: '2026-03-10',
+    });
+
+    expect(taskParams.searchBy).toBe('TK');
+    expect(taskParams.preFilter).toBeUndefined();
+    expect(taskParams.taskStatus).toBe('Complete');
+    expect(taskParams.toDate).toBe('10/03/2026');
+  });
+
+  test('qc view mapper omits invalid dates and supports one-sided valid date', () => {
+    const invalidParams = mapQcViewPrefiltersToApi({
+      searchBy: 'qcUser',
+      billingAuthorities: [],
+      caseworkers: [],
+      workThat: 'qcAssignedToSelected',
+      completedFrom: 'bad-value',
+      completedTo: '2026/12/10',
+    });
+
+    expect(invalidParams.fromDate).toBeUndefined();
+    expect(invalidParams.toDate).toBeUndefined();
+
+    const oneSidedParams = mapQcViewPrefiltersToApi({
+      searchBy: 'qcUser',
+      billingAuthorities: [],
+      caseworkers: [],
+      workThat: 'qcCompletedBySelected',
+      completedTo: '2026-12-10',
+    });
+
+    expect(oneSidedParams.taskStatus).toBe('Complete Passed QC,Complete');
+    expect(oneSidedParams.fromDate).toBeUndefined();
+    expect(oneSidedParams.toDate).toBe('10/12/2026');
   });
 
   test('qc view defaults and options', () => {

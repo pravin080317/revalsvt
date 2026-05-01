@@ -48,6 +48,7 @@ import {
   resolveSharePointCatalogChunks,
 } from './runtime/context-routing';
 import { hasDisplayText, normalizeGuidValue, normalizeTextValue } from './runtime/text';
+import { UserResolutionService } from './UserResolution';
 
 const EDITABLE_CASEWORKER_STATUSES = new Set(['assigned', 'assigned qc failed']);
 const EDITABLE_QC_STATUSES = new Set(['assigned to qc', 'reassigned to qc']);
@@ -97,6 +98,7 @@ export class DetailsListRuntimeController {
   private caseworkerAccessRequest?: Promise<boolean>;
   private submitSuccessNotification?: string;
   private _entraObjectId?: string;
+  private readonly userResolutionService = new UserResolutionService();
 
   public init(context: ComponentFramework.Context<IInputs>, notifyOutputChanged: () => void): void {
     this._context = context;
@@ -401,8 +403,7 @@ export class DetailsListRuntimeController {
     await this.onTaskClick(this.selectedTaskId, this.selectedSaleId);
   }
 
-  public async createManualTask(saleIds: string[]): Promise<void> {
-    svtDebug.log('Runtime', 'createManualTask', { saleIds });
+  private normalizeManualTaskSaleIds(saleIds: string[]): string[] {
     const normalizedSaleIds = saleIds
       .map((id) => normalizeTextValue(id))
       .filter((id) => hasDisplayText(id));
@@ -410,19 +411,53 @@ export class DetailsListRuntimeController {
       throw new Error('Sale ID is not available for manual task creation.');
     }
 
-    const isSingle = normalizedSaleIds.length === 1;
+    return normalizedSaleIds;
+  }
 
-    if (isSingle) {
-      const existingTaskId = resolveCurrentTaskIdFromDetails(this._saleDetails, this.selectedTaskId);
-      if (existingTaskId) {
-        throw new Error('Task ID already exists for this sale record.');
-      }
+  private resolveExistingTaskIdForSale(normalizedSaleId: string): string {
+    const currentSaleId = normalizeTextValue(
+      resolveCurrentSaleIdFromDetails(this._saleDetails, this.selectedSaleId),
+    ).toLowerCase();
+    const selectedSaleId = normalizeTextValue(this.selectedSaleId).toLowerCase();
+    const saleMatchesCurrentDetails = normalizedSaleId === currentSaleId;
+    const selectedTaskIdForSale = normalizedSaleId === selectedSaleId
+      ? normalizeTextValue(this.selectedTaskId)
+      : '';
+
+    return saleMatchesCurrentDetails
+      ? resolveCurrentTaskIdFromDetails(this._saleDetails, selectedTaskIdForSale)
+      : selectedTaskIdForSale;
+  }
+
+  private assertNoExistingManualTaskForSingleSale(normalizedSaleId: string): void {
+    const existingTaskId = this.resolveExistingTaskIdForSale(normalizedSaleId.toLowerCase());
+    if (existingTaskId) {
+      throw new Error('Task ID already exists for this sale record.');
     }
+  }
 
+  private async ensureManualTaskCreateAccess(): Promise<void> {
     await this.ensureCaseworkerAccess();
     if (!this.hasManagerAccess || !this.hasCaseworkerAccess) {
       throw new Error('Manual task creation is restricted to users with both manager and caseworker role/team access.');
     }
+  }
+
+  public async createManualTask(
+    saleIds: string[],
+    options?: { navigateToDetailsOnSingle?: boolean },
+  ): Promise<void> {
+    svtDebug.log('Runtime', 'createManualTask', { saleIds });
+    const navigateToDetailsOnSingle = options?.navigateToDetailsOnSingle !== false;
+    const normalizedSaleIds = this.normalizeManualTaskSaleIds(saleIds);
+
+    const isSingle = normalizedSaleIds.length === 1;
+
+    if (isSingle) {
+      this.assertNoExistingManualTaskForSingleSale(normalizedSaleIds[0]);
+    }
+
+    await this.ensureManualTaskCreateAccess();
 
     const apiName = resolveConfiguredApiName(
       this._context,
@@ -470,7 +505,9 @@ export class DetailsListRuntimeController {
       }
 
       this._notifyOutputChanged();
-      await this.onTaskClick(this.selectedTaskId, normalizedSaleId);
+      if (navigateToDetailsOnSingle) {
+        await this.onTaskClick(this.selectedTaskId, normalizedSaleId);
+      }
     } else {
       this._notifyOutputChanged();
     }
@@ -780,7 +817,8 @@ export class DetailsListRuntimeController {
       const payload = unwrapCustomApiPayload(rawPayload);
       const payloadRecord = this.tryGetSaleDetailsRecord(payload) ?? getEmptySaleRecord();
       const enrichedPayload = await this.enrichWithHereditamentActiveRequest(payloadRecord);
-      detailsPayload = JSON.stringify(enrichedPayload);
+      const userResolvedPayload = await this.enrichWithResolvedUserNames(enrichedPayload);
+      detailsPayload = JSON.stringify(userResolvedPayload);
     } catch (error) {
       console.warn('Failed to fetch SVT sale record.', error);
       detailsPayload = JSON.stringify(getEmptySaleRecord());
@@ -993,6 +1031,81 @@ export class DetailsListRuntimeController {
     return undefined;
   }
 
+  /**
+   * Enriches sale details with resolved user display names from Dataverse
+   * when the backend's name resolution failed to populate the name fields.
+   * This handles cases where assignedTo/qcAssignedTo/requestedBy are GUIDs
+   * but the corresponding *Name fields are missing or null.
+   */
+  private async enrichWithResolvedUserNames(
+    details: Record<string, unknown>,
+  ): Promise<Record<string, unknown>> {
+    try {
+      const svtDetails = toRecord(details.salesVerificationTaskDetails);
+      if (!svtDetails) {
+        return details;
+      }
+
+      const usersToResolve: Array<{ field: string; guid: string; nameField: string }> = [];
+
+      // Collect unresolved user fields
+      const assignedTo = normalizeTextValue(svtDetails.assignedTo);
+      const assignedToName = normalizeTextValue(svtDetails.assignedToName);
+      if (assignedTo && !assignedToName) {
+        usersToResolve.push({ field: 'assignedTo', guid: assignedTo, nameField: 'assignedToName' });
+      }
+
+      const qcAssignedTo = normalizeTextValue(svtDetails.qcAssignedTo);
+      const qcAssignedToName = normalizeTextValue(svtDetails.qcAssignedToName);
+      if (qcAssignedTo && !qcAssignedToName) {
+        usersToResolve.push({ field: 'qcAssignedTo', guid: qcAssignedTo, nameField: 'qcAssignedToName' });
+      }
+
+      const requestedBy = normalizeTextValue(svtDetails.requestedBy);
+      const requestedByName = normalizeTextValue(svtDetails.requestedByName);
+      if (requestedBy && !requestedByName) {
+        usersToResolve.push({ field: 'requestedBy', guid: requestedBy, nameField: 'requestedByName' });
+      }
+
+      const qcReviewedBy = normalizeTextValue(svtDetails.qcReviewedBy);
+      const qcReviewedByName = normalizeTextValue(svtDetails.qcReviewedByName);
+      if (qcReviewedBy && !qcReviewedByName) {
+        usersToResolve.push({ field: 'qcReviewedBy', guid: qcReviewedBy, nameField: 'qcReviewedByName' });
+      }
+
+      if (usersToResolve.length === 0) {
+        return details; // All user names already resolved
+      }
+
+      // Resolve all users in batch
+      const guids = usersToResolve.map((u) => u.guid);
+      const resolvedUsers = await this.userResolutionService.resolveUsers(this._context, guids);
+
+      if (resolvedUsers.size === 0) {
+        return details; // No users resolved, return as-is
+      }
+
+      // Merge resolved names back into the details
+      usersToResolve.forEach(({ guid, nameField }) => {
+        const resolved = resolvedUsers.get(guid.toLowerCase().trim());
+        if (resolved?.name) {
+          svtDetails[nameField] = resolved.name;
+          svtDebug.log(
+            'Runtime',
+            `Resolved ${nameField}`,
+            { guid, name: resolved.name },
+          );
+        }
+      });
+
+      details.salesVerificationTaskDetails = svtDetails;
+    } catch (error) {
+      svtDebug.warn('Runtime', 'Failed to enrich with resolved user names:', error);
+    }
+
+    return details;
+  }
+
   private tryGetSaleDetailsRecord(payload: unknown): Record<string, unknown> | undefined {
     if (typeof payload === 'string') {
       const trimmed = payload.trim();
@@ -1089,23 +1202,17 @@ export class DetailsListRuntimeController {
       return true;
     }
 
+    if (this.hasMatchedCollectionEvidence(root, CASEWORKER_TEAM_NAMES, CASEWORKER_ROLE_NAMES)) {
+      return true;
+    }
+
     const matchedTeamName = normalizeTextValue(root.matchedTeamName).toLowerCase();
-    if (CASEWORKER_TEAM_NAMES.has(matchedTeamName)) {
+    if (this.matchesKnownNameByContains(matchedTeamName, CASEWORKER_TEAM_NAMES)) {
       return true;
     }
 
     const matchedRoleName = normalizeTextValue(root.matchedRoleName).toLowerCase();
-    if (CASEWORKER_ROLE_NAMES.has(matchedRoleName)) {
-      return true;
-    }
-
-    const matchedTeams = this.normalizeUserContextValues(root.matchedTeamNames);
-    if (matchedTeams.some((team) => CASEWORKER_TEAM_NAMES.has(team))) {
-      return true;
-    }
-
-    const matchedRoles = this.normalizeUserContextValues(root.matchedRoleNames);
-    if (matchedRoles.some((role) => CASEWORKER_ROLE_NAMES.has(role))) {
+    if (this.matchesKnownNameByContains(matchedRoleName, CASEWORKER_ROLE_NAMES)) {
       return true;
     }
 
@@ -1120,23 +1227,17 @@ export class DetailsListRuntimeController {
       return true;
     }
 
+    if (this.hasMatchedCollectionEvidence(root, MANAGER_TEAM_NAMES, MANAGER_ROLE_NAMES)) {
+      return true;
+    }
+
     const matchedTeamName = normalizeTextValue(root.matchedTeamName).toLowerCase();
-    if (MANAGER_TEAM_NAMES.has(matchedTeamName)) {
+    if (this.matchesKnownNameByContains(matchedTeamName, MANAGER_TEAM_NAMES)) {
       return true;
     }
 
     const matchedRoleName = normalizeTextValue(root.matchedRoleName).toLowerCase();
-    if (MANAGER_ROLE_NAMES.has(matchedRoleName)) {
-      return true;
-    }
-
-    const matchedTeams = this.normalizeUserContextValues(root.matchedTeamNames);
-    if (matchedTeams.some((team) => MANAGER_TEAM_NAMES.has(team))) {
-      return true;
-    }
-
-    const matchedRoles = this.normalizeUserContextValues(root.matchedRoleNames);
-    if (matchedRoles.some((role) => MANAGER_ROLE_NAMES.has(role))) {
+    if (this.matchesKnownNameByContains(matchedRoleName, MANAGER_ROLE_NAMES)) {
       return true;
     }
 
@@ -1152,23 +1253,17 @@ export class DetailsListRuntimeController {
       return true;
     }
 
+    if (this.hasMatchedCollectionEvidence(root, QA_TEAM_NAMES, QA_ROLE_NAMES)) {
+      return true;
+    }
+
     const matchedTeamName = normalizeTextValue(root.matchedTeamName).toLowerCase();
-    if (QA_TEAM_NAMES.has(matchedTeamName)) {
+    if (this.matchesKnownNameByContains(matchedTeamName, QA_TEAM_NAMES)) {
       return true;
     }
 
     const matchedRoleName = normalizeTextValue(root.matchedRoleName).toLowerCase();
-    if (QA_ROLE_NAMES.has(matchedRoleName)) {
-      return true;
-    }
-
-    const matchedTeams = this.normalizeUserContextValues(root.matchedTeamNames);
-    if (matchedTeams.some((team) => QA_TEAM_NAMES.has(team))) {
-      return true;
-    }
-
-    const matchedRoles = this.normalizeUserContextValues(root.matchedRoleNames);
-    if (matchedRoles.some((role) => QA_ROLE_NAMES.has(role))) {
+    if (this.matchesKnownNameByContains(matchedRoleName, QA_ROLE_NAMES)) {
       return true;
     }
 
@@ -1224,6 +1319,38 @@ export class DetailsListRuntimeController {
       .split(/[;,|]/)
       .map((value) => value.trim().toLowerCase())
       .filter((value) => value !== '');
+  }
+
+  private hasMatchedCollectionEvidence(
+    root: Record<string, unknown>,
+    knownTeamNames: Set<string>,
+    knownRoleNames: Set<string>,
+  ): boolean {
+    const matchedTeams = this.normalizeUserContextValues(root.matchedTeamNames);
+    if (matchedTeams.some((team) => this.matchesKnownNameByContains(team, knownTeamNames))) {
+      return true;
+    }
+
+    const matchedRoles = this.normalizeUserContextValues(root.matchedRoleNames);
+    if (matchedRoles.some((role) => this.matchesKnownNameByContains(role, knownRoleNames))) {
+      return true;
+    }
+
+    return false;
+  }
+
+  private matchesKnownNameByContains(value: string, knownNames: Set<string>): boolean {
+    if (!value) {
+      return false;
+    }
+
+    for (const knownName of knownNames) {
+      if (value === knownName || value.includes(knownName) || knownName.includes(value)) {
+        return true;
+      }
+    }
+
+    return false;
   }
 
   private normalizeTaskIdForModifyTask(taskId: string): string {
@@ -1430,12 +1557,25 @@ export class DetailsListRuntimeController {
 
 
   private resolveQcSectionAccess(detailsPayload: string): { canSubmit: boolean; showSection: boolean } {
+    const caseworkerAssignedToCurrentUser = this.hasCaseworkerAccess && this.isSaleRecordAssignedToCurrentUser(detailsPayload);
+    const hasQcSectionDetails = this.hasQcSectionDetails(detailsPayload);
+    const taskStatus = this.resolveTaskStatusFromSaleRecord(detailsPayload);
+    const isQcLifecycleStatus = taskStatus.includes('qc');
+
     if (!this.hasQaAccess && !this.hasManagerAccess) {
+      if (caseworkerAssignedToCurrentUser && (hasQcSectionDetails || isQcLifecycleStatus)) {
+        return { canSubmit: false, showSection: true };
+      }
+
       return { canSubmit: false, showSection: false };
     }
 
     const assignedToCurrentQcUser = this.isSaleRecordQcAssignedToCurrentUser(detailsPayload);
     if (!assignedToCurrentQcUser) {
+      if (caseworkerAssignedToCurrentUser && (hasQcSectionDetails || isQcLifecycleStatus)) {
+        return { canSubmit: false, showSection: true };
+      }
+
       return { canSubmit: false, showSection: false };
     }
 
@@ -1444,6 +1584,44 @@ export class DetailsListRuntimeController {
     }
 
     return { canSubmit: true, showSection: true };
+  }
+
+  private hasQcSectionDetails(detailsPayload: string): boolean {
+    const root = this.parseSaleRecordRoot(detailsPayload);
+    const qcCandidates = [
+      toRecord(root.qualityControlOutcome),
+      toRecord(root.qcOutcomeDetails),
+      root,
+    ].filter((record): record is Record<string, unknown> => Boolean(record));
+
+    const qcDetailKeys = [
+      'qcOutcome',
+      'qcoutcome',
+      'qcRemark',
+      'qcremark',
+      'qcRemarks',
+      'qcremarks',
+      'qcReviewedBy',
+      'qcreviewedby',
+      'qcReviewedByName',
+      'qcreviewedbyname',
+      'reviewedBy',
+      'reviewedby',
+    ];
+
+    for (const record of qcCandidates) {
+      for (const key of qcDetailKeys) {
+        if (!Object.prototype.hasOwnProperty.call(record, key)) {
+          continue;
+        }
+
+        if (normalizeTextValue(record[key])) {
+          return true;
+        }
+      }
+    }
+
+    return false;
   }
 
   private isManagerAssignmentContext(): boolean {

@@ -58,7 +58,7 @@ Fix:
    - `DetailsListVOA/tests/external-url-safety.test.ts`
 
 2. Cases covered:
-   - Allows `http://` and `https://` URLs.
+   - Allows `HTTP` and `HTTPS` URLs.
    - Blocks `javascript:`, `data:`, `ftp:`, and `//protocol-relative` URLs.
    - Resolves rooted relative URL only when allowRelative+baseUrl are provided.
    - Blocks bare/unknown URL forms.

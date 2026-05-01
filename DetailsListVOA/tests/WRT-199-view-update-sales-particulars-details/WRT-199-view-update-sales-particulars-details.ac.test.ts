@@ -87,8 +87,9 @@ describe('WRT-199 View and Update Sales Particulars AC', () => {
     expect(sectionSource).toContain('const totalScore = REQUIRED_FIELDS.reduce((sum, field) => {');
     expect(sectionSource).toContain('return sum + (scoringLookup.get(lookupKey) ?? 0);');
     expect(sectionSource).toContain('const normalizedTotalScore = normalizeOverallScore(totalScore);');
-    expect(sectionSource).toContain('setConditionScore(toScoreText(normalizedTotalScore));');
-    expect(sectionSource).toContain('setConditionCategory(toConditionCategory(normalizedTotalScore));');
+    expect(sectionSource).toContain('const roundedTotalScoreText = toScoreText(normalizedTotalScore);');
+    expect(sectionSource).toContain('setConditionScore(roundedTotalScoreText);');
+    expect(sectionSource).toContain('setConditionCategory(toConditionCategory(Number.isFinite(roundedTotalScore) ? roundedTotalScore : normalizedTotalScore));');
     expect(sectionSource).toContain('if (score >= 0.73) {');
     expect(sectionSource).toContain("return 'Above Average';");
     expect(sectionSource).toContain('if (score <= 0.34) {');

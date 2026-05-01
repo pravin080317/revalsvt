@@ -128,7 +128,7 @@ If your production API domain is not `api.contoso.gov.uk`, update `DetailsListVO
    - `npm ci`
    - `npm run build`
 2. Authenticate to your environment (one-time):
-   - `pac auth create --url https://<your-org>.crm.dynamics.com`
+   - `pac auth create --url <DATAVERSE_BASE_URL>`
 3. Push the control to the environment:
    - `pac pcf push --publisher-prefix <prefix>`
 
@@ -156,7 +156,7 @@ This creates or updates an unmanaged, temporary solution in the environment for 
      - Copy unmanaged: `copy solution\bin\**\*_unmanaged.zip .\bin\DetailsListVOA_unmanaged.zip`
      - Copy managed: `copy solution\bin\**\*_managed.zip .\bin\DetailsListVOA_managed.zip`
 4. Import into your target environment:
-   - `pac auth create --url https://<your-org>.crm.dynamics.com`
+   - `pac auth create --url <DATAVERSE_BASE_URL>`
    - From repo root (after copy): `pac solution import --path .\bin\DetailsListVOA_unmanaged.zip`
    - Or import directly from `solution\bin\<Configuration>\*_unmanaged.zip`
 
@@ -204,13 +204,13 @@ Use the helper script to build, pack, and optionally import. Choose one of these
 - From PowerShell (recommended):
   - Unmanaged: `& .\\scripts\\pcf-pack.ps1`
   - Managed: `& .\\scripts\\pcf-pack.ps1 -Managed`
-  - Import after pack: `& .\\scripts\\pcf-pack.ps1 -EnvUrl https://<your-org>.crm.dynamics.com`
+  - Import after pack: `& .\\scripts\\pcf-pack.ps1 -EnvUrl <DATAVERSE_BASE_URL>`
   - If script execution is restricted: `Set-ExecutionPolicy -Scope Process Bypass; & .\\scripts\\pcf-pack.ps1`
 
 - From Command Prompt (cmd):
   - Unmanaged: `.\\scripts\\pcf-pack.cmd`
   - Managed: `.\\scripts\\pcf-pack.cmd -Managed`
-  - Import after pack: `.\\scripts\\pcf-pack.cmd -EnvUrl https://<your-org>.crm.dynamics.com`
+  - Import after pack: `.\\scripts\\pcf-pack.cmd -EnvUrl <DATAVERSE_BASE_URL>`
 
 - From any shell with PowerShell 7:
   - `pwsh -NoProfile -ExecutionPolicy Bypass -File .\\scripts\\pcf-pack.ps1 [args]`
@@ -233,7 +233,7 @@ Solution name for the PCF
 If you are packaging from the solution/ folder (created by pac solution init), the solution’s UniqueName/LocalizedName is solution in solution/src/Other/Solution.xml (that is the name Power Apps will show for that solution unless you change it).
 
 <?xml version="1.0" encoding="utf-8"?>
-<ImportExportXml version="9.1.0.643" SolutionPackageVersion="9.1" languagecode="1033" generatedBy="CrmLive" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+<ImportExportXml version="9.1.0.643" SolutionPackageVersion="9.1" languagecode="1033" generatedBy="CrmLive" xmlns:xsi="<EXTERNAL_URL>">
   <SolutionManifest>
     <!-- Unique Name of Cds Solution-->
     <UniqueName>solution</UniqueName>
@@ -248,7 +248,7 @@ If you are packaging from the solution/ folder (created by pac solution init), t
 The PCF project itself also carries solution metadata under DetailsListVOA/src/Other/Solution.xml, where the UniqueName/LocalizedName is DetailsListVOA (publisher VOAWelshReform, prefix svt).
 
     <?xml version="1.0" encoding="utf-8"?>
-<ImportExportXml version="9.1.0.643" SolutionPackageVersion="9.1" languagecode="1033" generatedBy="CrmLive" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+<ImportExportXml version="9.1.0.643" SolutionPackageVersion="9.1" languagecode="1033" generatedBy="CrmLive" xmlns:xsi="<EXTERNAL_URL>">
   <SolutionManifest>
     <!-- Unique Name of Cds Solution-->
     <UniqueName>DetailsListVOA</UniqueName>

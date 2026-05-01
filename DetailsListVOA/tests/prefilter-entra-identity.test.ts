@@ -39,7 +39,8 @@ describe('prefilter identity uses Entra IDs only', () => {
   });
 
   test('grid restores retained prefilters and auto-applies stored searches without fallback loops', () => {
-    expect(gridSource).toContain('if (!raw) return;');
+    expect(gridSource).toContain('if (!raw) {');
+    expect(gridSource).toContain('return undefined;');
     expect(gridSource).toContain('markPrefilterHydrating();');
     expect(gridSource).toContain('setPrefilters(normalizedNext);');
     expect(gridSource).toContain("const shouldAutoApply = storedApplied === false ? false : canAutoApply;");

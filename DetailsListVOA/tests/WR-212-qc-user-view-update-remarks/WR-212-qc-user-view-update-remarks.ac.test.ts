@@ -97,5 +97,14 @@ describe('WR-212 QC user can view sale record and update QC remarks AC', () => {
     expect(cssSource).toContain('.voa-sales-verification-qc-section__actions');
     expect(cssSource).toContain('justify-content: center;');
   });
+
+  test('AC10: caseworker can view QC section read-only when assigned and QC details exist', () => {
+    expect(runtimeSource).toContain('const caseworkerAssignedToCurrentUser = this.hasCaseworkerAccess && this.isSaleRecordAssignedToCurrentUser(detailsPayload);');
+    expect(runtimeSource).toContain('const hasQcSectionDetails = this.hasQcSectionDetails(detailsPayload);');
+    expect(runtimeSource).toContain("const isQcLifecycleStatus = taskStatus.includes('qc');");
+    expect(runtimeSource).toContain('if (caseworkerAssignedToCurrentUser && (hasQcSectionDetails || isQcLifecycleStatus)) {');
+    expect(runtimeSource).toContain('return { canSubmit: false, showSection: true };');
+    expect(runtimeSource).toContain('private hasQcSectionDetails(detailsPayload: string): boolean {');
+  });
 });
 

@@ -1196,9 +1196,53 @@
 .voa-assign-overlay {
   position: fixed;
   inset: 0;
+  width: 100%;
+  height: 100%;
+  border: none;
+  padding: 0;
+  margin: 0;
   background: #ffffff;
   z-index: 2000;
+  overflow: hidden;
+}
+
+.voa-assign-overlay-trap {
+  height: 100%;
+}
+
+.voa-assign-overlay-content {
+  height: 100%;
+  min-height: 0;
+  box-sizing: border-box;
+  overflow: hidden;
+}
+
+.voa-assign-list-container {
+  flex: 1 1 auto;
+  min-height: 0;
   overflow: auto;
+  border: 1px solid #d8d8d8;
+  border-radius: 2px;
+}
+
+.voa-assign-list-container .ms-DetailsHeader {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: #ffffff;
+}
+
+.voa-assign-actions-row {
+  flex-shrink: 0;
+  border-top: 1px solid #e1e1e1;
+  margin-top: 12px;
+  padding-top: 12px;
+  padding-bottom: 4px;
+  background: #ffffff;
+}
+
+.voa-assign-actions-row--scrolled {
+  box-shadow: 0 -4px 10px rgba(11, 12, 12, 0.08);
 }
 
 .voa-assign-radio {
@@ -1229,6 +1273,12 @@
 .voa-assign-row-disabled:hover:not(.is-selected),
 .voa-assign-row-disabled:hover:not(.is-selected) .ms-DetailsRow-fields {
   background: #f3f2f1 !important;
+}
+
+@media (max-height: 780px) {
+  .voa-assign-overlay-content {
+    padding: 12px !important;
+  }
 }
 
 .voa-prefilter-bar {

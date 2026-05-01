@@ -122,12 +122,12 @@ Observed output at snapshot time:
  M DetailsListVOA/index.ts
  M README.md
  M VOA.SVT.Plugins/Plugins/CustomAPI/SvtGetUserContext.cs
- M docs/svtpcfplugin/svtGetUserContext.md
+ M docs/svtGetUserContext.md
 ?? DetailsListVOA/tests/column-alignment.test.ts
 ?? DetailsListVOA/tests/security-review-gate.test.ts
 ?? docs/column-alignment-rules.md
 ?? docs/cross-repo-behavior-testing.md
-?? docs/svtpcfplugin/plugin-calling-guide.md
+?? docs/plugin-calling-guide.md
 ?? docs/security-review-readme.md
 ```
 

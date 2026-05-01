@@ -8,10 +8,12 @@ import {
   getQcLogActionRule,
   getRefreshActionRule,
   getSalesParticularCalculateActionRule,
+  getSalesVerificationMandatoryValidation,
   getSalesVerificationEditRule,
   getSubmitForQcActionRule,
   getSubmitQcOutcomeActionRule,
   hasDisplayValue,
+  SALES_VERIFICATION_MANDATORY_MESSAGES,
 } from '../components/SaleDetailsShell/rules/ViewSaleActionRules';
 
 describe('view sale action rules', () => {
@@ -64,6 +66,18 @@ describe('view sale action rules', () => {
     expect(rule).toEqual({ disabled: false });
   });
 
+  test('create task action is disabled while createTaskBusy is true', () => {
+    const rule = getCreateTaskActionRule({
+      createTaskBusy: true,
+      saleId: 'S-1001',
+      taskId: '-',
+      hasCreateTaskHandler: true,
+      canCreateTask: true,
+    });
+
+    expect(rule).toEqual({ disabled: true });
+  });
+
   test('modify task action requires caseworker access and configured handler', () => {
     const personaRule = getModifyTaskActionRule({
       canModifyTask: false,
@@ -78,6 +92,16 @@ describe('view sale action rules', () => {
     });
     expect(handlerRule.disabled).toBe(true);
     expect(handlerRule.reason).toBe('Modify task is currently unavailable.');
+  });
+
+  test('modify task action is disabled while modifyTaskBusy is true', () => {
+    const rule = getModifyTaskActionRule({
+      canModifyTask: true,
+      hasModifyTaskHandler: true,
+      modifyTaskBusy: true,
+    });
+
+    expect(rule).toEqual({ disabled: true });
   });
 
   test('modify task action is visible only for complete states', () => {
@@ -264,6 +288,124 @@ describe('view sale action rules', () => {
       reason: 'Sales particulars must be reviewed before calculating.',
     });
     expect(getSalesParticularCalculateActionRule({ readOnly: false, reviewStatusKey: 'details-available' })).toEqual({ disabled: false });
+  });
+
+  describe('getSalesVerificationMandatoryValidation', () => {
+    const baseSalesParticularModel = {
+      reviewStatusKey: 'details-available' as const,
+      linkParticulars: 'yes',
+      kitchenAge: 'new',
+      kitchenSpecification: 'standard',
+      bathroomAge: 'new',
+      bathroomSpecification: 'standard',
+      glazing: 'double',
+      heating: 'gas',
+      decorativeFinishes: 'good',
+      conditionScore: '7',
+      conditionCategory: 'good',
+      particularsNotes: 'notes',
+    };
+
+    test('returns sale useful error when isSaleUsefulKey is missing', () => {
+      const result = getSalesVerificationMandatoryValidation({
+        isSaleUsefulKey: '',
+        whyNotUsefulKey: '',
+        padConfirmationKey: '',
+        salesParticularModel: baseSalesParticularModel,
+      });
+
+      expect(result.saleUsefulError).toBe(SALES_VERIFICATION_MANDATORY_MESSAGES.saleUseful);
+      expect(result.mandatoryMessages).toContain(SALES_VERIFICATION_MANDATORY_MESSAGES.saleUseful);
+    });
+
+    test('returns whyNotUseful error when sale is not useful and reason missing', () => {
+      const result = getSalesVerificationMandatoryValidation({
+        isSaleUsefulKey: 'no',
+        whyNotUsefulKey: '',
+        padConfirmationKey: '',
+        salesParticularModel: baseSalesParticularModel,
+      });
+
+      expect(result.whyNotUsefulError).toBe(SALES_VERIFICATION_MANDATORY_MESSAGES.whyNotUseful);
+      expect(result.mandatoryMessages).toContain(SALES_VERIFICATION_MANDATORY_MESSAGES.whyNotUseful);
+    });
+
+    test('returns pad confirmation error when sale is useful and pad confirmation missing', () => {
+      const result = getSalesVerificationMandatoryValidation({
+        isSaleUsefulKey: 'yes',
+        whyNotUsefulKey: '',
+        padConfirmationKey: '   ',
+        salesParticularModel: baseSalesParticularModel,
+      });
+
+      expect(result.padConfirmationError).toBe(SALES_VERIFICATION_MANDATORY_MESSAGES.padConfirmation);
+      expect(result.mandatoryMessages).toContain(
+        `Property Attribute Details: ${SALES_VERIFICATION_MANDATORY_MESSAGES.padConfirmation}`,
+      );
+    });
+
+    test('returns review status error when sales particulars review status is missing', () => {
+      const result = getSalesVerificationMandatoryValidation({
+        isSaleUsefulKey: 'yes',
+        whyNotUsefulKey: '',
+        padConfirmationKey: 'job-created',
+        salesParticularModel: {
+          ...baseSalesParticularModel,
+          reviewStatusKey: undefined,
+        },
+      });
+
+      expect(result.salesParticularReviewStatusError).toBe(SALES_VERIFICATION_MANDATORY_MESSAGES.salesParticularReviewStatus);
+      expect(result.mandatoryMessages).toContain(
+        `Sales Particulars: ${SALES_VERIFICATION_MANDATORY_MESSAGES.salesParticularReviewStatus}`,
+      );
+    });
+
+    test('collects mandatory field errors when details are available but fields are empty', () => {
+      const result = getSalesVerificationMandatoryValidation({
+        isSaleUsefulKey: 'yes',
+        whyNotUsefulKey: '',
+        padConfirmationKey: 'job-created',
+        salesParticularModel: {
+          ...baseSalesParticularModel,
+          kitchenAge: '',
+          kitchenSpecification: '',
+          bathroomAge: '',
+          bathroomSpecification: '',
+          glazing: '',
+          heating: '',
+          decorativeFinishes: '',
+          conditionScore: '',
+        },
+      });
+
+      expect(result.salesParticularFieldErrors.kitchenAge).toBe('Select the kitchen age');
+      expect(result.salesParticularFieldErrors.kitchenSpecification).toBe('Select the kitchen spec');
+      expect(result.salesParticularFieldErrors.bathroomAge).toBe('Select the bathroom age');
+      expect(result.salesParticularFieldErrors.bathroomSpecification).toBe('Select the bathroom spec');
+      expect(result.salesParticularFieldErrors.glazing).toBe('Select the glazing');
+      expect(result.salesParticularFieldErrors.heating).toBe('Select the heating');
+      expect(result.salesParticularFieldErrors.decorativeFinishes).toBe('Select the decorative finishes');
+      expect(result.mandatoryMessages).toContain(
+        `Sales Particulars: ${SALES_VERIFICATION_MANDATORY_MESSAGES.conditionScore}`,
+      );
+    });
+
+    test('returns no errors when all mandatory fields are supplied', () => {
+      const result = getSalesVerificationMandatoryValidation({
+        isSaleUsefulKey: 'yes',
+        whyNotUsefulKey: '',
+        padConfirmationKey: 'job-created',
+        salesParticularModel: baseSalesParticularModel,
+      });
+
+      expect(result.saleUsefulError).toBeUndefined();
+      expect(result.whyNotUsefulError).toBeUndefined();
+      expect(result.salesParticularReviewStatusError).toBeUndefined();
+      expect(result.padConfirmationError).toBeUndefined();
+      expect(result.salesParticularFieldErrors).toEqual({});
+      expect(result.mandatoryMessages).toEqual([]);
+    });
   });
 });
 

@@ -10,7 +10,6 @@ function readRepoFile(relativePath: string): string {
 describe('headings review gate', () => {
   const gridSource = readRepoFile('DetailsListVOA/Grid.tsx');
   const assignOverlaySource = readRepoFile('DetailsListVOA/components/Grid/AssignTasksOverlay.tsx');
-  const legacyGridSource = readRepoFile('DetailsListVOA/grid/Grid.tsx');
   const spatialBrowserSource = readRepoFile('DetailsListVOA/components/SpatialUnitBrowser/StatutorySpatialUnitBrowser.tsx');
 
   test('uses a page-level h1 for the active grid title', () => {
@@ -26,10 +25,5 @@ describe('headings review gate', () => {
   test('keeps the spatial lookup title on a real heading instead of visual text only', () => {
     expect(spatialBrowserSource).toContain('<Text as="h1" variant="xLarge">Statutory Spatial Unit Lookup</Text>');
     expect(spatialBrowserSource).not.toContain('<Text variant="xLarge">Statutory Spatial Unit Lookup</Text>');
-  });
-
-  test('keeps the legacy grid copy aligned with the active heading treatment', () => {
-    expect(legacyGridSource).toContain('<Text as="h1" id="assign-screen-title" variant="xLarge" styles={{ root: { marginLeft: 12, fontWeight: 600 } }}>');
-    expect(legacyGridSource).toContain('<Text as="h2" variant="mediumPlus" styles={{ root: { fontWeight: 600 } }}>');
   });
 });

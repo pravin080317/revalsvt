@@ -30,9 +30,11 @@ describe('WRT-366 View Sales Record through Quality Control Assignment AC', () =
     expect(gridCellSource).toContain('case CellTypes.Link:');
     expect(gridCellSource).toContain('<button type="button" onClick={onClick} aria-label={label} className={buttonClassName}>');
     expect(gridCellSource).toContain('cellNavigation();');
-    expect(gridSource).toContain('<GridCell item={item} column={column} onCellAction={(i, col) => void handleNavigate(i, col)} />');
+    expect(gridSource).toContain('<GridCell item={item} column={column} onCellAction={(i, col) => navigateSafely(i, col)} />');
+    expect(gridSource).toContain('const navigateSafely = React.useCallback((');
+    expect(gridSource).toContain('handleNavigate(item, column, forceViewSaleRecordAction).catch(() => undefined);');
     expect(gridSource).toContain('const onViewSelected = React.useCallback(() => {');
-    expect(gridSource).toContain('void handleNavigate(first, undefined, true);');
+    expect(gridSource).toContain('navigateSafely(first, undefined, true);');
   });
 
   test('AC3: row invoke sends qc-assignment context and runtime stores it before loading details', () => {
@@ -78,8 +80,8 @@ describe('WRT-366 View Sales Record through Quality Control Assignment AC', () =
     // Both buttons open a new tab on click
     expect(padSectionSource).toContain("window.open(dataEnhancementUrl, '_blank', 'noopener,noreferrer')");
     expect(padSectionSource).toContain("window.open(hereditamentUrl, '_blank', 'noopener,noreferrer')");
-    // Shell passes canCreateDataEnhancement only for caseworkers (not QC)
-    expect(shellSource).toContain('canCreateDataEnhancement={!readOnly && !sectionsDisabled && canProgressTask && !showQcSection}');
+    // Shell passes canCreateDataEnhancement for eligible caseworker contexts regardless of QC section visibility
+    expect(shellSource).toContain('canCreateDataEnhancement={!readOnly && !sectionsDisabled && canProgressTask}');
     expect(shellSource).toContain('hereditamentUrl={model.addressLink}');
     expect(shellSource).toContain('dataEnhancementUrl={model.dataEnhancementUrl}');
   });

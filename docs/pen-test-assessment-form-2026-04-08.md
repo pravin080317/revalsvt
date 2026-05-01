@@ -112,7 +112,7 @@ No public/citizen-facing access. No third-party integrations in scope for pen te
 **Yes — with access control enforced.**
 
 Detail:
-- The Power Apps model-driven app is accessed via `https://*.powerapps.com` (or tenant-branded URL) over the public internet.
+- The Power Apps model-driven app is accessed via `<POWER_APPS_BASE_URL>` (or tenant-branded URL) over the public internet.
 - Authentication is enforced by **Microsoft Entra ID** (formerly Azure AD). All users must authenticate with their VOA/HMRC Entra identity before any data is accessible.
 - The backend API is exposed via **Azure API Management**. APIM enforces authorisation before forwarding requests to the backend. Requests arrive at APIM via plugin outbound calls (not directly from the browser).
 - No unauthenticated public endpoints exist. There are no IP allowlist restrictions at the Power Apps layer — reliance is placed entirely on Entra authentication and Dataverse security.

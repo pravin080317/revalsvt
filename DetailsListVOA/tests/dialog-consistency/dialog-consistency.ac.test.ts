@@ -68,8 +68,11 @@ describe('Dialog Consistency – all 5 actions have a confirmation dialog', () =
     });
 
     test('AC-D6: Create Task inline success notification auto-dismisses after 3 seconds', () => {
-      expect(taskSectionSource).toContain('createTaskMessage.type !== MessageBarType.success');
-      expect(taskSectionSource).toContain('setTimeout(() => setCreateTaskMessage(undefined), 3000)');
+      expect(taskSectionSource).toContain('const useDismissibleActionMessage = (): {');
+      expect(taskSectionSource).toContain('if (!message || message.type !== MessageBarType.success) return undefined;');
+      expect(taskSectionSource).toContain('setDismissed(true);');
+      expect(taskSectionSource).toContain('setMessage(undefined);');
+      expect(taskSectionSource).toContain('}, 3000);');
     });
 
     test('AC-D7: Create Task cancel handler is a no-op while API is in flight', () => {
@@ -80,10 +83,9 @@ describe('Dialog Consistency – all 5 actions have a confirmation dialog', () =
 
     test('AC-D8: Create Task closes dialog on success, shows MessageBar in-place (no navigation)', () => {
       // After success the dialog is closed and a local MessageBar is shown
-      expect(taskSectionSource).toContain('setShowCreateTaskConfirmation(false);');
-      expect(taskSectionSource).toContain(
-        "setCreateTaskMessage({ text: 'Manual SVT task created and assigned to you.'",
-      );
+      expect(taskSectionSource).toContain('await runTaskAction({');
+      expect(taskSectionSource).toContain('setShowConfirmation: setShowCreateTaskConfirmation,');
+      expect(taskSectionSource).toContain("successMessage: 'Manual SVT task created and assigned to you.',");
       // Runtime controller refreshes by re-fetching the sale record
       expect(runtimeSource).toContain('await this.onTaskClick(this.selectedTaskId, normalizedSaleId);');
     });
@@ -116,8 +118,11 @@ describe('Dialog Consistency – all 5 actions have a confirmation dialog', () =
     });
 
     test('AC-D13: Modify Task inline success notification auto-dismisses after 3 seconds', () => {
-      expect(taskSectionSource).toContain('modifyTaskMessage.type !== MessageBarType.success');
-      expect(taskSectionSource).toContain('setTimeout(() => setModifyTaskMessage(undefined), 3000)');
+      expect(taskSectionSource).toContain('const useDismissibleActionMessage = (): {');
+      expect(taskSectionSource).toContain('if (!message || message.type !== MessageBarType.success) return undefined;');
+      expect(taskSectionSource).toContain('setDismissed(true);');
+      expect(taskSectionSource).toContain('setMessage(undefined);');
+      expect(taskSectionSource).toContain('}, 3000);');
     });
 
     test('AC-D14: Modify Task stay on details view and refreshes sale record (no navigation to grid)', () => {
@@ -230,8 +235,8 @@ describe('Dialog Consistency – all 5 actions have a confirmation dialog', () =
 
     test('AC-D26: Create Task and Modify Task show inline notification (stay on details), not grid notification', () => {
       // Both show a MessageBar in-place; no submitSuccessNotification set in runtime controller
-      expect(taskSectionSource).toContain('{createTaskMessage && (');
-      expect(taskSectionSource).toContain('{modifyTaskMessage && (');
+      expect(taskSectionSource).toContain('{showCreateTaskMessage && createTaskFeedback.message && (');
+      expect(taskSectionSource).toContain('{showModifyTaskMessage && modifyTaskFeedback.message && (');
     });
 
     test('AC-D27: Submit dialogs own their success messages and delayed return flow', () => {

@@ -113,59 +113,82 @@ export const serializeColumnFiltersForStorage = (
   return out;
 };
 
+const restoreStoredColumnFilterValue = (
+  tableKey: string,
+  normalizedKey: string,
+  storedValues: string[],
+): ColumnFilterValue | undefined => {
+  const cfg = getColumnFilterConfigFor(tableKey, normalizedKey);
+
+  if (cfg?.control === 'multiSelect') {
+    if (isSummaryFlagKey(normalizedKey) && storedValues.length === 1) {
+      const restoredSummaryFlag = restoreSummaryFlagFilter(storedValues[0]);
+      if (restoredSummaryFlag) {
+        return restoredSummaryFlag;
+      }
+    }
+    return storedValues.length > 0 ? storedValues : undefined;
+  }
+
+  if (cfg?.control === 'numeric') {
+    return storedValues[0] ? restoreNumericFilter(storedValues[0]) : undefined;
+  }
+
+  if (cfg?.control === 'dateRange') {
+    return storedValues[0] ? restoreDateRangeFilter(storedValues[0]) : undefined;
+  }
+
+  if (storedValues.length === 0) {
+    return undefined;
+  }
+
+  if (
+    cfg?.control === 'singleSelect'
+    || cfg?.control === 'textEq'
+    || cfg?.control === 'textContains'
+    || cfg?.control === 'textPrefix'
+  ) {
+    return storedValues[0];
+  }
+
+  return isLookupFieldFor(tableKey, normalizedKey) ? storedValues : storedValues[0];
+};
+
+const parsePersistedColumnFilters = (
+  raw: string | PersistedColumnFilters | null | undefined,
+): Record<string, unknown> | undefined => {
+  if (!raw) return undefined;
+
+  const parsedStore = typeof raw === 'string' ? parseStoredJson(raw) : raw;
+  if (!parsedStore || typeof parsedStore !== 'object') return undefined;
+
+  return parsedStore as Record<string, unknown>;
+};
+
+const restoreStoredColumnFilterEntry = (
+  tableKey: string,
+  key: string,
+  value: unknown,
+): { normalizedKey: string; restored: ColumnFilterValue } | undefined => {
+  const normalizedKey = key.replace(/[^a-z0-9]/gi, '').toLowerCase();
+  const storedValues = normalizeStoredStrings(value);
+  const restored = restoreStoredColumnFilterValue(tableKey, normalizedKey, storedValues);
+  if (restored === undefined) return undefined;
+  return { normalizedKey, restored };
+};
+
 export const deserializeColumnFiltersFromStorage = (
   tableKey: string,
   raw: string | PersistedColumnFilters | null | undefined,
 ): Record<string, ColumnFilterValue> => {
-  if (!raw) return {};
-
-  let parsedStore: unknown = raw;
-  if (typeof raw === 'string') {
-    parsedStore = parseStoredJson(raw);
-  }
-  if (!parsedStore || typeof parsedStore !== 'object') return {};
+  const parsedStore = parsePersistedColumnFilters(raw);
+  if (!parsedStore) return {};
 
   const out: Record<string, ColumnFilterValue> = {};
-  Object.entries(parsedStore as Record<string, unknown>).forEach(([key, value]) => {
-    const normalizedKey = key.replace(/[^a-z0-9]/gi, '').toLowerCase();
-    const storedValues = normalizeStoredStrings(value);
-    const cfg = getColumnFilterConfigFor(tableKey, normalizedKey);
-
-    if (cfg?.control === 'multiSelect') {
-      if (isSummaryFlagKey(normalizedKey) && storedValues.length === 1) {
-        const restoredSummaryFlag = restoreSummaryFlagFilter(storedValues[0]);
-        if (restoredSummaryFlag) {
-          out[normalizedKey] = restoredSummaryFlag;
-          return;
-        }
-      }
-      if (storedValues.length > 0) out[normalizedKey] = storedValues;
-      return;
-    }
-
-    if (cfg?.control === 'numeric') {
-      const restored = storedValues[0] ? restoreNumericFilter(storedValues[0]) : undefined;
-      if (restored) out[normalizedKey] = restored;
-      return;
-    }
-
-    if (cfg?.control === 'dateRange') {
-      const restored = storedValues[0] ? restoreDateRangeFilter(storedValues[0]) : undefined;
-      if (restored) out[normalizedKey] = restored;
-      return;
-    }
-
-    if (storedValues.length === 0) return;
-
-    if (cfg?.control === 'singleSelect'
-      || cfg?.control === 'textEq'
-      || cfg?.control === 'textContains'
-      || cfg?.control === 'textPrefix') {
-      out[normalizedKey] = storedValues[0];
-      return;
-    }
-
-    out[normalizedKey] = isLookupFieldFor(tableKey, normalizedKey) ? storedValues : storedValues[0];
+  Object.entries(parsedStore).forEach(([key, value]) => {
+    const entry = restoreStoredColumnFilterEntry(tableKey, key, value);
+    if (!entry) return;
+    out[entry.normalizedKey] = entry.restored;
   });
 
   return out;

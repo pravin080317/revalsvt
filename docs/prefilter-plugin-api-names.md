@@ -36,7 +36,7 @@ URL examples (Manager):
 
 Custom API (function):
 ```text
-GET https://{org}.crm.dynamics.com/api/data/v9.2/{customApiName}(pageNumber='1',pageSize='50',sortField='saleId',sortDirection='asc',source='MA',searchBy='BA',preFilter='Cardiff',taskStatus='Assigned QC Failed,Assigned')
+GET <DATAVERSE_BASE_URL>/api/data/v9.2/{customApiName}(pageNumber='1',pageSize='50',sortField='saleId',sortDirection='asc',source='MA',searchBy='BA',preFilter='Cardiff',taskStatus='Assigned QC Failed,Assigned')
 ```
 APIM:
 ```text
@@ -66,7 +66,7 @@ URL examples (Caseworker View):
 
 Custom API (function):
 ```text
-GET https://{org}.crm.dynamics.com/api/data/v9.2/{customApiName}(pageNumber='1',pageSize='50',sortField='saleId',sortDirection='asc',source='CWV',RequestedBy='00000000-0000-0000-0000-000000000000',taskStatus='Assigned QC Failed,Assigned')
+GET <DATAVERSE_BASE_URL>/api/data/v9.2/{customApiName}(pageNumber='1',pageSize='50',sortField='saleId',sortDirection='asc',source='CWV',RequestedBy='00000000-0000-0000-0000-000000000000',taskStatus='Assigned QC Failed,Assigned')
 ```
 APIM:
 ```text
@@ -98,7 +98,7 @@ URL examples (QC Assignment):
 
 Custom API (function):
 ```text
-GET https://{org}.crm.dynamics.com/api/data/v9.2/{customApiName}(pageNumber='1',pageSize='50',sortField='saleId',sortDirection='asc',source='QCA',searchBy='QC',preFilter='11111111-1111-1111-1111-111111111111',taskStatus='Assigned QC Failed')
+GET <DATAVERSE_BASE_URL>/api/data/v9.2/{customApiName}(pageNumber='1',pageSize='50',sortField='saleId',sortDirection='asc',source='QCA',searchBy='QC',preFilter='11111111-1111-1111-1111-111111111111',taskStatus='Assigned QC Failed')
 ```
 APIM:
 ```text
@@ -125,7 +125,7 @@ URL examples (QC View):
 
 Custom API (function):
 ```text
-GET https://{org}.crm.dynamics.com/api/data/v9.2/{customApiName}(pageNumber='1',pageSize='50',sortField='saleId',sortDirection='asc',source='QCV',RequestedBy='22222222-2222-2222-2222-222222222222',taskStatus='Reassigned To QC,Assigned To QC')
+GET <DATAVERSE_BASE_URL>/api/data/v9.2/{customApiName}(pageNumber='1',pageSize='50',sortField='saleId',sortDirection='asc',source='QCV',RequestedBy='22222222-2222-2222-2222-222222222222',taskStatus='Reassigned To QC,Assigned To QC')
 ```
 APIM:
 ```text

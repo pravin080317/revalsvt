@@ -97,6 +97,48 @@ export const isValidUkPostcode = (value: string, allowPartial = false): boolean 
   return UK_POSTCODE_FULL_REGEX.test(normalized);
 };
 
+const sanitizeNumericFilter = (value?: NumericFilter): NumericFilter | undefined => {
+  if (!value) return undefined;
+
+  const mode = value.mode ?? '>=';
+  const min = value.min !== undefined && !Number.isNaN(value.min) ? value.min : undefined;
+  const max = value.max !== undefined && !Number.isNaN(value.max) ? value.max : undefined;
+
+  if (mode === 'between' && min === undefined && max === undefined) return undefined;
+  if (mode === '>=' && min === undefined) return undefined;
+  if (mode === '<=' && max === undefined) return undefined;
+
+  return { mode, min, max };
+};
+
+const sanitizeStringArray = (values?: string[]): string[] | undefined => {
+  if (!values || values.length === 0) return undefined;
+  const trimmed = values.map((v) => v.trim()).filter((v) => v.length > 0);
+  return trimmed.length > 0 ? trimmed : undefined;
+};
+
+const sanitizeSummaryFlagValue = (
+  summaryFlag: GridFilterState['summaryFlag'],
+): GridFilterState['summaryFlag'] | undefined => {
+  if (!summaryFlag) {
+    return undefined;
+  }
+
+  if (typeof summaryFlag === 'object' && !Array.isArray(summaryFlag)) {
+    if (Array.isArray(summaryFlag.values) && summaryFlag.values.length > 0) {
+      return summaryFlag;
+    }
+    return undefined;
+  }
+
+  if (typeof summaryFlag === 'string') {
+    const trimmed = summaryFlag.trim();
+    return trimmed.length >= 3 ? trimmed : undefined;
+  }
+
+  return undefined;
+};
+
 export const sanitizeFilters = (filters: GridFilterState): GridFilterState => {
   const sanitized: GridFilterState = {
     searchBy: filters.searchBy,
@@ -176,67 +218,35 @@ export const sanitizeFilters = (filters: GridFilterState): GridFilterState => {
   const transactionDate = sanitizeDateRange(filters.transactionDate);
   if (transactionDate) sanitized.transactionDate = transactionDate;
 
-  const sanitizeNumeric = (value?: NumericFilter): NumericFilter | undefined => {
-    if (!value) return undefined;
-    const mode = value.mode ?? '>=';
-    const min = value.min !== undefined && !Number.isNaN(value.min) ? value.min : undefined;
-    const max = value.max !== undefined && !Number.isNaN(value.max) ? value.max : undefined;
-    if (mode === 'between') {
-      if (min === undefined && max === undefined) return undefined;
-    } else if (mode === '>=') {
-      if (min === undefined) return undefined;
-    } else if (mode === '<=') {
-      if (max === undefined) return undefined;
-    }
-    return { mode, min, max };
-  };
-
-  const salePrice = sanitizeNumeric(filters.salePrice);
+  const salePrice = sanitizeNumericFilter(filters.salePrice);
   if (salePrice) sanitized.salePrice = salePrice;
 
-  const ratio = sanitizeNumeric(filters.ratio);
+  const ratio = sanitizeNumericFilter(filters.ratio);
   if (ratio) sanitized.ratio = ratio;
 
-  const outlierRatio = sanitizeNumeric(filters.outlierRatio);
+  const outlierRatio = sanitizeNumericFilter(filters.outlierRatio);
   if (outlierRatio) sanitized.outlierRatio = outlierRatio;
 
-  const sanitizeMulti = (values?: string[]): string[] | undefined => {
-    if (!values || values.length === 0) return undefined;
-    const trimmed = values.map((v) => v.trim()).filter((v) => v.length > 0);
-    return trimmed.length > 0 ? trimmed : undefined;
-  };
-
-  const dwellingType = sanitizeMulti(filters.dwellingType);
+  const dwellingType = sanitizeStringArray(filters.dwellingType);
   if (dwellingType) sanitized.dwellingType = dwellingType;
 
   if (filters.flaggedForReview) sanitized.flaggedForReview = filters.flaggedForReview;
 
-  const reviewFlags = sanitizeMulti(filters.reviewFlags);
+  const reviewFlags = sanitizeStringArray(filters.reviewFlags);
   if (reviewFlags) sanitized.reviewFlags = reviewFlags;
 
-  const outlierKeySale = sanitizeMulti(filters.outlierKeySale);
+  const outlierKeySale = sanitizeStringArray(filters.outlierKeySale);
   if (outlierKeySale) sanitized.outlierKeySale = outlierKeySale;
 
-  const overallFlag = sanitizeMulti(filters.overallFlag);
+  const overallFlag = sanitizeStringArray(filters.overallFlag);
   if (overallFlag) sanitized.overallFlag = overallFlag;
 
-  if (filters.summaryFlag) {
-    if (typeof filters.summaryFlag === 'object' && !Array.isArray(filters.summaryFlag)) {
-      // New structure with operator and values
-      const summaryFlagObj = filters.summaryFlag as { operator: 'contains' | 'notContains' | 'eq'; values: string[] };
-      if (Array.isArray(summaryFlagObj.values) && summaryFlagObj.values.length > 0) {
-        sanitized.summaryFlag = summaryFlagObj;
-      }
-    } else if (typeof filters.summaryFlag === 'string') {
-      // Legacy string format
-      const trimmed = filters.summaryFlag.trim();
-      if (trimmed.length >= 3) {
-        sanitized.summaryFlag = trimmed;
-      }
-    }
+  const summaryFlag = sanitizeSummaryFlagValue(filters.summaryFlag);
+  if (summaryFlag) {
+    sanitized.summaryFlag = summaryFlag;
   }
 
-  const taskStatus = sanitizeMulti(filters.taskStatus);
+  const taskStatus = sanitizeStringArray(filters.taskStatus);
   if (taskStatus) sanitized.taskStatus = taskStatus;
 
   const dateRangeFields: Array<[DateRangeFilterKey, DateRangeFilter | undefined]> = [

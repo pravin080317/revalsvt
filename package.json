@@ -12,14 +12,14 @@
     "start:watch": "pcf-scripts start watch",
     "refreshTypes": "pcf-scripts refreshTypes",
     "test": "jest",
-    "test:ci": "jest --ci --coverage --coverageReporters=cobertura --coverageReporters=lcov --coverageReporters=text-summary --reporters=default --reporters=jest-junit",
+    "test:ci": "jest --ci --coverage --coverageReporters=cobertura --coverageReporters=lcov --coverageReporters=text-summary --reporters=default --reporters=jest-junit --testResultsProcessor=jest-sonar-reporter",
     "perf:ui": "k6 run scripts/perf-ui-200.js",
     "perf:ui:200": "k6 run scripts/perf-ui-200.js -e TARGET_URL=http://localhost:8182"
   },
   "dependencies": {
-    "react": "16.14.0",
-    "@fluentui/react-components": "9.46.2",
     "@fluentui/react": "8.123.4",
+    "@fluentui/react-components": "9.46.2",
+    "react": "16.14.0",
     "react-dom": "16.14.0"
   },
   "devDependencies": {
@@ -33,11 +33,19 @@
     "eslint-plugin-react": "^7.37.2",
     "globals": "^15.15.0",
     "jest": "^29.7.0",
+    "jest-junit": "^17.0.0",
+    "jest-sonar-reporter": "^2.0.0",
     "pcf-scripts": "^1",
     "pcf-start": "^1",
     "react": "^16.14.0",
     "ts-jest": "^29.1.2",
     "typescript": "^5.8.3",
     "typescript-eslint": "^8.31.0"
+  },
+  "jestSonar": {
+    "reportPath": "coverage",
+    "reportFile": "test-report.xml",
+    "indent": 4,
+    "sonar56x": false
   }
 }

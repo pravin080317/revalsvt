@@ -1,4 +1,4 @@
-import { filterItemsByColumnFilters } from '../utils/GridColumnFilters';
+import { filterItemsByColumnFilters, getActiveColumnFilters } from '../utils/GridColumnFilters';
 
 const getFilterableText = (raw: unknown): string => {
   if (Array.isArray(raw)) {
@@ -266,3 +266,187 @@ describe('grid column filter engine', () => {
     });
   });
 });
+
+  // ──────────────────────────────────────
+  // getActiveColumnFilters
+  // ──────────────────────────────────────
+  describe('getActiveColumnFilters', () => {
+    test('returns empty array for empty filter object', () => {
+      expect(getActiveColumnFilters({})).toEqual([]);
+    });
+
+    test('excludes blank string filters', () => {
+      expect(getActiveColumnFilters({ taskid: '' })).toEqual([]);
+      expect(getActiveColumnFilters({ taskid: '  ' })).toEqual([]);
+    });
+
+    test('includes non-blank string filters', () => {
+      const result = getActiveColumnFilters({ taskid: 'S-100', saleid: '' });
+      expect(result).toHaveLength(1);
+      expect(result[0][0]).toBe('taskid');
+    });
+
+    test('includes non-empty array filters', () => {
+      const result = getActiveColumnFilters({ summaryflags: ['flag-a'] });
+      expect(result).toHaveLength(1);
+      expect(result[0][0]).toBe('summaryflags');
+    });
+
+    test('excludes empty array filters', () => {
+      expect(getActiveColumnFilters({ summaryflags: [] })).toEqual([]);
+    });
+
+    test('includes numeric >= filter with min set', () => {
+      const result = getActiveColumnFilters({ saleprice: { mode: '>=', min: 200000 } });
+      expect(result).toHaveLength(1);
+      expect(result[0][0]).toBe('saleprice');
+    });
+
+    test('includes numeric <= filter with max set', () => {
+      const result = getActiveColumnFilters({ saleprice: { mode: '<=', max: 500000 } });
+      expect(result).toHaveLength(1);
+    });
+
+    test('includes numeric between filter with any bound set', () => {
+      const result = getActiveColumnFilters({ saleprice: { mode: 'between', min: 100000 } });
+      expect(result).toHaveLength(1);
+    });
+
+    test('excludes numeric >= filter with no min', () => {
+      expect(getActiveColumnFilters({ saleprice: { mode: '>=' } as { mode: '>=' } })).toEqual([]);
+    });
+
+    test('includes DateRange filter with from set', () => {
+      const result = getActiveColumnFilters({ transactiondate: { from: '2024-01-01' } });
+      expect(result).toHaveLength(1);
+    });
+  });
+
+  // ──────────────────────────────────────
+  // numeric column filter (saleprice)
+  // ──────────────────────────────────────
+  describe('numeric column filter', () => {
+    const getFilterableText = (raw: unknown): string => (typeof raw === 'number' ? String(raw) : String(raw ?? ''));
+    const getRaw = (item: Record<string, unknown>, field: string) => item[field];
+
+    const items = [
+      { saleprice: 150000 },
+      { saleprice: 250000 },
+      { saleprice: 350000 },
+      { saleprice: 500000 },
+    ];
+
+    test('mode >= includes items at or above min', () => {
+      const result = filterItemsByColumnFilters(items, { saleprice: { mode: '>=', min: 250000 } }, 'sales', getFilterableText, getRaw);
+      expect(result).toHaveLength(3);
+      expect(result.map((i) => i.saleprice)).toEqual([250000, 350000, 500000]);
+    });
+
+    test('mode <= includes items at or below max', () => {
+      const result = filterItemsByColumnFilters(items, { saleprice: { mode: '<=', max: 350000 } }, 'sales', getFilterableText, getRaw);
+      expect(result).toHaveLength(3);
+      expect(result.map((i) => i.saleprice)).toEqual([150000, 250000, 350000]);
+    });
+
+    test('mode between includes items within min-max inclusive', () => {
+      const result = filterItemsByColumnFilters(
+        items,
+        { saleprice: { mode: 'between', min: 200000, max: 400000 } },
+        'sales',
+        getFilterableText,
+        getRaw,
+      );
+      expect(result).toHaveLength(2);
+      expect(result.map((i) => i.saleprice)).toEqual([250000, 350000]);
+    });
+
+    test('returns all items when between has no bounds', () => {
+      const result = filterItemsByColumnFilters(
+        items,
+        { saleprice: { mode: 'between' } as { mode: 'between' } },
+        'sales',
+        getFilterableText,
+        getRaw,
+      );
+      expect(result).toHaveLength(4);
+    });
+
+    test('excludes non-numeric values', () => {
+      const mixedItems = [{ saleprice: 'N/A' }, { saleprice: 300000 }];
+      const result = filterItemsByColumnFilters(mixedItems, { saleprice: { mode: '>=', min: 100000 } }, 'sales', getFilterableText, getRaw);
+      expect(result).toHaveLength(1);
+      expect((result[0] as { saleprice: number }).saleprice).toBe(300000);
+    });
+  });
+
+  // ──────────────────────────────────────
+  // fallback filter (no column config)
+  // ──────────────────────────────────────
+  describe('fallback filter (unconfigured field)', () => {
+    const getFilterableText = (raw: unknown): string => (typeof raw === 'string' ? raw : typeof raw === 'number' ? String(raw) : '');
+    const getRaw = (item: Record<string, unknown>, field: string) => item[field];
+
+    test('string fallback: contains match on text value', () => {
+      const items = [{ customfield: 'hello world' }, { customfield: 'something else' }];
+      const result = filterItemsByColumnFilters(items, { customfield: 'hello' }, 'sales', getFilterableText, getRaw);
+      expect(result).toHaveLength(1);
+      expect((result[0] as { customfield: string }).customfield).toBe('hello world');
+    });
+
+    test('string fallback: returns all when filter is blank', () => {
+      const items = [{ customfield: 'abc' }, { customfield: 'def' }];
+      const result = filterItemsByColumnFilters(items, { customfield: '' }, 'sales', getFilterableText, getRaw);
+      expect(result).toHaveLength(2);
+    });
+
+    test('array filterValue: matchesArrayFilter on array raw', () => {
+      const items = [
+        { tags: ['alpha', 'beta'] },
+        { tags: ['gamma', 'delta'] },
+      ];
+      const result = filterItemsByColumnFilters(items, { tags: ['alpha'] }, 'sales', getFilterableText, getRaw);
+      expect(result).toHaveLength(1);
+      expect((result[0] as { tags: string[] }).tags).toEqual(['alpha', 'beta']);
+    });
+
+    test('array filterValue: falls back to exact text match on string raw', () => {
+      const items = [{ status: 'Active' }, { status: 'Inactive' }];
+      const result = filterItemsByColumnFilters(items, { status: ['active'] }, 'sales', getFilterableText, getRaw);
+      expect(result).toHaveLength(1);
+      expect((result[0] as { status: string }).status).toBe('Active');
+    });
+
+    test('string fallback: case-insensitive match on array raw items', () => {
+      const items = [
+        { codes: ['ALPHA', 'BETA'] },
+        { codes: ['GAMMA'] },
+      ];
+      const arrText = (raw: unknown) => Array.isArray(raw) ? (raw as string[]).join(', ') : '';
+      const result = filterItemsByColumnFilters(items, { codes: 'alpha' }, 'sales', arrText, getRaw);
+      expect(result).toHaveLength(1);
+    });
+  });
+
+  // ──────────────────────────────────────
+  // textPrefix filter
+  // ──────────────────────────────────────
+  describe('textPrefix column filter (uprn field)', () => {
+    const getFilterableText = (raw: unknown): string => (typeof raw === 'string' ? raw : '');
+    const getRaw = (item: Record<string, unknown>, field: string) => item[field];
+
+    test('matches items whose uprn starts with the prefix', () => {
+      const items = [
+        { uprn: '100023456789' },
+        { uprn: '200098765432' },
+        { uprn: '100011112222' },
+      ];
+      const result = filterItemsByColumnFilters(items, { uprn: '1000' }, 'sales', getFilterableText, getRaw);
+      expect(result).toHaveLength(2);
+    });
+
+    test('returns all items when filter is blank', () => {
+      const items = [{ uprn: '100023456789' }, { uprn: '200098765432' }];
+      const result = filterItemsByColumnFilters(items, { uprn: '' }, 'sales', getFilterableText, getRaw);
+      expect(result).toHaveLength(2);
+    });
+  });

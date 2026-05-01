@@ -20,6 +20,11 @@ describe('tag semantic utils', () => {
       expect(meta?.spokenText).toBe('Flagged for review: No');
       expect(meta?.variant).toBe('clear');
     });
+
+    test('returns undefined for blank and unknown values', () => {
+      expect(getFlaggedForReviewTagMeta('')).toBeUndefined();
+      expect(getFlaggedForReviewTagMeta('maybe')).toBeUndefined();
+    });
   });
 
   describe('task status chips', () => {
@@ -40,6 +45,12 @@ describe('tag semantic utils', () => {
       const meta = getTaskStatusTagMeta('Assigned QC Failed');
       expect(meta?.variant).toBe('danger');
     });
+
+    test('treats new work as info and unknown labels as neutral', () => {
+      expect(getTaskStatusTagMeta('New')?.variant).toBe('info');
+      expect(getTaskStatusTagMeta('Something Else')?.variant).toBe('neutral');
+      expect(getTaskStatusTagMeta('   ')).toBeUndefined();
+    });
   });
 
   describe('summary flag chips', () => {
@@ -50,6 +61,8 @@ describe('tag semantic utils', () => {
 
     test('abbreviates single-word flags to three letters', () => {
       expect(abbreviateSummaryFlagLabel('Standard')).toBe('STA');
+      expect(abbreviateSummaryFlagLabel('Flag123')).toBe('FLA123');
+      expect(abbreviateSummaryFlagLabel('')).toBe('');
     });
 
     test('treats standard as a success chip and keeps the full tooltip text', () => {
@@ -84,6 +97,11 @@ describe('tag semantic utils', () => {
       expect(first?.titleText).toBe('Boundary anomaly review');
       expect(first?.spokenText).toBe('Summary flag: Boundary anomaly review');
       expect(first?.colors).toEqual(second?.colors);
+    });
+
+    test('returns undefined for blank summary flags and uses custom fallback variant for unknown text', () => {
+      expect(getSummaryFlagTagMeta('')).toBeUndefined();
+      expect(getSummaryFlagTagMeta('Boundary zebra matrix')?.variant).toBe('custom');
     });
   });
 });

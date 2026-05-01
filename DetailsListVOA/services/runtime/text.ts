@@ -10,6 +10,29 @@ export const normalizeTextValue = (value: unknown): string => {
   return '';
 };
 
+export const stripHtmlTags = (value: string): string => {
+  let output = '';
+  let inTag = false;
+
+  for (let i = 0; i < value.length; i++) {
+    const ch = value.charCodeAt(i);
+    if (ch === 60) {
+      inTag = true;
+      output += ' ';
+      continue;
+    }
+    if (ch === 62 && inTag) {
+      inTag = false;
+      continue;
+    }
+    if (!inTag) {
+      output += value[i];
+    }
+  }
+
+  return output;
+};
+
 export const hasDisplayText = (value: unknown): boolean => {
   const normalized = normalizeTextValue(value);
   return normalized !== '' && normalized !== '-';

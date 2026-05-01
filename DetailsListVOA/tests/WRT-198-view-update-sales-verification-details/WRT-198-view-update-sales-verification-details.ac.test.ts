@@ -35,7 +35,7 @@ describe('WRT-198 View and Update Sales Verification Details AC', () => {
 
   test('AC3: Why not useful remains visible and is enabled only when useful = No, with required validation', () => {
     expect(sectionSource).toContain("const isNotUseful = isSaleUsefulKey === 'no';");
-    expect(sectionSource).toContain('placeholder="Select a value"');
+    expect(sectionSource).toContain('placeholder="Select why the sale is not useful"');
     expect(sectionSource).toContain('disabled={editingDisabled || !isNotUseful}');
     expect(rulesSource).toContain("whyNotUseful: 'Enter why the sale is not useful'");
     expect(sectionSource).toContain("renderRequiredLabel('Why is the sale not useful?', isNotUseful)");

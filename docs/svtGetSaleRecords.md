@@ -1,83 +1,125 @@
-# voa_GetAllSalesRecord Custom API (SVT List)
+# voa_GetAllSalesRecord Custom API
 
 ## Purpose
-`voa_GetAllSalesRecord` is an **unbound** Dataverse Custom API used by the SVT List PCF control to load grid rows. The control assembles the current search filters, column header filters, sorting, and paging into a request, executes the API through `Xrm.WebApi.execute`, then normalizes the response into the grid’s `TaskSearchResponse` format for rendering and filter synchronization.【F:DetailsListVOA/services/CustomApi.ts†L11-L73】【F:DetailsListVOA/services/GridDataController.ts†L62-L123】【F:DetailsListVOA/services/DataService.ts†L73-L188】
+`voa_GetAllSalesRecord` is the grid data API used by the SVT PCF to load rows for all supported screens.
+It accepts paging, sorting, top-of-grid filters, optional prefilters, and column header filters, then returns a JSON payload in the `Result` output parameter.
 
-The API name is configured in the control config and defaults to `voa_GetAllSalesRecord` for this repo build (overridable via PCF input parameters).【F:DetailsListVOA/config/ControlConfig.ts†L1-L8】【F:DetailsListVOA/services/GridDataController.ts†L13-L45】
+## Custom API contract
 
----
+- Unique name: `voa_GetAllSalesRecord`
+- Is Function: `Yes`
 
-## Method used to call the API (detailed flow)
-The control calls the API using **`Xrm.WebApi.execute` with an unbound request**. That request is built by `buildUnboundCustomApiRequest` and passed through `executeUnboundCustomApi`.
+### Request parameters
+All request parameters are sent as strings.
 
-### Detailed method flow
-1. **Collect UI state**
-   - The grid host collects search filters, column filters, sorting, and paging from the UI.
-   - Prefilters from PCF input parameters (if configured) are merged into the same parameter set.
-
-2. **Build request parameters**
-   - `loadGridData` generates the base parameter map using `buildApiParamsFor` (table config).【F:DetailsListVOA/services/GridDataController.ts†L62-L123】【F:DetailsListVOA/config/TableConfigs.ts†L78-L212】
-   - Each parameter is stringified, because unbound custom API parameters are sent as strings in the metadata built by `buildUnboundCustomApiRequest`.【F:DetailsListVOA/services/CustomApi.ts†L23-L51】
-
-3. **Create the unbound API request**
-   - `executeUnboundCustomApi` calls `buildUnboundCustomApiRequest` to create the request object:
-     - `getMetadata()` specifies **`boundParameter: null`** (unbound), **`parameterTypes`**, and **`operationName`** (the custom API name).
-     - The request object includes the parameter map built in step 2.
-
-4. **Execute via `Xrm.WebApi.execute`**
-   - The request object is passed to `Xrm.WebApi.execute` and the response is read as JSON.
-   - The response is then normalized in `DataService` to the internal `TaskSearchResponse` shape.
-
-Key method chain:
-- `GridDataController.loadGridData` → `GridDataController.execCustomApi`
-- `CustomApi.executeUnboundCustomApi` → `CustomApi.buildUnboundCustomApiRequest` → `Xrm.WebApi.execute`
-
-【F:DetailsListVOA/services/GridDataController.ts†L62-L123】【F:DetailsListVOA/services/CustomApi.ts†L23-L73】
-
----
-
-## How parameters are passed
-All parameters are sent as **string values** in the unbound custom API request. The control builds the parameter object using table config mappings and current UI filter state.
-
-### Pagination and sorting
-| Parameter | How it’s set | Notes |
+| Parameter group | Parameters | Notes |
 | --- | --- | --- |
-| `pageNumber` | `page + 1` | 1-based page index. 【F:DetailsListVOA/config/TableConfigs.ts†L83-L88】 |
-| `pageSize` | grid page size | Stringified number. 【F:DetailsListVOA/config/TableConfigs.ts†L83-L88】 |
-| `sortField` | current sort column | Optional. 【F:DetailsListVOA/services/GridDataController.ts†L69-L102】 |
-| `sortDirection` | `asc` / `desc` | Optional. 【F:DetailsListVOA/services/GridDataController.ts†L69-L102】 |
+| Paging | `pageNumber`, `pageSize` | 1-based paging. |
+| Sorting | `sortField`, `sortDirection` | `asc` or `desc`. |
+| Screen routing | `source` | One of `MA`, `CWV`, `QCA`, `QCV`, `SRS`. |
+| Prefilters | `searchBy`, `preFilter`, `RequestedBy`, `taskStatus`, `fromDate`, `toDate` | Screen-dependent. |
+| Search filters | `saleId`, `taskId`, `uprn`, `address`, `postcode`, `billingAuthority`, `billingAuthorityReference`, `transactionDate`, `salesPrice`, `salesPriceOperator`, `ratio`, `dwellingType`, `flaggedForReview`, `reviewFlag`, `outlierKeySale`, `outlierRatio`, `overallFlag`, `summaryFlag`, `assignedTo`, `assignedFromDate`, `assignedToDate`, `qcAssignedTo`, `qcAssignedFromDate`, `qcAssignedToDate`, `qcCompleteFromDate`, `qcCompleteToDate` | Used by grid search flows. |
+| Header filters | `SearchQuery` | Repeated `columnFilter=...` tokens joined by `&`. |
 
-### Top-of-grid filters
-The main search filters are sanitized and mapped into API parameters before being passed to the API (trimmed, validated, or normalized).【F:DetailsListVOA/Filters.ts†L70-L231】
+### Response parameters
 
-Examples of mappings:
-- `saleId`, `taskId`, `uprn`, `address`, `postcode`, `billingAuthority`, etc.
-- Range filters like `salesPrice`, `ratio`, `outlierRatio` emit a value plus operator (`GE`/`LE`) where applicable.
+| Parameter | Type | Notes |
+| --- | --- | --- |
+| `Result` | String | JSON string containing the APIM/grid response payload. |
 
-The actual parameter names are defined in `buildSalesParams` and returned by `buildApiParamsFor`.【F:DetailsListVOA/config/TableConfigs.ts†L78-L212】
+## Dataverse request shape
 
-### Prefilter parameters from PCF inputs
-If the component is configured with prefilters (input parameters on the PCF control), those values are normalized and passed through:
-- `billingAuthorities` → `billingAuthority`
-- `caseworkers` → `assignedTo`
-- `workThat` → `taskStatus`
-- `fromDate` → `assignedFromDate`
-- `toDate` → `assignedToDate`
+```text
+GET <DATAVERSE_BASE_URL>/api/data/v9.2/voa_GetAllSalesRecord(
+  pageNumber='1',
+  pageSize='50',
+  source='SRS',
+  sortField='saleId',
+  sortDirection='asc',
+  SearchQuery='columnFilter=saleId~like~S-1000001'
+)
+```
 
-Raw strings or JSON arrays are normalized to comma-separated values before being sent to the API.【F:DetailsListVOA/services/GridDataController.ts†L19-L57】
+## APIM behavior
 
-### Column header filters
-When column filters are applied in the grid header, they are sent as:
-- `columnFilters` → JSON string of `{ [columnName]: value | value[] | object }`
+The plugin translates the Dataverse request into an APIM query string.
 
-This lets the API apply precise column-level constraints beyond top-of-grid filters.【F:DetailsListVOA/services/GridDataController.ts†L69-L102】
+- `pageNumber` -> `page-number`
+- `pageSize` -> `page-size`
+- `sortField` -> `sort-field`
+- `sortDirection` -> `sort-direction`
+- `SearchQuery` -> repeated `columnFilter` query parameters
 
----
+For full screen-level examples, use `docs/prefilter-api-urls.md`.
+For column header filter and sort token examples, use `docs/column-filter-and-sorting-urls.md`.
 
-## How the response is mapped
-The control accepts two response shapes and normalizes them into `TaskSearchResponse`.
+## Response payload
 
-### Accepted response shapes
+The `Result` string normally contains one of these shapes:
+
+### Sales API response
+
+```json
+{
+  "pageInfo": {
+    "pageNumber": 1,
+    "pageSize": 50,
+    "totalRecords": 123
+  },
+  "sales": [],
+  "filters": {}
+}
+```
+
+### Normalized task-search response
+
+```json
+{
+  "items": [],
+  "totalCount": 123,
+  "page": 1,
+  "pageSize": 50,
+  "filters": {}
+}
+```
+
+## Response mapping rules
+
+- `sales` rows are normalized into the PCF task-search item model.
+- `pageInfo.totalRecords` maps to `totalCount`.
+- `filters` can be returned to seed or resync column header filter state.
+- Filter keys should align to column logical names, preferably lowercased.
+
+For filter resync to work reliably:
+
+- multi-select values should be arrays or JSON-string arrays
+- numeric/date range values should be objects or JSON-string objects
+- text filter values can be plain strings
+
+## Canvas app usage
+
+```powerfx
+Set(
+    varSalesRaw,
+    voa_GetAllSalesRecord(
+        {
+            pageNumber: "1",
+            pageSize: "25",
+            source: "SRS",
+            sortField: "saleId",
+            sortDirection: "asc"
+        }
+    )
+);
+
+Set(varSalesParsed, ParseJSON(varSalesRaw.Result));
+```
+
+## Related docs
+
+- `docs/prefilter-api-urls.md`
+- `docs/column-filter-and-sorting-urls.md`
+- `docs/svtGetViewSaleRecordById.md`
 **Option A: TaskSearchResponse (already normalized)**
 ```
 {

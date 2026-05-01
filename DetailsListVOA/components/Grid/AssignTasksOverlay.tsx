@@ -2,6 +2,7 @@ import * as React from 'react';
 import {
   DefaultButton,
   DetailsList,
+  DetailsListLayoutMode,
   FocusTrapZone,
   IColumn,
   IDetailsRowProps,
@@ -83,12 +84,33 @@ export const AssignTasksOverlay: React.FC<AssignTasksOverlayProps> = ({
   onClose,
   assignConfirmButton,
 }) => {
+  const assignListRef = React.useRef<HTMLDivElement | null>(null);
+  const [assignListScrolled, setAssignListScrolled] = React.useState(false);
+
+  const updateAssignListScrolledState = React.useCallback((): void => {
+    const container = assignListRef.current;
+    if (!container) {
+      setAssignListScrolled(false);
+      return;
+    }
+    setAssignListScrolled(container.scrollTop > 0);
+  }, []);
+
+  React.useEffect(() => {
+    updateAssignListScrolledState();
+  }, [assignListItems, updateAssignListScrolledState]);
+
   if (!isOpen) return null;
 
   return (
-    <div className="voa-assign-overlay" role="dialog" aria-modal="true" aria-labelledby="assign-screen-title">
-      <FocusTrapZone>
-        <Stack tokens={{ childrenGap: 16 }} styles={{ root: { minHeight: '100%', padding: 20 } }}>
+    <dialog className="voa-assign-overlay" open aria-labelledby="assign-screen-title">
+      <FocusTrapZone className="voa-assign-overlay-trap">
+        <Stack
+          className="voa-assign-overlay-content"
+          verticalFill
+          tokens={{ childrenGap: 16 }}
+          styles={{ root: { height: '100%', minHeight: 0, padding: 20 } }}
+        >
           <Stack horizontal verticalAlign="center" styles={{ root: { borderBottom: '1px solid #e1e1e1', paddingBottom: 12 } }}>
             <DefaultButton
               text={commonBackText}
@@ -158,19 +180,33 @@ export const AssignTasksOverlay: React.FC<AssignTasksOverlayProps> = ({
               {assignAlreadyAssignedReason}
             </Text>
           )}
-          <DetailsList
-            items={assignListItems}
-            columns={assignColumns}
-            selectionMode={SelectionMode.none}
-            isHeaderVisible
-            onRenderRow={onRenderAssignUserRow}
-            onItemInvoked={(item) => onAssignItemInvoked(item as AssignUser | undefined)}
-          />
-          <Stack horizontal horizontalAlign="end" tokens={{ childrenGap: 12 }}>
-            {assignConfirmButton}
-          </Stack>
+          <Stack.Item grow styles={{ root: { minHeight: 0, display: 'flex', flexDirection: 'column' } }}>
+            <div
+              className="voa-assign-list-container"
+              ref={assignListRef}
+              onScroll={updateAssignListScrolledState}
+            >
+              <DetailsList
+                items={assignListItems}
+                columns={assignColumns}
+                selectionMode={SelectionMode.none}
+                layoutMode={DetailsListLayoutMode.fixedColumns}
+                isHeaderVisible
+                onRenderRow={onRenderAssignUserRow}
+                onItemInvoked={(item) => onAssignItemInvoked(item as AssignUser | undefined)}
+              />
+            </div>
+            <Stack
+              horizontal
+              horizontalAlign="end"
+              tokens={{ childrenGap: 12 }}
+              className={assignListScrolled ? 'voa-assign-actions-row voa-assign-actions-row--scrolled' : 'voa-assign-actions-row'}
+            >
+              {assignConfirmButton}
+            </Stack>
+          </Stack.Item>
         </Stack>
       </FocusTrapZone>
-    </div>
+    </dialog>
   );
 };

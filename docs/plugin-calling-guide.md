@@ -7,6 +7,19 @@ This guide is the current source of truth for:
 - Dataverse plugin -> APIM/external calls
 - Which calls are active in the 5-screen PCF today
 
+Use this guide as the index for the retained API docs:
+- `docs/prefilter-api-urls.md` for screen-level URL and prefilter request shapes
+- `docs/column-filter-and-sorting-urls.md` for column filter and sort token format
+- `docs/svtGetSaleRecords.md` for the grid data contract
+- `docs/svtGetViewSaleRecordById.md` for the sale details contract
+- `docs/svtGetUserContext.md` for user context outputs
+- `docs/svtTaskAssignment.md` for assignment requests and responses
+- `docs/svtManualTaskCreation.md` for manual task creation
+- `docs/svtModifySvtTask.md` for task update requests and responses
+- `docs/svtSubmitQcRemarks.md` for QC submission requests and responses
+- `docs/svtSubmitSalesVerification.md` for sales verification submission
+- `docs/SvtGetSalesMetadata.README.md` for metadata lookup
+
 ## 1) Runtime Call Chain
 
 ```text

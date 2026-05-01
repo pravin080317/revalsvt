@@ -68,6 +68,67 @@ interface FilterState {
 // Endpoint path is case‑sensitive in some gateways; use the lowercase variant required by the API
 const API_URL = '/v1/statutoryspatialunitlabeladdressquery';
 
+const buildStatutorySpatialUnitQueryString = (state: FilterState, extra?: { street?: string; town?: string }): string => {
+  const params = new URLSearchParams();
+  const postcode = state.postcode?.trim();
+  if (postcode) params.append('postcode', postcode);
+  if (extra?.street) params.append('street', extra.street);
+  if (extra?.town) params.append('town', extra.town);
+  return params.toString();
+};
+
+const fetchStatutorySpatialUnitResponse = async (query: string): Promise<{
+  data: StatutorySpatialUnitResponse;
+  networkTimeMs: number;
+  parseTimeMs: number;
+  url: string;
+}> => {
+  const url = query ? `${API_URL}?${query}` : API_URL;
+  const requestStart = performance.now();
+  const response = await fetch(url, {
+    method: 'GET',
+    headers: DEFAULT_HEADERS,
+  });
+  const responseReceived = performance.now();
+  if (!response.ok) {
+    throw new Error(`Request failed with status ${response.status}`);
+  }
+
+  const parseStart = performance.now();
+  const data = (await response.json()) as StatutorySpatialUnitResponse;
+  const parseEnd = performance.now();
+  return {
+    data,
+    networkTimeMs: Math.round(responseReceived - requestStart),
+    parseTimeMs: Math.round(parseEnd - parseStart),
+    url,
+  };
+};
+
+const getSpatialUnitResults = (data: StatutorySpatialUnitResponse): StatutorySpatialUnitLabel[] =>
+  Array.isArray(data?.results) ? data.results : [];
+
+const toSpatialUnitErrorMessage = (error: unknown): string =>
+  error instanceof Error ? error.message : 'Unknown error calling VOA API';
+
+const resolveHeaderFilterRequest = (
+  header: Record<string, string | string[]>,
+  filters: FilterState,
+  moreResultsAvailable: boolean,
+): { query: string; request: { street?: string; town?: string } } | undefined => {
+  if (!moreResultsAvailable) return undefined;
+
+  const street = getHeaderFilterValue(header, 'street');
+  const town = getHeaderFilterValue(header, 'town');
+  if (!street && !town) return undefined;
+
+  const request = { street: street || undefined, town: town || undefined };
+  return {
+    query: buildStatutorySpatialUnitQueryString(filters, request),
+    request,
+  };
+};
+
 const DEFAULT_HEADERS = new Headers({
   ActiveDirectoryObjectId: '',
   CorrelationId: '',
@@ -86,6 +147,44 @@ const defaultFilters: FilterState = {
 const stackTokens = { childrenGap: 16 };
 const rowStackTokens = { childrenGap: 12 };
 const columnWidth = 180;
+
+const areHeaderFiltersEqual = (
+  previous: Record<string, string | string[]>,
+  current: Record<string, string | string[]>,
+): boolean => {
+  const aKeys = Object.keys(previous).sort((left, right) => left.localeCompare(right));
+  const bKeys = Object.keys(current).sort((left, right) => left.localeCompare(right));
+  if (aKeys.length !== bKeys.length) return false;
+
+  for (let i = 0; i < aKeys.length; i++) {
+    if (aKeys[i] !== bKeys[i]) return false;
+    const av = previous[aKeys[i]];
+    const bv = current[bKeys[i]];
+
+    if (Array.isArray(av) || Array.isArray(bv)) {
+      const aa = Array.isArray(av) ? av : [String(av ?? '')];
+      const bb = Array.isArray(bv) ? bv : [String(bv ?? '')];
+      if (aa.length !== bb.length) return false;
+      for (let j = 0; j < aa.length; j++) {
+        if (String(aa[j]) !== String(bb[j])) return false;
+      }
+      continue;
+    }
+
+    if (String(av ?? '') !== String(bv ?? '')) return false;
+  }
+
+  return true;
+};
+
+const getHeaderFilterValue = (header: Record<string, string | string[]>, key: string): string => {
+  const value = header[key];
+  if (Array.isArray(value)) {
+    return value.map((entry) => String(entry).trim()).filter((entry) => entry !== '').join(',');
+  }
+
+  return (value ?? '').toString().trim();
+};
 
 export const StatutorySpatialUnitBrowser: React.FC = () => {
   const context = React.useContext(PCFContext);
@@ -191,99 +290,49 @@ export const StatutorySpatialUnitBrowser: React.FC = () => {
     [],
   );
 
-  const buildQueryString = React.useCallback((state: FilterState, extra?: { street?: string; town?: string }) => {
-    const params = new URLSearchParams();
-    const pc = state.postcode?.trim();
-    if (pc) params.append('postcode', pc);
-    if (extra?.street) params.append('street', extra.street);
-    if (extra?.town) params.append('town', extra.town);
-    return params.toString();
-  }, []);
-
   const fetchResults = React.useCallback(async (extra?: { street?: string; town?: string }) => {
     setIsLoading(true);
     setError(undefined);
     setHasSearched(true);
 
     try {
-      const query = buildQueryString(filters, extra);
-      const url = query ? `${API_URL}?${query}` : API_URL;
-
-      const t0 = performance.now();
-      const response = await fetch(url, {
-        method: 'GET',
-        headers: DEFAULT_HEADERS,
-      });
-      const t1 = performance.now();
-      if (!response.ok) {
-        throw new Error(`Request failed with status ${response.status}`);
-      }
-      const t2 = performance.now();
-      const data = (await response.json()) as StatutorySpatialUnitResponse;
-      const t3 = performance.now();
-      const results = Array.isArray(data?.results) ? data.results : [];
+      const query = buildStatutorySpatialUnitQueryString(filters, extra);
+      const { data, networkTimeMs, parseTimeMs, url } = await fetchStatutorySpatialUnitResponse(query);
+      const results = getSpatialUnitResults(data);
       setItems(results);
       setMoreResultsAvailable(Boolean(data?.moreResultsAvailable));
       logPerf('[SSU Perf] API URL:', url);
-      logPerf('[SSU Perf] Network+server time (ms):', Math.round(t1 - t0));
-      logPerf('[SSU Perf] Time to first byte to JSON start (ms):', Math.round(t2 - t1));
-      logPerf('[SSU Perf] JSON parse time (ms):', Math.round(t3 - t2));
+      logPerf('[SSU Perf] Network+server time (ms):', networkTimeMs);
+      logPerf('[SSU Perf] JSON parse time (ms):', parseTimeMs);
       logPerf('[SSU Perf] Items returned:', results.length);
     } catch (err) {
-      const message = err instanceof Error ? err.message : 'Unknown error calling VOA API';
-      setError(message);
+      setError(toSpatialUnitErrorMessage(err));
       setItems([]);
       setMoreResultsAvailable(false);
     } finally {
       setIsLoading(false);
     }
-  }, [buildQueryString, filters]);
+  }, [filters]);
 
   const onHeaderFiltersApply = React.useCallback((header: Record<string, string | string[]>) => {
     // De-dupe: skip if identical to last applied
     const prev = lastHeaderFiltersRef.current;
-    const same = (() => {
-      const aKeys = Object.keys(prev).sort((left, right) => left.localeCompare(right));
-      const bKeys = Object.keys(header).sort((left, right) => left.localeCompare(right));
-      if (aKeys.length !== bKeys.length) return false;
-      for (let i = 0; i < aKeys.length; i++) {
-        if (aKeys[i] !== bKeys[i]) return false;
-        const av = prev[aKeys[i]];
-        const bv = header[bKeys[i]];
-        if (Array.isArray(av) || Array.isArray(bv)) {
-          const aa = Array.isArray(av) ? av : [String(av ?? '')];
-          const bb = Array.isArray(bv) ? bv : [String(bv ?? '')];
-          if (aa.length !== bb.length) return false;
-          for (let j = 0; j < aa.length; j++) if (String(aa[j]) !== String(bb[j])) return false;
-        } else if (String(av ?? '') !== String(bv ?? '')) {
-          return false;
-        }
-      }
-      return true;
-    })();
+    const same = areHeaderFiltersEqual(prev, header);
     if (same) return;
     lastHeaderFiltersRef.current = header;
 
-    if (!moreResultsAvailable) return;
-    const valOf = (k: string): string => {
-      const v = header[k];
-      if (Array.isArray(v)) return v.map((s) => String(s).trim()).filter((s) => s !== '').join(',');
-      return (v ?? '').toString().trim();
-    };
-    const street = valOf('street');
-    const town = valOf('town');
-    if (!street && !town) return;
-    const q = buildQueryString(filters, { street: street || undefined, town: town || undefined });
-    if (inFlightKeyRef.current === q) return; // de-dupe same query in-flight
-    inFlightKeyRef.current = q;
-    return fetchResults({ street: street || undefined, town: town || undefined })
+    const nextRequest = resolveHeaderFilterRequest(header, filters, moreResultsAvailable);
+    if (!nextRequest) return;
+    if (inFlightKeyRef.current === nextRequest.query) return;
+    inFlightKeyRef.current = nextRequest.query;
+    return fetchResults(nextRequest.request)
       .catch(() => {
         // fetchResults already handles user-facing error state.
       })
       .finally(() => {
         inFlightKeyRef.current = undefined;
       });
-  }, [buildQueryString, fetchResults, filters, moreResultsAvailable]);
+  }, [fetchResults, filters, moreResultsAvailable]);
 
   const handleHeaderFiltersApply = React.useCallback((header: Record<string, string | string[]>): void => {
     const pending = onHeaderFiltersApply(header);

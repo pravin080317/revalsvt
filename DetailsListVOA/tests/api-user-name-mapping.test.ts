@@ -246,6 +246,22 @@ describe('getSales API user name mapping', () => {
       });
       expect(result.items[0].summaryFlags).toEqual(['Low confidence', 'Review required', 'Needs check']);
     });
+
+    test('reviewFlags accepts array payloads (string values)', () => {
+      const result = normalizeSearchResponse({
+        sales: [{ reviewFlags: ['Outlier', 'Check source'] }],
+        filters: {},
+      });
+      expect(result.items[0].reviewFlags).toEqual(['Outlier', 'Check source']);
+    });
+
+    test('reviewFlags accepts object-array payloads and delimiter splitting', () => {
+      const result = normalizeSearchResponse({
+        sales: [{ reviewFlags: [{ Value: 'Outlier,Check source;Needs review' }] as unknown as string[] }],
+        filters: {},
+      });
+      expect(result.items[0].reviewFlags).toEqual(['Outlier', 'Check source', 'Needs review']);
+    });
   });
 
   // -------------------------------------------------------------------------

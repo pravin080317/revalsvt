@@ -55,7 +55,7 @@ This section consolidates the URL shapes and payloads for task assignment.
 
 Request (example):
 ```text
-POST https://{org}.crm.dynamics.com/api/data/v9.2/voa_SvtTaskAssignment
+POST <DATAVERSE_BASE_URL>/api/data/v9.2/voa_SvtTaskAssignment
 ```
 Body (JSON):
 ```json
@@ -82,7 +82,7 @@ The plugin POSTs to the Address from `SVTTaskAssignment` with a JSON body (no qu
 
 Example APIM URL:
 ```text
-{APIM_BASE_ADDRESS} = https://apim.example.net/svt/assignments
+{APIM_BASE_ADDRESS} = <EXTERNAL_URL>
 ```
 
 APIM request body (Manager assignment):

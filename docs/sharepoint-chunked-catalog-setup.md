@@ -35,8 +35,8 @@ PCF merges the two record chunks and maps rows into Sales Particular reference i
     "age_bath": "Old",
     "spec_bath": "Standard",
     "decorative_finishes": "Premium",
-    "image_url": "https://tenant.sharepoint.com/...",
-    "source_url": "https://tenant.sharepoint.com/..."
+    "image_url": "<EXTERNAL_URL>",
+    "source_url": "<EXTERNAL_URL>"
   }
 ]
 ```

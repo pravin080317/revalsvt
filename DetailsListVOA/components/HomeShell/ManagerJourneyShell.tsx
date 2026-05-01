@@ -39,6 +39,13 @@ interface ParsedUserContext {
   entraObjectId: string;
 }
 
+const FALLBACK_MANAGER_USER_CONTEXT: ParsedUserContext = {
+  persona: 'manager',
+  resolutionSource: 'Fallback',
+  hasSvtAccess: true,
+  entraObjectId: '',
+};
+
 export interface ManagerJourneyShellProps {
   context: ComponentFramework.Context<IInputs>;
   onRowInvoke?: (args: { taskId?: string; saleId?: string; screenKind?: string; tableKey?: string }) => void | Promise<void>;
@@ -132,6 +139,41 @@ const parseUserContext = (payload: unknown): ParsedUserContext => {
   };
 };
 
+const resolveUserContextError = (parsed: ParsedUserContext): string | undefined => {
+  if (!parsed.hasSvtAccess) {
+    return HOME_JOURNEY_COPY.noSvtAccessMessage;
+  }
+  return undefined;
+};
+
+const loadManagerUserContext = async (args: {
+  context: ComponentFramework.Context<IInputs>;
+  apiName: string;
+  apiType: ReturnType<typeof resolveCustomApiOperationType>;
+}): Promise<{ context: ParsedUserContext; error?: string }> => {
+  const { context, apiName, apiType } = args;
+
+  try {
+    const payload = await executeUnboundCustomApi<unknown>(
+      context,
+      apiName,
+      {},
+      { operationType: apiType },
+    );
+
+    const parsed = parseUserContext(payload);
+    return {
+      context: parsed,
+      error: resolveUserContextError(parsed),
+    };
+  } catch {
+    return {
+      context: FALLBACK_MANAGER_USER_CONTEXT,
+      error: HOME_JOURNEY_COPY.userContextFallbackMessage,
+    };
+  }
+};
+
 const buildCountryOptions = (currentValue: string): IComboBoxOption[] => {
   const values = [...HOME_JOURNEY_COUNTRY_BASE_VALUES];
   if (currentValue && !values.some((value) => value.toLowerCase() === currentValue.toLowerCase())) {
@@ -147,7 +189,7 @@ const buildListYearOptions = (currentValue: string): IComboBoxOption[] => {
   }
 
   return Array.from(yearValues)
-    .sort((a, b) => Number(b) - Number(a))
+    .sort((a, b) => Number(a) - Number(b))
     .map((value) => ({ key: value, text: value }));
 };
 
@@ -262,12 +304,7 @@ export const ManagerJourneyShell: React.FC<ManagerJourneyShellProps> = ({
     let active = true;
 
     if (!userContextApiName) {
-      setUserContext({
-        persona: 'manager',
-        resolutionSource: 'Fallback',
-        hasSvtAccess: true,
-        entraObjectId: '',
-      });
+      setUserContext(FALLBACK_MANAGER_USER_CONTEXT);
       setUserContextError(HOME_JOURNEY_COPY.userContextApiMissingMessage);
       setUserContextLoading(false);
       return () => {
@@ -279,34 +316,16 @@ export const ManagerJourneyShell: React.FC<ManagerJourneyShellProps> = ({
     setUserContextError(undefined);
 
     const loadUserContext = async (): Promise<void> => {
-      try {
-        const payload = await executeUnboundCustomApi<unknown>(
-          context,
-          userContextApiName,
-          {},
-          { operationType: userContextApiType },
-        );
+      const next = await loadManagerUserContext({
+        context,
+        apiName: userContextApiName,
+        apiType: userContextApiType,
+      });
+      if (!active) return;
 
-        if (!active) return;
-        const parsed = parseUserContext(payload);
-        setUserContext(parsed);
-        if (!parsed.hasSvtAccess) {
-          setUserContextError(HOME_JOURNEY_COPY.noSvtAccessMessage);
-        }
-      } catch {
-        if (!active) return;
-        setUserContext({
-          persona: 'manager',
-          resolutionSource: 'Fallback',
-          hasSvtAccess: true,
-          entraObjectId: '',
-        });
-        setUserContextError(HOME_JOURNEY_COPY.userContextFallbackMessage);
-      } finally {
-        if (active) {
-          setUserContextLoading(false);
-        }
-      }
+      setUserContext(next.context);
+      setUserContextError(next.error);
+      setUserContextLoading(false);
     };
 
     loadUserContext().catch(() => undefined);

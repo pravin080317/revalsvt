@@ -56,8 +56,10 @@ describe('WRT-400 Modify SVT Task AC', () => {
   });
 
   test('AC3d: Modify Task success notification auto-dismisses (short-lived, stays on details view)', () => {
-    expect(taskSectionSource).toContain('setTimeout(() => setModifyTaskMessage(undefined), 3000)');
-    expect(taskSectionSource).toContain('{modifyTaskMessage && (');
+    expect(taskSectionSource).toContain('const useDismissibleActionMessage = (): {');
+    expect(taskSectionSource).toContain('setDismissed(true);');
+    expect(taskSectionSource).toContain('setMessage(undefined);');
+    expect(taskSectionSource).toContain('{showModifyTaskMessage && modifyTaskFeedback.message && (');
   });
 
   test('AC3b: task and audit action groups are labelled for assistive technology', () => {

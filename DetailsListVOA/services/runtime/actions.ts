@@ -1,6 +1,6 @@
 import { IInputs } from '../../generated/ManifestTypes';
 import { normalizeCustomApiName, resolveCustomApiOperationType } from '../CustomApi';
-import { hasDisplayText, normalizeGuidValue, normalizeTextValue } from './text';
+import { hasDisplayText, normalizeGuidValue, normalizeTextValue, stripHtmlTags } from './text';
 
 export type RuntimeActionType =
   | 'back'
@@ -32,8 +32,7 @@ const TECHNICAL_ERROR_MESSAGE = 'Technical error. Please try again in some time.
 const GENERIC_ERROR_MESSAGE = 'Unable to process your request. Please try again.';
 
 const stripHtmlAndNormalizeWhitespace = (value: string): string =>
-  value
-    .replace(/<[^>]+>/g, ' ')
+  stripHtmlTags(value)
     .replace(/\\r|\\n|\r|\n/g, ' ')
     .replace(/\\"/g, '"')
     .replace(/\s+/g, ' ')
@@ -323,6 +322,58 @@ const parseModifyTaskCandidate = (
 const SUCCESS_HINTS = ['success', 'succeed', 'succeeded', 'ok', 'completed', 'submitted', 'updated', 'passed'];
 const FAILURE_HINTS = ['fail', 'failed', 'error', 'invalid', 'forbidden', 'denied'];
 
+const parseMutationFromString = (
+  candidate: string,
+  depth: number,
+): ApiMutationResult | undefined => {
+  const trimmed = candidate.trim();
+  if (!trimmed) {
+    return undefined;
+  }
+
+  try {
+    const parsed = JSON.parse(trimmed) as unknown;
+    return parseMutationResultCandidate(parsed, depth + 1)
+      ?? {
+        success: false,
+        message: trimmed,
+      };
+  } catch {
+    const normalized = trimmed.replace(/^['"]|['"]$/g, '').trim().toLowerCase();
+    if (SUCCESS_HINTS.some((hint) => normalized.includes(hint))) {
+      return { success: true, message: trimmed };
+    }
+
+    if (FAILURE_HINTS.some((hint) => normalized.includes(hint))) {
+      return { success: false, message: trimmed };
+    }
+
+    return { success: false, message: trimmed };
+  }
+};
+
+const parseMutationFromObject = (
+  candidate: Record<string, unknown>,
+  depth: number,
+): ApiMutationResult | undefined => {
+  const nested = candidate.Result ?? candidate.result ?? candidate.payload ?? candidate.message ?? candidate.status;
+  if (nested !== undefined) {
+    const parsedNested = parseMutationResultCandidate(nested, depth + 1);
+    if (parsedNested) {
+      return parsedNested;
+    }
+  }
+
+  if (Object.prototype.hasOwnProperty.call(candidate, 'success')) {
+    return {
+      success: candidate.success === true,
+      message: normalizeTextValue(candidate.message) || normalizeTextValue(candidate.payload),
+    };
+  }
+
+  return undefined;
+};
+
 const parseMutationResultCandidate = (
   candidate: unknown,
   depth = 0,
@@ -332,48 +383,11 @@ const parseMutationResultCandidate = (
   }
 
   if (typeof candidate === 'string') {
-    const trimmed = candidate.trim();
-    if (!trimmed) {
-      return undefined;
-    }
-
-    try {
-      const parsed = JSON.parse(trimmed) as unknown;
-      return parseMutationResultCandidate(parsed, depth + 1)
-        ?? {
-          success: false,
-          message: trimmed,
-        };
-    } catch {
-      const normalized = trimmed.replace(/^['"]|['"]$/g, '').trim().toLowerCase();
-      if (SUCCESS_HINTS.some((hint) => normalized.includes(hint))) {
-        return { success: true, message: trimmed };
-      }
-
-      if (FAILURE_HINTS.some((hint) => normalized.includes(hint))) {
-        return { success: false, message: trimmed };
-      }
-
-      return { success: false, message: trimmed };
-    }
+    return parseMutationFromString(candidate, depth);
   }
 
   if (typeof candidate === 'object') {
-    const record = candidate as Record<string, unknown>;
-    const nested = record.Result ?? record.result ?? record.payload ?? record.message ?? record.status;
-    if (nested !== undefined) {
-      const parsedNested = parseMutationResultCandidate(nested, depth + 1);
-      if (parsedNested) {
-        return parsedNested;
-      }
-    }
-
-    if (Object.prototype.hasOwnProperty.call(record, 'success')) {
-      return {
-        success: record.success === true,
-        message: normalizeTextValue(record.message) || normalizeTextValue(record.payload),
-      };
-    }
+    return parseMutationFromObject(candidate as Record<string, unknown>, depth);
   }
 
   return undefined;
@@ -405,37 +419,41 @@ export const extractTaskIdFromUnknown = (value: unknown): string => {
   }
 
   if (Array.isArray(value)) {
-    for (const item of value) {
-      const found = extractTaskIdFromUnknown(item);
-      if (found) {
-        return found;
-      }
-    }
-    return '';
+    return extractTaskIdFromCollection(value);
   }
 
   if (typeof value === 'object') {
-    const record = value as Record<string, unknown>;
-    const keyCandidates = ['taskId', 'taskid', 'svtTaskId', 'svttaskid', 'manualTaskId', 'id'];
-    for (const key of keyCandidates) {
-      if (!Object.prototype.hasOwnProperty.call(record, key)) {
-        continue;
-      }
-      const found = extractTaskIdFromUnknown(record[key]);
-      if (found) {
-        return found;
-      }
-    }
-
-    for (const nested of Object.values(record)) {
-      const found = extractTaskIdFromUnknown(nested);
-      if (found) {
-        return found;
-      }
-    }
+    return extractTaskIdFromObject(value as Record<string, unknown>);
   }
 
   return '';
+};
+
+const TASK_ID_KEY_CANDIDATES = ['taskId', 'taskid', 'svtTaskId', 'svttaskid', 'manualTaskId', 'id'];
+
+const extractTaskIdFromCollection = (values: unknown[]): string => {
+  for (const item of values) {
+    const found = extractTaskIdFromUnknown(item);
+    if (found) {
+      return found;
+    }
+  }
+  return '';
+};
+
+const extractTaskIdFromObject = (record: Record<string, unknown>): string => {
+  for (const key of TASK_ID_KEY_CANDIDATES) {
+    if (!Object.prototype.hasOwnProperty.call(record, key)) {
+      continue;
+    }
+
+    const found = extractTaskIdFromUnknown(record[key]);
+    if (found) {
+      return found;
+    }
+  }
+
+  return extractTaskIdFromCollection(Object.values(record));
 };
 
 const extractTaskIdFromString = (value: string): string => {

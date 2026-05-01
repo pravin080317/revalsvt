@@ -1,4 +1,4 @@
-import { GridFilterState, SearchByOption } from '../Filters';
+import { GridFilterState, NumericFilter, SearchByOption } from '../Filters';
 import { mapManagerPrefiltersToApi, mapQcPrefiltersToApi, mapQcViewPrefiltersToApi, type ManagerPrefilterState } from './PrefilterConfigs';
 
 export type TableKey = 'sales' | 'allsales' | 'myassignment' | 'manager' | 'qa' | 'qaassign' | 'qaview';
@@ -108,6 +108,136 @@ const SALES_COLUMN_FILTERS: Record<string, ColumnFilterConfig> = {
   qccompleteddate: { control: 'dateRange', minLength: 1 },
 };
 
+const applySingleDateParam = (
+  params: Record<string, string>,
+  paramKey: string,
+  range?: { from?: string; to?: string },
+): void => {
+  if (!range) {
+    return;
+  }
+
+  const from = range.from;
+  const to = range.to;
+  if (from && to && from === to) {
+    params[paramKey] = from;
+    return;
+  }
+
+  if (from && !to) {
+    params[paramKey] = from;
+    return;
+  }
+
+  if (to && !from) {
+    params[paramKey] = to;
+    return;
+  }
+
+  if (from) {
+    params[paramKey] = from;
+  }
+};
+
+const applyDateRangeParams = (
+  params: Record<string, string>,
+  range: { from?: string; to?: string } | undefined,
+  fromParam: string,
+  toParam: string,
+): void => {
+  if (!range) {
+    return;
+  }
+
+  if (range.from) params[fromParam] = range.from;
+  if (range.to) params[toParam] = range.to;
+};
+
+const applyOperatorNumericParam = (
+  params: Record<string, string>,
+  fieldValue: GridFilterState['salePrice'],
+  valueParam: string,
+  operatorParam: string,
+): void => {
+  if (!fieldValue) {
+    return;
+  }
+
+  const { mode, min, max } = fieldValue;
+  if (mode === '>=' && min !== undefined) {
+    params[valueParam] = String(min);
+    params[operatorParam] = 'GE';
+    return;
+  }
+
+  if (mode === '<=' && max !== undefined) {
+    params[valueParam] = String(max);
+    params[operatorParam] = 'LE';
+    return;
+  }
+
+  if (mode === 'between') {
+    if (min !== undefined) {
+      params[valueParam] = String(min);
+      params[operatorParam] = 'GE';
+      return;
+    }
+
+    if (max !== undefined) {
+      params[valueParam] = String(max);
+      params[operatorParam] = 'LE';
+    }
+  }
+};
+
+const applySimpleNumericParam = (
+  params: Record<string, string>,
+  fieldValue: NumericFilter | undefined,
+  valueParam: string,
+): void => {
+  if (!fieldValue) {
+    return;
+  }
+
+  if (fieldValue.mode === '>=' && fieldValue.min !== undefined) {
+    params[valueParam] = String(fieldValue.min);
+    return;
+  }
+
+  if (fieldValue.mode === '<=' && fieldValue.max !== undefined) {
+    params[valueParam] = String(fieldValue.max);
+    return;
+  }
+
+  if (fieldValue.mode === 'between') {
+    if (fieldValue.min !== undefined) {
+      params[valueParam] = String(fieldValue.min);
+      return;
+    }
+
+    if (fieldValue.max !== undefined) {
+      params[valueParam] = String(fieldValue.max);
+    }
+  }
+};
+
+const applySummaryFlagParams = (params: Record<string, string>, summaryFlag: GridFilterState['summaryFlag']): void => {
+  if (!summaryFlag) {
+    return;
+  }
+
+  if (typeof summaryFlag === 'object' && summaryFlag.values?.length) {
+    params.summaryFlag = summaryFlag.values.join(',');
+    const operatorMap: Record<string, string> = { contains: 'LIKE', notContains: 'NTL', eq: 'EQ' };
+    params.summaryFlagOperator = operatorMap[summaryFlag.operator] ?? 'LIKE';
+    return;
+  }
+
+  if (typeof summaryFlag === 'string' && summaryFlag.trim()) {
+    params.summaryFlag = summaryFlag;
+  }
+};
+
 const buildSalesParams = (
   filters: GridFilterState,
   page: number,
@@ -129,92 +259,22 @@ const buildSalesParams = (
   if (filters.postcode) params.postcode = filters.postcode;
   if (filters.billingAuthority?.length) params.billingAuthority = filters.billingAuthority.join(',');
   if (filters.bacode) params.billingAuthorityReference = filters.bacode;
-  if (filters.transactionDate) {
-    const from = filters.transactionDate.from;
-    const to = filters.transactionDate.to;
-    if (from && to && from === to) {
-      params.transactionDate = from;
-    } else if (from && !to) {
-      params.transactionDate = from;
-    } else if (to && !from) {
-      params.transactionDate = to;
-    } else if (from) {
-      params.transactionDate = from;
-    }
-  }
-  if (filters.salePrice) {
-    const { mode, min, max } = filters.salePrice;
-    if (mode === '>=' && min !== undefined) {
-      params.salesPrice = String(min);
-      params.salesPriceOperator = 'GE';
-    } else if (mode === '<=' && max !== undefined) {
-      params.salesPrice = String(max);
-      params.salesPriceOperator = 'LE';
-    } else if (mode === 'between') {
-      if (min !== undefined) {
-        params.salesPrice = String(min);
-        params.salesPriceOperator = 'GE';
-      } else if (max !== undefined) {
-        params.salesPrice = String(max);
-        params.salesPriceOperator = 'LE';
-      }
-    }
-  }
-  if (filters.ratio) {
-    if (filters.ratio.mode === '>=' && filters.ratio.min !== undefined) {
-      params.ratio = String(filters.ratio.min);
-    } else if (filters.ratio.mode === '<=' && filters.ratio.max !== undefined) {
-      params.ratio = String(filters.ratio.max);
-    } else if (filters.ratio.mode === 'between') {
-      if (filters.ratio.min !== undefined) {
-        params.ratio = String(filters.ratio.min);
-      } else if (filters.ratio.max !== undefined) {
-        params.ratio = String(filters.ratio.max);
-      }
-    }
-  }
+  applySingleDateParam(params, 'transactionDate', filters.transactionDate);
+  applyOperatorNumericParam(params, filters.salePrice, 'salesPrice', 'salesPriceOperator');
+  applySimpleNumericParam(params, filters.ratio, 'ratio');
   if (filters.dwellingType?.length) params.dwellingType = filters.dwellingType.join(',');
   if (filters.flaggedForReview) params.flaggedForReview = filters.flaggedForReview;
   if (filters.reviewFlags?.length) params.reviewFlag = filters.reviewFlags.join(',');
   if (filters.outlierKeySale?.length) params.outlierKeySale = filters.outlierKeySale.join(',');
-  if (filters.outlierRatio) {
-    if (filters.outlierRatio.mode === '>=' && filters.outlierRatio.min !== undefined) {
-      params.outlierRatio = String(filters.outlierRatio.min);
-    } else if (filters.outlierRatio.mode === '<=' && filters.outlierRatio.max !== undefined) {
-      params.outlierRatio = String(filters.outlierRatio.max);
-    } else if (filters.outlierRatio.mode === 'between') {
-      if (filters.outlierRatio.min !== undefined) {
-        params.outlierRatio = String(filters.outlierRatio.min);
-      } else if (filters.outlierRatio.max !== undefined) {
-        params.outlierRatio = String(filters.outlierRatio.max);
-      }
-    }
-  }
+  applySimpleNumericParam(params, filters.outlierRatio, 'outlierRatio');
   if (filters.overallFlag?.length) params.overallFlag = filters.overallFlag.join(',');
-  if (filters.summaryFlag) {
-    if (typeof filters.summaryFlag === 'object' && filters.summaryFlag.values?.length) {
-      params.summaryFlag = filters.summaryFlag.values.join(',');
-      const operatorMap: Record<string, string> = { contains: 'LIKE', notContains: 'NTL', eq: 'EQ' };
-      params.summaryFlagOperator = operatorMap[filters.summaryFlag.operator] ?? 'LIKE';
-    } else if (typeof filters.summaryFlag === 'string' && filters.summaryFlag.trim()) {
-      params.summaryFlag = filters.summaryFlag;
-    }
-  }
+  applySummaryFlagParams(params, filters.summaryFlag);
   if (filters.taskStatus?.length) params.taskStatus = filters.taskStatus.join(',');
   if (filters.assignedTo) params.assignedTo = filters.assignedTo;
-  if (filters.assignedDate) {
-    if (filters.assignedDate.from) params.assignedFromDate = filters.assignedDate.from;
-    if (filters.assignedDate.to) params.assignedToDate = filters.assignedDate.to;
-  }
+  applyDateRangeParams(params, filters.assignedDate, 'assignedFromDate', 'assignedToDate');
   if (filters.qcAssignedTo) params.qcAssignedTo = filters.qcAssignedTo;
-  if (filters.qcAssignedDate) {
-    if (filters.qcAssignedDate.from) params.qcAssignedFromDate = filters.qcAssignedDate.from;
-    if (filters.qcAssignedDate.to) params.qcAssignedToDate = filters.qcAssignedDate.to;
-  }
-  if (filters.qcCompletedDate) {
-    if (filters.qcCompletedDate.from) params.qcCompleteFromDate = filters.qcCompletedDate.from;
-    if (filters.qcCompletedDate.to) params.qcCompleteToDate = filters.qcCompletedDate.to;
-  }
+  applyDateRangeParams(params, filters.qcAssignedDate, 'qcAssignedFromDate', 'qcAssignedToDate');
+  applyDateRangeParams(params, filters.qcCompletedDate, 'qcCompleteFromDate', 'qcCompleteToDate');
   return params;
 };
 

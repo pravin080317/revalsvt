@@ -25,6 +25,6 @@ Finding: Non-strict equality appears only in bundled vendor modules, not in proj
 Examples include `@fluentui/*`, `prop-types`, `react-dom` (dev), and `tslib`.
 
 ## Insecure Protocols (http / ftp)
-Finding: Only `http://` occurrences are XML namespace declarations in solution/project files.  
+Finding: Only `HTTP` namespace-scheme occurrences are XML namespace declarations in solution/project files.  
 Examples: `DetailsListVOA.pcfproj` and `solution/src/Other/*.xml`.  
 No runtime URLs or `ftp://` occurrences found in project code.

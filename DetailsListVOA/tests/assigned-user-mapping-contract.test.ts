@@ -16,10 +16,12 @@ describe('assigned user mapping contract', () => {
   });
 
   test('maps both assignedto and qcassignedto via the same normalized ID path', () => {
-    expect(hostSource).toContain("(['assignedto', 'qcassignedto'] as const).forEach((field) => {");
-    expect(hostSource).toContain('const normalizedId = normalizeAssignableUserId(id);');
-    expect(hostSource).toContain('const assignedDisplay = mapUserIdsToNames');
-    expect(hostSource).toContain('const qcAssignedDisplay = mapUserIdsToNames');
+    expect(hostSource).toContain('const extractNormalizedUserIds = (value: unknown): string[] | undefined');
+    expect(hostSource).toContain('const assignedToIds = extractNormalizedUserIds(record.assignedto');
+    expect(hostSource).toContain('const qcAssignedToIds = extractNormalizedUserIds(record.qcassignedto');
+    expect(hostSource).toContain('assignDisplayNames({');
+    expect(hostSource).toContain("sourceKey: 'assignedto',");
+    expect(hostSource).toContain("sourceKey: 'qcassignedto',");
   });
 });
 

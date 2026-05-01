@@ -16,7 +16,7 @@ This pack is a copy-ready artifact for release notes, CAB review, and security s
 - `DetailsListVOA/components/SaleDetailsShell/utils.ts`
 - Added `sanitizeExternalUrl(...)`.
 - Enforces:
-  - allow: `http://`, `https://`
+  - allow: `HTTP` and `HTTPS` URL schemes
   - block: `javascript:`, `data:`, `ftp:`, protocol-relative `//...`
   - rooted relative URLs allowed only with explicit trusted base URL.
 

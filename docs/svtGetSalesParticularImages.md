@@ -67,8 +67,8 @@ Then optional query parameters are appended:
       "id": "img-001",
       "title": "Kitchen reference",
       "capturedDate": "2025-10-01",
-      "thumbnailUrl": "https://...",
-      "fullImageUrl": "https://...",
+      "thumbnailUrl": "<EXTERNAL_URL>",
+      "fullImageUrl": "<EXTERNAL_URL>",
       "altText": "Kitchen showing fitted units"
     }
   ],

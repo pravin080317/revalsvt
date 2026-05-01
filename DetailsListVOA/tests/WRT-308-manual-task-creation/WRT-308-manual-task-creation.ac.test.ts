@@ -23,11 +23,12 @@ describe('WRT-308 Manual Task Creation AC', () => {
   test('AC1: clicking Create Task from Sales Record details routes to manual task creation and auto-assignment context', () => {
     expect(shellSource).toContain('onCreateTask={onCreateManualTask');
     expect(shellSource).toContain('canCreateTask={canCreateManualTask}');
-    expect(indexSource).toContain('onCreateManualTask: (saleId) => this.runtime.createManualTask([saleId])');
+    expect(indexSource).toContain('onCreateManualTask: (saleId) => this.runtime.createManualTask([saleId], { navigateToDetailsOnSingle: true })');
     expect(runtimeSource).toContain("sourceType: 'M'");
     expect(runtimeSource).toContain('createdBy: this.entraObjectId');
     expect(runtimeSource).toContain('assignedTo: resolveCurrentUserDisplayName(this._context)');
     expect(runtimeSource).toContain('await this.onTaskClick(this.selectedTaskId, normalizedSaleId);');
+    expect(indexSource).toContain('onBulkCreateTask: (saleIds) => this.runtime.createManualTask(saleIds, { navigateToDetailsOnSingle: false })');
     expect(configSource).toContain("manualTaskCreationApiName: 'voa_SvtManualTaskCreation'");
   });
 
@@ -37,7 +38,7 @@ describe('WRT-308 Manual Task Creation AC', () => {
     expect(rulesSource).toContain('export const getCreateTaskActionRule = ({');
     expect(rulesSource).toContain("reason: 'A task ID already exists for this sale record.'");
     expect(rulesSource).toContain("reason: 'Create task is available only to users with both manager and caseworker role/team access.'");
-    expect(runtimeSource).toContain('const existingTaskId = resolveCurrentTaskIdFromDetails(this._saleDetails, this.selectedTaskId);');
+    expect(runtimeSource).toContain('const saleMatchesCurrentDetails = normalizedSaleId === currentSaleId;');
     expect(runtimeSource).toContain('if (!this.hasManagerAccess || !this.hasCaseworkerAccess) {');
     expect(runtimeSource).toContain("throw new Error('Manual task creation is restricted to users with both manager and caseworker role/team access.');");
   });
@@ -66,8 +67,10 @@ describe('WRT-308 Manual Task Creation AC', () => {
   });
 
   test('AC3c: Create Task success notification auto-dismisses (short-lived, stays on details view)', () => {
-    expect(sectionSource).toContain('setTimeout(() => setCreateTaskMessage(undefined), 3000)');
-    expect(sectionSource).toContain("{createTaskMessage && (");
+    expect(sectionSource).toContain('const useDismissibleActionMessage = (): {');
+    expect(sectionSource).toContain('setDismissed(true);');
+    expect(sectionSource).toContain('setMessage(undefined);');
+    expect(sectionSource).toContain('{showCreateTaskMessage && createTaskFeedback.message && (');
   });
 
   test('AC4: all-sales bulk Create Task uses the same manager+caseworker access gate', () => {
@@ -85,5 +88,14 @@ describe('WRT-308 Manual Task Creation AC', () => {
     expect(managerJourneySource).toContain('canCreateManualTask = false');
     expect(managerJourneySource).toContain('canCreateManualTask={canCreateManualTask}');
     expect(indexSource).toContain('canCreateManualTask: this.runtime.canCreateManualTask');
+  });
+
+  test('AC5: all-sales Create Task shows success banner, refreshes table, and stays on list; details Create Task refreshes details only', () => {
+    expect(detailsHostSource).toContain('setAssignMessage({ text: successText, type: MessageBarType.success });');
+    expect(detailsHostSource).toContain('setSearchNonce((n) => n + 1);');
+    expect(indexSource).toContain('onBulkCreateTask: (saleIds) => this.runtime.createManualTask(saleIds, { navigateToDetailsOnSingle: false })');
+    expect(indexSource).toContain('onCreateManualTask: (saleId) => this.runtime.createManualTask([saleId], { navigateToDetailsOnSingle: true })');
+    expect(runtimeSource).toContain('if (navigateToDetailsOnSingle) {');
+    expect(runtimeSource).toContain('await this.onTaskClick(this.selectedTaskId, normalizedSaleId);');
   });
 });

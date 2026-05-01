@@ -1,0 +1,115 @@
+trigger: none
+
+stages:
+  - stage: SVTPCFControlSonarQube
+    displayName: "SonarQube for SVT PCF controls"
+    pool: "c190voa - dev"
+    jobs:
+      - job: SonarQubeServerForSVTDetailsList
+        displayName: "Sonar Qube code analysis for SVT PCF details list control"
+        steps:
+          - checkout: self
+
+          - task: Npm@1
+            displayName: 'Install npm packages for SVT PCF DetailsList control'
+            inputs:
+              command: 'install'
+              workingDir: 'D365/VOA/VOA.SVT.PCF/VOA.SVT.DetailsList/'
+              customRegistry: 'useFeed'
+              customFeed: 'b94b657a-6009-4206-a1ff-2a044df9daa3'
+
+          - task: DownloadSecureFile@1
+            name: sonarCert
+            inputs:
+              secureFile: 'ultimatecertificate-sonar.pem'
+
+          - powershell: |
+              echo "##vso[task.setvariable variable=NODE_EXTRA_CA_CERTS]$(sonarCert.secureFilePath)"
+            displayName: 'Configure Node trust store'
+
+          - task: SonarQubePrepare@8
+            inputs:
+              SonarQube: 'VOA-VOS-SonarQube'
+              scannerMode: 'cli'
+              configMode: 'manual'
+              cliProjectKey: 'VOA-D365-SalesVerificationTool-PCF'
+              cliProjectName: 'VOA-D365-SalesVerificationTool-PCF'
+              cliSources: 'D365/VOA/VOA.SVT.PCF/VOA.SVT.DetailsList/'
+              extraProperties: |
+                sonar.sourceEncoding=UTF-8
+                sonar.projectBaseDir=D365/VOA/VOA.SVT.PCF/VOA.SVT.DetailsList
+                sonar.exclusions=**/node_modules/**,**/out/**,**/dist/**,**/coverage/**,**/coverage/**/**,**/*.ts.html
+                sonar.tests=.
+                sonar.test.inclusions=**/*.spec.ts,**/*.test.ts
+                sonar.javascript.lcov.reportPaths=coverage/lcov.info
+                sonar.testExecutionReportPaths=coverage/test-report.xml
+
+          - powershell: |
+              $paramsJson = '$(SONARQUBE_SCANNER_PARAMS)'
+              if ([string]::IsNullOrWhiteSpace($paramsJson)) {
+                Write-Warning 'SONARQUBE_SCANNER_PARAMS is empty.'
+                exit 0
+              }
+
+              $params = $paramsJson | ConvertFrom-Json
+              Write-Host "Effective sonar.projectBaseDir: $($params.'sonar.projectBaseDir')"
+              Write-Host "Effective sonar.testExecutionReportPaths: $($params.'sonar.testExecutionReportPaths')"
+              Write-Host "Effective sonar.javascript.lcov.reportPaths: $($params.'sonar.javascript.lcov.reportPaths')"
+            displayName: 'Debug effective Sonar report paths'
+
+          - task: Npm@1
+            inputs:
+              command: 'custom'
+              workingDir: 'D365/VOA/VOA.SVT.PCF/VOA.SVT.DetailsList/'
+              customCommand: 'run build -- --buildMode development'
+
+          - task: Npm@1
+            displayName: 'Run SVT PCF unit tests'
+            inputs:
+              command: 'custom'
+              workingDir: 'D365/VOA/VOA.SVT.PCF/VOA.SVT.DetailsList/'
+              customCommand: 'run test:ci'
+            env:
+              JEST_JUNIT_OUTPUT_DIR: '$(Common.TestResultsDirectory)'
+              JEST_JUNIT_OUTPUT_NAME: 'svt-pcf-junit.xml'
+
+          - powershell: |
+              $generic = "$(Build.SourcesDirectory)\D365\VOA\VOA.SVT.PCF\VOA.SVT.DetailsList\coverage\test-report.xml"
+              $junit = "$(Common.TestResultsDirectory)\svt-pcf-junit.xml"
+
+              if (-not (Test-Path $generic)) {
+                Write-Error "Missing Sonar generic execution report: $generic"
+                exit 1
+              }
+
+              $genericHead = Get-Content $generic -TotalCount 2 | Out-String
+              if ($genericHead -notmatch "testExecutions") {
+                Write-Error "Invalid Sonar generic execution report format at $generic. Expected root element 'testExecutions'."
+                exit 1
+              }
+
+              if (-not (Test-Path $junit)) {
+                Write-Error "Missing JUnit report for Azure DevOps test publishing: $junit"
+                exit 1
+              }
+
+              Write-Host "Validated Sonar generic report: $generic"
+              Write-Host "Validated JUnit report: $junit"
+            displayName: 'Validate Sonar and JUnit report files'
+
+          - task: PublishTestResults@2
+            displayName: 'Publish SVT PCF test results'
+            condition: succeededOrFailed()
+            inputs:
+              testResultsFormat: 'JUnit'
+              testResultsFiles: '$(Common.TestResultsDirectory)/svt-pcf-junit.xml'
+              failTaskOnFailedTests: true
+              testRunTitle: 'SVT PCF Jest Tests'
+
+          - task: SonarQubeAnalyze@8
+            inputs:
+              jdkversion: 'JAVA_HOME_17_X64'
+
+          - task: SonarQubePublish@8
+            inputs:
+              pollingTimeoutSec: '300'

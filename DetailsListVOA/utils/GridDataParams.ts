@@ -31,16 +31,24 @@ export const normalizeSortField = (value?: string): string | undefined => {
   return trimmed;
 };
 
+const toTrimmedString = (value: unknown): string => (typeof value === 'string' ? value.trim() : '');
+
+const appendIfPresent = (target: Record<string, string>, key: string, value: string): void => {
+  if (value) {
+    target[key] = value;
+  }
+};
+
 export const buildGridApiParams = (args: BuildGridApiParamsArgs): Record<string, string> => {
   const pageSize = args.pageSize ?? 500;
-  const source = typeof args.source === 'string' ? args.source.trim() : '';
-  const requestedBy = typeof args.requestedBy === 'string' ? args.requestedBy.trim() : '';
+  const source = toTrimmedString(args.source);
+  const requestedBy = toTrimmedString(args.requestedBy);
   const baseFilters = (args.filters ?? {}) as Record<string, unknown>;
   const filtersWithSource = source ? { ...baseFilters, source } : baseFilters;
   const apiParamsBase = buildApiParamsFor(args.tableKey, filtersWithSource as never, args.currentPage, pageSize, args.prefilters);
-  const searchQuery = typeof args.searchQuery === 'string' ? args.searchQuery.trim() : '';
-  const country = typeof args.country === 'string' ? args.country.trim() : '';
-  const listYear = typeof args.listYear === 'string' ? args.listYear.trim() : '';
+  const searchQuery = toTrimmedString(args.searchQuery);
+  const country = toTrimmedString(args.country);
+  const listYear = toTrimmedString(args.listYear);
 
   const sortBy = args.clientSort?.name;
   const sortDirection = args.clientSort?.sortDirection;
@@ -51,13 +59,13 @@ export const buildGridApiParams = (args: BuildGridApiParamsArgs): Record<string,
     pageNumber: String(args.currentPage + 1),
     pageSize: String(pageSize),
   };
-  if (normalizedSortField) p.sortField = normalizedSortField;
+  appendIfPresent(p, 'sortField', normalizedSortField ?? '');
   if (typeof sortDirection === 'number') p.sortDirection = sortDirection === 1 ? 'desc' : 'asc';
-  if (searchQuery) p.SearchQuery = searchQuery;
-  if (requestedBy) p.RequestedBy = requestedBy;
+  appendIfPresent(p, 'SearchQuery', searchQuery);
+  appendIfPresent(p, 'RequestedBy', requestedBy);
   if (CONTROL_CONFIG.enableCountryListYearApiParams === true) {
-    if (country) p.country = country;
-    if (listYear) p.listYear = listYear;
+    appendIfPresent(p, 'country', country);
+    appendIfPresent(p, 'listYear', listYear);
   }
   return p;
 };
